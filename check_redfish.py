@@ -1,0 +1,1042 @@
+#!/usr/bin/env python36
+
+self_description = \
+"""This is a monitoring plugin to check components which support Redfish
+
+This plugin can be used to check component health status which support
+Redfish.
+
+R.I.P. IPMI
+"""
+
+"""
+## Installation
+
+yum install -y python36-six python36-setuptools python36-decorator python36-ply
+
+mkdir -p /usr/local/lib/python3.6/site-packages
+
+tar -xzf recordtype-1.3.cygwin-2.10.0-x86_64.tar.gz
+cp -a cygdrive/c/home/eric/local/recordtype/py3/lib/python3.6/site-packages/recordtype* /usr/local/lib/python3.6/site-packages/
+rm -rf cygdrive recordtype-1.3.cygwin-2.10.0-x86_64.tar.gz
+
+#
+tar -xzf urlparse2-1.1.1.tar.gz
+cd urlparse2-1.1.1
+python36 setup.py install
+cd ..
+rm -rf urlparse2-1.1.1*
+
+tar -xzpf jsonpointer-2.0.tar.gz
+cd jsonpointer-2.0/
+python36 setup.py install
+cd ..
+rm -rf jsonpointer-2.0*
+
+tar -xzpf jsonpath-rw-1.4.0.tar.gz
+cd jsonpath-rw-1.4.0/
+python36 setup.py install
+cd ..
+rm -rf jsonpath-rw-1.4.0*
+
+tar -xzf jsonpatch-1.23.tar.gz
+cd jsonpatch-1.23
+python36 setup.py install
+cd ..
+rm -rf jsonpatch-1.23*
+
+tar -xzf redfish-2.0.9.tar.gz
+cd redfish-2.0.9
+python36 setup.py install
+cd ..
+rm -rf redfish-2.0.9*
+"""
+
+import redfish
+import logging
+#import re
+
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+
+import pprint
+
+# TODO:
+# * add options for session file and session file path -> see check_vmware
+# * use session key for login
+# * read and write session key to file
+# * create new session if current session expired
+# * read credentials from environment
+# * read credentials from credential file -> username=, password= -> see check_vmware
+# * take core of 'None' time stamps in event logs
+# * let user force reading event logs on iLO 4, set max to 30
+# * add inventory option
+# * add info command to return model, version, ...
+# * add firmware command to print out current firmware
+# * add bmc info command to return ILO, version, status, 
+# * add README
+# * add license
+# * add pip install file
+# * test behavior on insecure certs
+
+__version__ = "0.0.1"
+__version_date__ = "2019-07-15"
+__author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
+__description__ = "Check Redfish Plugin"
+__license__ = "GPLv3"
+
+
+# define valid return status types
+status_types = {
+    "OK" : 0,
+    "WARNING": 1,
+    "CRITICAL": 2,
+    "UNKNOWN": 3
+}
+
+plugin = None
+
+class GatheredData():
+
+    vendor = None
+    vendor_dict_key = None
+    vendor_data = None
+    
+    connection = None
+
+    __perf_data = list()
+    __output_data = dict()
+    __log_output_data = list()
+    __return_status = "OK"
+    __cached_data = dict()
+
+    def __init__(self):
+
+        for state in status_types.keys():
+            self.__output_data[state] = list()
+
+    def set_status(self, state):
+
+        if self.__return_status == state:
+            return
+
+        if state not in list(status_types.keys()):
+            raise Exception("Status '%s' is invalid" % state)
+
+        if status_types[state] > status_types[self.__return_status]:
+            self.__return_status = state
+
+    def add_output_data(self, state = None, text = None):
+
+        if state is None:
+            raise Exception("state not set")
+
+        if text is None:
+            raise Exception("text not set")
+
+        self.set_status(state)
+
+        self.__output_data[state].append(text)
+
+    def add_log_output_data(self, state = None, text = None):
+
+        if state is None:
+            raise Exception("state not set")
+
+        if text is None:
+            raise Exception("text not set")
+
+        self.set_status(state)
+
+        self.__log_output_data.append("[%s]: %s" % (state, text))
+
+    def add_perf_data(self, name, value, perf_uom = None, warning = None, critical = None):
+
+        if name is None:
+            raise Exception("option name for perf data not set")
+
+        if value is None:
+            raise Exception("option name for perf data not set")
+
+        perf_string = "'%s'=%s" % (name.replace(" ", "_"), value)
+
+        if perf_uom:
+            perf_string += perf_uom
+
+        if critical is not None and warning is None:
+            warning = -1
+
+        if warning is not None:
+            perf_string += ",%s" % str(warning)
+
+        if critical is not None:
+            perf_string += ",%s" % str(critical)
+
+        self.__perf_data.append(perf_string)
+
+    def return_output_data(self):
+
+        return_text = list()
+        for key, value in sorted(status_types.items(), key=lambda item: item[1], reverse=True):
+            for data_output in self.__output_data[key]:
+                return_text.append("[%s]: %s" % (key, data_output))
+
+        # add data from log commands
+        return_text.extend(self.__log_output_data)
+            
+        return_string = "\n".join(return_text)
+
+        # append perfdata if there is any
+        if len(self.__perf_data) > 0:
+            return_string += "|" + " ".join(self.__perf_data)
+
+        return return_string
+
+    def get_return_status(self, level = False):
+
+        if level is True:
+            return status_types[self.__return_status]
+
+        return self.__return_status
+
+    def do_exit(self):
+
+        #if self.connection is not None:
+        #    self.connection.logout()
+
+        print(self.return_output_data())
+
+        exit(self.get_return_status(True))
+
+    def get_redfish_data(self, redfish_path):
+
+        if self.__cached_data.get(redfish_path) is None:
+
+            redfish_response = self.connection.get(redfish_path, None)
+
+            if args.verbose:
+                pprint.pprint(redfish_response.dict)
+
+            if redfish_response.dict.get("error"):
+                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
+                self.add_output_data("UNKNOWN","get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+                self.do_exit()
+
+            self.__cached_data[redfish_path] = redfish_response.dict
+
+        return  self.__cached_data.get(redfish_path)
+
+    def get_redfish_view_data(self):
+
+        if self.vendor_data is not None and \
+           self.vendor_data.view_select is not None and \
+           self.vendor_data.view_sopported:
+        
+            if self.vendor_data.view_response:
+                return self.vendor_data.view_response
+
+            redfish_response = self.connection.post("/redfish/v1/Views/", body=self.vendor_data.view_select)
+
+            if args.verbose:
+                pprint.pprint(redfish_response.dict)
+
+            if redfish_response.dict.get("error"):
+                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
+                self.add_output_data("UNKNOWN","get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+                self.do_exit()
+
+            self.vendor_data.view_response = redfish_response.dict
+
+        return  self.vendor_data.view_response
+
+    
+class VendorHPEData():
+
+    ilo_hostname = None
+    ilo_version = None
+    ilo_firmware_version = None
+    ilo_health = None
+
+    resource_directory = None
+    
+    """
+        Select and store view (supported from ILO 5)
+    """
+    view_sopported = False
+    view_select = { 
+        "Select": [
+            { 
+                "From": "/Systems/1/Memory/?$expand=.",
+                "Properties": [ "Members AS Memory"]
+            },
+            { 
+                "From": "/Systems/1/Processors/?$expand=.",
+                "Properties": [ "Members AS Processors"]
+            },
+            { 
+                "From": "/Systems/1/EthernetInterfaces/?$expand=.",
+                "Properties": [ "Members AS EthernetInterfaces"]
+            },
+            {
+                "From": "/Chassis/1/Power/?$expand=.",
+                "Properties" : ["PowerSupplies", "Redundancy AS PowerRedundancy"]
+            },
+            {
+                "From": "/Chassis/1/Thermal/",
+                "Properties" : ["Temperatures", "Fans" ]
+            }
+        ]
+    }
+
+    view_response = None
+
+def parse_command_line():
+    """parse command line arguments
+    Also add current version and version date to description
+    """
+
+    # define command line options
+    parser = ArgumentParser(
+        description=self_description + "\nVersion: " + __version__ + " (" + __version_date__ + ")",
+        formatter_class=RawDescriptionHelpFormatter, add_help=False)
+
+    group = parser.add_argument_group(title="mendatory arguments")
+    group.add_argument("-H", "--host",
+                        help="define the host to request" ,
+                        required=True)
+    group.add_argument("--username", help="the login user name")
+    group.add_argument("--password", help="the login password")
+
+    group = parser.add_argument_group(title="optional arguments")
+    group.add_argument("-h", "--help", action='store_true',
+                        help="show this help message and exit")
+    group.add_argument("-w", "--warning", default=-1,
+                        help="set warning value")
+    group.add_argument("-c", "--critical", default=-1,
+                        help="set critical value")
+    group.add_argument("-v", "--verbose",  action='store_true',
+                        help="this will add all requests and responses to output")
+    group.add_argument("-d", "--detailed",  action='store_true',
+                        help="always print detailed result")
+    group.add_argument("-m", "--max",  type=int,
+                        help="set maximum of returned items for --sel or --mel")
+
+    # require at least one argument
+    group = parser.add_argument_group(title="query status/health informations (at least one is required)")
+    group.add_argument("--storage", dest="requested_query", action='append_const', const="storage",
+                        help="request storage health")
+    group.add_argument("--proc", dest="requested_query", action='append_const', const="proc",
+                        help="request processor health")
+    group.add_argument("--memory", dest="requested_query", action='append_const', const="memory",
+                        help="request memory health")
+    group.add_argument("--power", dest="requested_query", action='append_const', const="power",
+                        help="request power supply health")
+    group.add_argument("--temp", dest="requested_query", action='append_const', const="temp",
+                        help="request temperature sensors status")
+    group.add_argument("--fan", dest="requested_query", action='append_const', const="fan",
+                        help="request fan status")
+    group.add_argument("--nic", dest="requested_query", action='append_const', const="nic",
+                        help="request network interface status")
+    group.add_argument("--sel", dest="requested_query", action='append_const', const="sel",
+                        help="request System Log status")
+    group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
+                        help="request Management Processor Log status")
+
+    result = parser.parse_args()
+
+    if result.help:
+        parser.print_help()
+        exit(0)
+
+    if result.requested_query is None:
+        parser.error("You need to specify at least one query command.")
+
+    return result
+
+def MiB_to_GB(value):
+    return int(value) * 1024 ** 2 / 1000 ** 3
+
+def get_power(chassi = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Chassis/%d/Power" % chassi
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        power_response = plugin.get_redfish_view_data()
+    else:
+        power_response = plugin.get_redfish_data(redfish_url)
+
+    power_supplies = power_response.get("PowerSupplies")
+
+    health_issue = False
+    ps_num = 0
+    if power_supplies:
+        for ps in power_supplies:
+
+            ps_num += 1
+            # generic data
+            last_power = ps.get("LastPowerOutputWatts")
+            health = ps.get("Status").get("Health")
+            model = ps.get("Model")
+            last_power_output = ps.get("LastPowerOutputWatts")
+            ps_bay = None
+            ps_hp_status = None
+
+            oem_data = ps.get("Oem")
+
+            if oem_data is not None:
+
+                if plugin.vendor == "HPE":
+                    ps_bay = oem_data.get(plugin.vendor_dict_key).get("BayNumber")
+                    ps_hp_status = oem_data.get(plugin.vendor_dict_key).get("PowerSupplyStatus").get("State")
+
+            if ps_bay is None:
+                ps_bay = ps_num
+
+            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or health)
+
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+                health_issue = True
+            else:
+                if args.detailed:
+                    plugin.add_output_data("OK", status_text)
+
+            if last_power_output is not None:
+                plugin.add_perf_data("ps_%s" % str(ps_bay), int(last_power_output))
+
+            
+
+        if args.detailed is False and health_issue == False:
+            plugin.add_output_data("OK", "All power supplies (%d) are in good condition" % ps_num)
+
+    else:
+        plugin.add_output_data("UNKNOWN", "No power supply data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_temp(chassi = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        thermal_data = plugin.get_redfish_view_data()
+    else:
+        thermal_data = plugin.get_redfish_data(redfish_url)
+
+    health_issue = False
+    temp_num = 0
+    if "Temperatures" in thermal_data:
+
+        for temp in thermal_data.get("Temperatures"):
+
+            name = temp.get("Name")
+            current_temp = temp.get("ReadingCelsius")
+            critical_temp = temp.get("UpperThresholdCritical")
+            health = temp.get("Status").get("Health")
+
+            if temp.get("Status").get("State") == "Absent":
+                continue
+
+            temp_num += 1
+
+            if critical_temp is None or str(critical_temp) == "0":
+                critical_temp = "N/A"
+            status_text = "Temp sensor %s status is: %s (%s °C) (max: %s °C)" % (name, health, str(current_temp), str(critical_temp))
+
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+                health_issue = True
+            else:
+                if args.detailed:
+                    plugin.add_output_data("OK", status_text)
+
+            critical_temp = critical_temp if critical_temp != 0 else None
+
+            plugin.add_perf_data("Temp_%s" % str(name), int(current_temp), critical=critical_temp)
+
+        if args.detailed is False and health_issue == False:
+            plugin.add_output_data("OK", "All temp sensors (%d) are in good condition" % temp_num)
+            
+    else:
+        plugin.add_output_data("UNKNOWN", "No thermal data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_fan(chassi = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        thermal_data = plugin.get_redfish_view_data()
+    else:
+        thermal_data = plugin.get_redfish_data(redfish_url)
+
+    health_issue = False
+    fan_num = 0
+    if "Fans" in thermal_data:
+        for fan in thermal_data.get("Fans"):
+
+            fan_num += 1
+            
+            name = fan.get("FanName") or fan.get("Name")
+            health = fan.get("Status").get("Health")
+
+            speed = fan.get("Reading")
+            speed_units = fan.get("ReadingUnits")
+
+            if speed_units:
+                speed_units = speed_units.replace("Percent", "%")
+            else:
+                speed_units = ""
+
+            speed_status = ""
+            if speed:
+                speed_status = " (%s%s)" % (str(speed), str(speed_units))
+
+            status_text = "Fan '%s'%s status is: %s" % (name, speed_status, health)
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+                health_issue = True
+            else:
+                if args.detailed:
+                    plugin.add_output_data("OK", status_text)
+
+            if speed:
+                plugin.add_perf_data("Fan_%s" % str(name), int(speed), perf_uom=speed_units, warning=args.warning, critical=args.critical)
+
+        if args.detailed is False and health_issue == False:
+            plugin.add_output_data("OK", "All fans (%d) are in good condition" % fan_num)
+
+    else:
+        plugin.add_output_data("UNKNOWN", "No thermal data returned for API URL '%s'" % redfish_url)
+
+    return plugin
+
+def get_procs(system = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Systems/%s/" % system
+
+    systems_response = plugin.get_redfish_data(redfish_url)
+
+    if systems_response.get("ProcessorSummary"):
+
+        health = systems_response.get("ProcessorSummary").get("Status").get("HealthRollup")
+
+        if health == "OK" and args.detailed == False:
+            plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"))
+            return
+
+    # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
+    redfish_url =  "/redfish/v1/Systems/%s/Processors" % system
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        processors_response = plugin.get_redfish_view_data()
+    else:
+        processors_response = plugin.get_redfish_data(redfish_url)
+
+    if processors_response.get("Members") or processors_response.get("Processors"):
+
+        for proc in processors_response.get("Members") or processors_response.get("Processors"):
+
+            if proc.get("@odata.context"):
+                proc_response = proc
+            else:
+                proc_response = plugin.get_redfish_data(proc.get("@odata.id"))
+
+            if proc_response.get("Id"):
+                socket = proc_response.get("Socket")
+                status = proc_response.get("Status")
+                model =  proc_response.get("Model")
+
+                if status.get("State") and status.get("State") == "Absent":
+                    continue
+
+                health = status.get("Health")
+
+                status_text = "Processor %s (%s) status is: %s" % (socket, model, health)
+                if health != "OK":
+                    plugin.add_output_data("CRITICAL", status_text)
+                else:
+                    plugin.add_output_data("OK", status_text)
+            else:
+                plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
+    else:
+        plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_mem(system = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Systems/%s/" % system
+
+    systems_response = plugin.get_redfish_data(redfish_url)
+
+    if systems_response.get("MemorySummary"):
+
+        health = systems_response.get("MemorySummary").get("Status").get("HealthRollup")
+
+        if health == "OK" and args.detailed == False:
+            plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" % systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"))
+            return
+
+    # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
+    redfish_url = "/redfish/v1/Systems/%s/Memory/" % system
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        memory_response = plugin.get_redfish_view_data()
+    else:
+        memory_response = plugin.get_redfish_data(redfish_url)
+
+    if memory_response.get("Members") or memory_response.get("Memory"):
+
+        for mem_module in memory_response.get("Members") or memory_response.get("Memory"):
+
+            if mem_module.get("@odata.context"):
+                mem_module_response = mem_module
+            else:
+                mem_module_response = plugin.get_redfish_data(mem_module.get("@odata.id"))
+
+            if mem_module_response.get("Id"):
+            
+                # ILO 4
+                if mem_module_response.get("DIMMStatus"):
+
+                    health = mem_module_response.get("DIMMStatus")
+                    size = mem_module_response.get("SizeMB") / 1024
+                    name = mem_module_response.get("SocketLocator")
+
+                elif mem_module_response.get("Status"):
+
+                    status = mem_module_response.get("Status")
+
+                    if status.get("State") and status.get("State") == "Absent":
+                        continue
+
+                    if plugin.vendor == "HPE" and mem_module_response.get("Oem").get(plugin.vendor_dict_key).get("DIMMStatus"):
+                        health = mem_module_response.get("Oem").get(plugin.vendor_dict_key).get("DIMMStatus")
+                    else:
+                        health = status.get("Health")
+                    size = mem_module_response.get("CapacityMiB") / 1024
+                    name = mem_module_response.get("DeviceLocator")
+
+                else:
+                    plugin.add_output_data("UNKNOWN", "Error retrieving memory module status: %s" % mem_module_response)
+                    continue
+
+                status_text = "Memory module %s (%dGB) status is: %s" % (name, size, health)
+                if health not in [ "GoodInUse", "OK" ]:
+                    plugin.add_output_data("CRITICAL", status_text)
+                else:
+                    plugin.add_output_data("OK", status_text)
+
+            else:
+                plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
+    else:
+        plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_nics(system = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Systems/%d/EthernetInterfaces/" % system
+
+    if plugin.vendor_data and plugin.vendor_data.view_sopported:
+        nics_response = plugin.get_redfish_view_data()
+        data_members = nics_response.get("EthernetInterfaces")
+    else:
+        nics_response = plugin.get_redfish_data(redfish_url)
+        data_members = nics_response.get("Members")
+
+    health_issue = False
+    nic_num = 0
+    if data_members:
+
+        for nic in data_members:
+
+            if nic.get("@odata.context"):
+                nic_response = nic
+            else:
+                nic_response = plugin.get_redfish_data(nic.get("@odata.id"))
+
+            if nic_response.get("Id"):
+
+                nic_num += 1
+
+                link_status = None
+                id = nic_response.get("Id")
+
+                if nic_response.get("Status"):
+
+                    health = nic_response.get("Status").get("Health")
+                    link_status = nic_response.get("LinkStatus")
+
+                else:
+                    health = "Undefined"
+
+                if link_status:
+                    status_text = "NIC %s status is '%s' and link status is '%s'" % (id, health, link_status)
+                else:
+                    status_text = "NIC %s status is: %s" % (id, health)
+
+                if health != "OK":
+                    plugin.add_output_data("CRITICAL", status_text)
+                    health_issue = True
+                else:
+                    if args.detailed:
+                        plugin.add_output_data("OK", status_text)
+
+            else:
+                plugin.add_output_data("UNKNOWN", "No network interface data returned for API URL '%s'" % nic.get("@odata.id"))
+
+        if args.detailed is False and health_issue == False:
+            plugin.add_output_data("OK", "All network interfaces (%d) are in good condition" % nic_num)
+
+    else:
+        plugin.add_output_data("UNKNOWN", "No network interface data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_storage(system = 1):
+
+    global plugin
+
+    if plugin.vendor == "HPE":
+        get_storage_hpe(system)
+
+    if not plugin.vendor:
+        plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
+
+    return
+
+def get_storage_hpe(system = 1):
+
+    def get_disks(link, type = "DiskDrives"):
+
+        disks_response = plugin.get_redfish_data("%s/%s/?$expand=." % (link,type))
+
+        if disks_response.get("Members") is None:
+            if type == "DiskDrives":
+                plugin.add_output_data("UNKNOWN", "no %s found" % type)
+            return
+
+        for disk in disks_response.get("Members"):
+
+            if disk.get("@odata.context"):
+                disk_response = disk
+            else:
+                disk_response = plugin.get_redfish_data(disk.get("@odata.id"))
+
+            health = disk_response.get("Status").get("Health")
+            location = disk_response.get("Location")
+            size = disk_response.get("CapacityGB")
+
+            status_text = "Physical Drive (%s) %sGB Status: %s" % (location, size, health)
+            
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+            else:
+                plugin.add_output_data("OK", status_text)
+
+    def get_logical_drives(link):
+    
+        ld_response = plugin.get_redfish_data("%s/LogicalDrives/?$expand=." % link)
+
+        if ld_response.get("Members") is None:
+            plugin.add_output_data("UNKNOWN", "no logical drives found")
+            return
+
+        for logical_drive in ld_response.get("Members"):
+
+            if logical_drive.get("@odata.context"):
+                logical_drive_response = logical_drive
+            else:
+                logical_drive_response = plugin.get_redfish_data(logical_drive.get("@odata.id"))
+
+            health = logical_drive_response.get("Status").get("Health")
+            id = logical_drive_response.get("LogicalDriveNumber")
+            size = int(logical_drive_response.get("CapacityMiB")) * 1024 ** 2 / 1000 ** 3
+            raid = logical_drive_response.get("Raid")
+            
+            status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, health)
+
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+            else:
+                plugin.add_output_data("OK", status_text)
+
+    def get_enclosures(link):
+    
+        enclosures_response = plugin.get_redfish_data("%s/StorageEnclosures/?$expand=." % link)
+
+        if enclosures_response.get("Members") is None:
+            plugin.add_output_data("UNKNOWN", "no storage enclosures found")
+            return
+
+        for enclosure in enclosures_response.get("Members"):
+
+            if enclosure.get("@odata.context"):
+                enclosure_response = enclosure
+            else:
+                enclosure_response = plugin.get_redfish_data(enclosure.get("@odata.id"))
+
+            health = enclosure_response.get("Status").get("Health")
+            location = enclosure_response.get("Location")
+            
+            status_text = "StorageEnclosure (%s) Status: %s" % (location, health)
+
+            if health != "OK":
+                plugin.add_output_data("CRITICAL", status_text)
+            else:
+                plugin.add_output_data("OK", status_text)
+
+    
+    global plugin
+
+    redfish_url = "/redfish/v1/Systems/%s/SmartStorage/" % system
+
+    storage_response = plugin.get_redfish_data(redfish_url)
+
+    status = storage_response.get("Status").get("Health")
+
+    if status and status == "OK" and args.detailed == False:
+        plugin.add_output_data("OK", "Status of HP SmartArray is: %s" % status)
+        return
+
+    # unhealthy
+    redfish_url = "/redfish/v1/Systems/%s/SmartStorage/ArrayControllers/?$expand=." % system
+
+    array_controllers_response = plugin.get_redfish_data(redfish_url)
+
+
+    if array_controllers_response.get("Members"):
+
+        for array_controller in array_controllers_response.get("Members"):
+
+            if array_controller.get("@odata.context"):
+                controller_response = array_controller
+            else:
+                controller_response = plugin.get_redfish_data(array_controller.get("@odata.id"))
+
+            if controller_response.get("Id"):
+                model = controller_response.get("Model")
+                fw_version = controller_response.get("FirmwareVersion").get("Current").get("VersionString")
+                status = controller_response.get("Status")
+
+                if status.get("State") and status.get("State") == "Absent":
+                    continue
+
+                health = status.get("Health")
+                
+                status_text = "%s (FW: %s) status is: %s" % (model, fw_version, health)
+
+                if health != "OK":
+                    plugin.add_output_data("CRITICAL", status_text)
+                else:
+                    plugin.add_output_data("OK", status_text)
+
+                get_disks(array_controller.get("@odata.id"))
+                get_logical_drives(array_controller.get("@odata.id"))
+                get_enclosures(array_controller.get("@odata.id"))
+                get_disks(array_controller.get("@odata.id"), "UnconfiguredDrives")
+            else:
+                plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % array_controller.get("@odata.id"))
+
+    else:
+        plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % redfish_url)
+
+    return
+
+def get_event_log(type, system_manager_id = 1):
+
+    global plugin
+
+    if type not in ["manager", "system"]:
+        plugin.add_output_data("UNKNOWN", "Unknown event log type: %s", type)
+        return
+
+    if plugin.vendor == "HPE":
+        get_event_log_hp(type, system_manager_id)
+    else:
+        plugin.add_output_data("UNKNOWN", "Command to check %s event log not implemented for this vendor" % type)
+
+    return
+
+def get_event_log_hp(type, system_manager_id):
+
+    global plugin
+
+    if plugin.vendor_data.ilo_version.lower() != "ilo 5":
+        plugin.add_output_data("UNKNOWN", "Command to check %s event log not supported for ILO version '%s'" % (type, plugin.vendor_data.ilo_version))
+        return
+
+    if type == "system":
+        redfish_url = "/redfish/v1/Systems/%s/LogServices/IML/Entries/?$expand=." % system_manager_id
+    else:
+        redfish_url = "/redfish/v1/Managers/%s/LogServices/IEL/Entries?$expand=." % system_manager_id
+
+    event_data = plugin.get_redfish_data(redfish_url)
+
+    # reverse list from newest to oldest entry
+    event_entries = event_data.get("Members")
+    event_entries.reverse()
+
+    num_entry = 0
+    for event_entry in event_entries:
+
+        message = event_entry.get("Message")
+
+        if type == "manager" and "Browser log" in message:
+            continue
+        
+        num_entry += 1
+
+        # obey max results returned
+        if args.max and num_entry > args.max:
+            return
+
+        severity = event_entry.get("Severity")
+        date = event_entry.get("Created")
+        repaired = event_entry.get("Oem").get(plugin.vendor_dict_key).get("Repaired")
+
+        if repaired == None:
+            repaired = False
+
+        status = "OK"
+
+        if severity == "Warning" and repaired is False:
+            status = "WARNING"
+        elif severity != "OK" and repaired is False:
+            status = "CRITICAL"
+
+        plugin.add_log_output_data(status, "%s: %s" %(date, message))
+
+    return
+
+def get_basic_system_info():
+
+    global plugin
+
+    basic_infos = plugin.connection.root
+
+    if basic_infos.get("Oem"):
+
+        vendor_string = list(basic_infos.get("Oem"))[0]
+
+        plugin.vendor_dict_key = vendor_string
+
+        if vendor_string in ["Hpe", "Hp"]:
+            plugin.vendor = "HPE"
+
+            plugin.vendor_data = VendorHPEData()
+
+            manager_data = basic_infos.get("Oem").get(vendor_string).get("Manager")
+
+            plugin.vendor_data.ilo_hostname = manager_data[0].get("HostName")
+            plugin.vendor_data.ilo_version = manager_data[0].get("ManagerType")
+            plugin.vendor_data.ilo_firmware_version = manager_data[0].get("ManagerFirmwareVersion")
+
+            if plugin.vendor_data.ilo_version.lower() == "ilo 5":
+                plugin.vendor_data.view_sopported = True
+
+
+            #resource_directory_response = get_cached_data(handle, "/redfish/v1/ResourceDirectory/")
+
+            # try to shortcut a bit
+            """
+            resource_list = list()
+            for resource_instance in resource_directory_response.get("Instances"):
+                resource_list.append(resource_instance.get("@odata.id"))
+
+            pprint.pprint(resource_list)
+
+            r = re.compile(".*\/Systems\/\d\/Processors\/\d\/$")
+            pprint.pprint(list(filter(r.match, resource_list)))
+
+            r = re.compile(".*\/DiskDrives\/\d\/$")
+            pprint.pprint(list(filter(r.match, resource_list)))
+
+            r = re.compile(".*\/LogicalDrives\/\d\/$")
+            pprint.pprint(list(filter(r.match, resource_list)))
+
+            r = re.compile(".*\/StorageEnclosures\/\d\/$")
+            pprint.pprint(list(filter(r.match, resource_list)))
+
+            r = re.compile(".*\/EthernetInterfaces\/\d\/$")
+            pprint.pprint(list(filter(r.match, resource_list)))
+            #response.vendor_data.resource_directory =
+            """
+
+    return
+
+
+if __name__ == "__main__":
+    # start here
+    args = parse_command_line()
+
+    if args.verbose:
+        # initialize logger
+        logging.basicConfig(level="DEBUG", format='%(asctime)s - %(levelname)s: %(message)s')
+
+    plugin = GatheredData()
+
+    # initialize connection
+    try:
+        plugin.connection = redfish.redfish_client(base_url="https://%s" % args.host, max_retry=1,)
+    except redfish.rest.v1.ServerDownOrUnreachableError:
+        plugin.add_output_data("CRITICAL", "Host '%s' down or unreachable." % args.host)
+    except redfish.rest.v1.RetriesExhaustedError:
+        plugin.add_output_data("CRITICAL", "Unable to connect to Host '%s', retries exhausted." % args.host)
+
+    if not plugin.connection:
+        plugin.do_exit()
+
+    try:
+        plugin.connection.login(username=args.username, password=args.password, auth="session")
+    except redfish.rest.v1.InvalidCredentialsError:
+        plugin.add_output_data("CRITICAL", "Username or password invalid.")
+        plugin.do_exit()
+
+    # get basic informations
+    get_basic_system_info()
+
+    if plugin.vendor is None:
+
+        if plugin.vendor_dict_key:
+            plugin.add_output_data("UNKNOWN", "Support for vendor '%s' is currently not implemented." % plugin.vendor_dict_key)
+        else:
+            plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
+
+        plugin.do_exit()
+
+    """
+    print("BIOS Version: %s" % data["BiosVersion"])
+    print("HostName: %s" % data["HostName"])
+    print("Model: %s" % data["Model"])
+    print("PowerState: %s" % data["PowerState"])
+    """
+
+    if "power"      in args.requested_query: get_power()
+    if "temp"       in args.requested_query: get_temp()
+    if "fan"        in args.requested_query: get_fan()
+    if "proc"       in args.requested_query: get_procs()
+    if "memory"     in args.requested_query: get_mem()
+    if "nic"        in args.requested_query: get_nics()
+    if "storage"    in args.requested_query: get_storage()
+    if "mel"        in args.requested_query: get_event_log("manager")
+    if "sel"        in args.requested_query: get_event_log("system")
+
+    plugin.do_exit()
+
+# EOF
+
