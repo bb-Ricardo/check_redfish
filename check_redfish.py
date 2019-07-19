@@ -52,34 +52,41 @@ cd ..
 rm -rf redfish-2.0.9*
 """
 
-import redfish
+# import build-in modules
 import logging
 #import re
-
+import pickle
+import os
+import tempfile
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
-
 import pprint
+import json
+
+# import 3rd party modules
+import redfish
 
 # TODO:
-# * add options for session file and session file path -> see check_vmware
-# * use session key for login
-# * read and write session key to file
-# * create new session if current session expired
-# * read credentials from environment
-# * read credentials from credential file -> username=, password= -> see check_vmware
-# * take core of 'None' time stamps in event logs
+# -* add options for session file and session file path -> see check_vmware-
+# -* use session key for login-
+# -* read and write session key to file-
+# -* create new session if current session expired-
+# -* read credentials from environment-
+# -* read credentials from credential file -> username=, password= -> see check_vmware-
+# * take care of 'None' time stamps in event logs
 # * let user force reading event logs on iLO 4, set max to 30
 # * add inventory option
 # * add info command to return model, version, ...
 # * add firmware command to print out current firmware
-# * add bmc info command to return ILO, version, status, 
+# * add bmc info command to return ILO, version, status,
 # * add README
 # * add license
 # * add pip install file
-# * test behavior on insecure certs
+# * document code and add more debugging output
+# -* test behavior on insecure certs-
+# -* fix "./check_redfish.py -h"-
 
-__version__ = "0.0.1"
-__version_date__ = "2019-07-15"
+__version__ = "0.0.2"
+__version_date__ = "2019-07-19"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "GPLv3"
@@ -95,24 +102,331 @@ status_types = {
 
 plugin = None
 
-class GatheredData():
+class RedfishConnection():
 
+    sessionfilepath = None
+    session_was_restored = False
+    connection = None
+    username = None
+    password = None
+    __cached_data = dict()
     vendor = None
     vendor_dict_key = None
     vendor_data = None
-    
-    connection = None
+    cli_args = None
+
+    def __init__(self, cli_args = None):
+
+        if cli_args is None:
+            raise Exception("No args passed to RedfishConnection()")
+
+        if cli_args.host is None:
+            raise Exception("cli args host not set")
+
+        self.cli_args = cli_args
+
+        self.sessionfilepath = self.get_session_file_name()
+        self.restore_session_from_file()
+
+        self.init_connection()
+
+    def exit_on_error(self, message, level = "UNKNOWN"):
+
+        print("[%s]: %s" % (level,message))
+        exit(status_types.get(level))
+
+    def get_credentials(self):
+
+        """
+            Order of credential reading from highest to lowest priority
+            1. cli_args username and apssword
+            2. credentials from auth file
+            3. credentials from environment
+        """
+
+        env_username_var = "CHECK_REDFISH_USERNAME"
+        env_password_var = "CHECK_REDFISH_PASSWORD"
+
+        # 1. if credentials are set via arguments then use them and return
+        if self.cli_args.username is not None and self.cli_args.password is not None:
+            self.username = self.cli_args.username
+            self.password = self.cli_args.password
+            return
+
+        # 2. a authentication file is defined, lets try to parse it
+        if self.cli_args.authfile is not None:
+
+            try:
+                with open(self.cli_args.authfile) as authfile:
+                    for line in authfile:
+                        name, var = line.partition("=")[::2]
+                        if name.strip() == "username":
+                            self.username = var.strip()
+                        if name.strip() == "password":
+                            self.password = var.strip()
+
+            except FileNotFoundError:
+                self.exit_on_error("Provided authentication file not found: %s" % self.cli_args.authfile)
+            except PermissionError as e:
+                self.exit_on_error("Error opening authentication file: %s" % self.cli_args.authfile)
+            except Exception as e:
+                self.exit_on_error("Unknown exception while trying to open authentication file %s: %s" % self.cli_args.authfile, str(e))
+
+            if self.username is None or self.password is None:
+                self.exit_on_error("Error parsing authentication file '%s'. Make sure username and password are set properly." % self.cli_args.authfile)
+
+            return
+
+        # 3. try to read credentials from environment
+        self.username = os.getenv(env_username_var)
+        self.password = os.getenv(env_password_var)
+
+        return
+
+    def get_session_file_name(self):
+
+        default_session_file_prefix = "check_redfish_"
+        default_session_file_suffix = ".session"
+        sessionfiledir = None
+
+        if self.cli_args.sessionfiledir:
+            sessionfiledir = self.cli_args.sessionfiledir
+        else:
+            sessionfiledir = tempfile.gettempdir()
+
+        # check if directory is a file
+        if os.path.isfile(sessionfiledir):
+            self.exit_on_error("The session file destination (%s) seems to be file." % sessionfiledir)
+
+        # check if directory exists
+        if not os.path.exists(sessionfiledir):
+            # try to create directory
+            try:
+                os.makedirs(sessionfiledir, 0o700)
+            except OSError:
+                self.exit_on_error("Unable to create session file directory: %s." % sessionfiledir)
+            except Exception as e:
+                self.exit_on_error("Unknown exception while creating session file directory %s: %s" % sessionfiledir, str(e))
+
+        # check if directory is writable
+        if not os.access(sessionfiledir, os.X_OK | os.W_OK):
+            self.exit_on_error("Error writing to session file directory: %s" % sessionfiledir)
+
+        # get full path to session file
+        if self.cli_args.sessionfile:
+            sessionfilename = self.cli_args.sessionfile
+        else:
+            sessionfilename = default_session_file_prefix + self.cli_args.host
+
+        sessionfilepath = os.path.normpath(sessionfiledir) + os.sep + sessionfilename + default_session_file_suffix
+
+        if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.R_OK):
+            self.exit_on_error("Got no permission to read existing session file: %s" % sessionfilepath)
+
+        if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.W_OK):
+            self.exit_on_error("Got no permission to write to existing session file: %s" % sessionfilepath)
+
+        return sessionfilepath
+
+    def restore_session_from_file(self):
+
+        if self.sessionfilepath is None:
+            raise Exception("sessionfilepath not set.")
+
+        try:
+            with open(self.sessionfilepath, 'rb') as pickled_session:
+                self.connection = pickle.load(pickled_session)
+        except (FileNotFoundError, EOFError):
+            pass
+        except PermissionError as e:
+            self.exit_on_error("Error opening session file: %s" % str(e))
+        except Exception as e:
+            self.exit_on_error("Unknown exception while trying to open session file %s: %s" % (self.sessionfilepath, str(e)))
+
+        # restore root attribute as RisObject
+        # unfortunately we have to re implement the code from get_root_object function
+        try:
+            root_data = json.loads(self.connection.root_resp.text, "ISO-8859-1")
+        except TypeError:
+            root_data = json.loads(self.connection.root_resp.text)
+        except AttributeError:
+            root_data = None
+        except ValueError as excp:
+            raise
+
+        if root_data is not None:
+            self.connection.root = redfish.rest.v1.RisObject.parse(root_data)
+
+        self.session_was_restored = True
+
+        return
+
+    def save_session_to_file(self):
+
+        if self.sessionfilepath is None:
+            raise Exception("sessionfilepath not set")
+
+        if self.connection is None:
+            raise Exception("session not initialized")
+
+        # unset root attribute
+        # root attribute is an RisObject which can't be pickled
+        root_data = self.connection.root
+        self.connection.root = None
+
+        try:
+            with open(self.sessionfilepath, 'wb') as pickled_session:
+                pickle.dump(self.connection, pickled_session)
+        except PermissionError as e:
+            self.exit_on_error("Error opening session file to save session: %s" % str(e))
+        except Exception as e:
+
+            # log out from current connection
+            self.connection.logout()
+
+            # try to delete session file
+            try:
+                os.remove(self.sessionfilepath)
+            except Exception:
+                pass
+
+            self.exit_on_error("Unknown exception while trying to save session to file %s: %s" % (self.sessionfilepath, str(e)))
+
+        # set root attribute again
+        self.connection.root = root_data
+
+        return
+
+    def init_connection(self, reset = False):
+
+        # reset connection
+        if reset is True:
+            self.connection = None
+
+        # if we have a connection object then just return
+        if self.connection is not None:
+            return
+
+        self.get_credentials()
+
+        if self.username is None or self.password is None:
+            self.exit_on_error("Error: insufficient credentials provided")
+
+        # initialize connection
+        try:
+            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=1, timeout=5)
+        except redfish.rest.v1.ServerDownOrUnreachableError:
+            self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
+        except redfish.rest.v1.RetriesExhaustedError:
+            self.exit_on_error("Unable to connect to Host '%s', retries exhausted." % self.cli_args.host, "CRITICAL")
+
+        if not self.connection:
+            raise Exception("Unable to establish connection.")
+
+        try:
+            self.connection.login(username=self.username, password=self.password, auth="session")
+        except redfish.rest.v1.InvalidCredentialsError:
+            self.exit_on_error("Username or password invalid.", "CRITICAL")
+
+        if self.connection is not None:
+            self.save_session_to_file()
+
+        return
+
+    def _rf_get(self, redfish_path):
+
+        try:
+            return self.connection.get(redfish_path, None)
+        except redfish.rest.v1.RetriesExhaustedError:
+            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
+
+    def get(self, redfish_path):
+
+        if self.__cached_data.get(redfish_path) is None:
+
+            redfish_response = self._rf_get(redfish_path)
+
+            # session invalid
+            if redfish_response.status >= 400 and self.session_was_restored is True:
+
+                # reset connection
+                self.init_connection(reset = True)
+
+                # query again
+                redfish_response = self._rf_get(redfish_path)
+
+            if args.verbose:
+                pprint.pprint(redfish_response.dict)
+
+            if redfish_response.dict.get("error"):
+                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
+                self.exit_on_error("get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+
+            self.__cached_data[redfish_path] = redfish_response.dict
+
+        return  self.__cached_data.get(redfish_path)
+
+    def _rf_post(self, redfish_path, body):
+
+        try:
+            return self.connection.post(redfish_path, body=body)
+        except redfish.rest.v1.RetriesExhaustedError:
+            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
+
+    def get_view(self, redfish_path = None):
+
+        if self.vendor_data is not None and \
+           self.vendor_data.view_select is not None and \
+           self.vendor_data.view_sopported:
+
+            if self.vendor_data.view_response:
+                return self.vendor_data.view_response
+
+            redfish_response = self._rf_post("/redfish/v1/Views/", self.vendor_data.view_select)
+
+            # session invalid
+            if redfish_response.status >= 400 and self.session_was_restored is True:
+
+                # reset connection
+                self.init_connection(reset = True)
+
+                # query again
+                redfish_response = self._rf_post("/redfish/v1/Views/", self.vendor_data.view_select)
+
+            if args.verbose:
+                pprint.pprint(redfish_response.dict)
+
+            if redfish_response.dict.get("error"):
+                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
+                self.exit_on_error("get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+
+            self.vendor_data.view_response = redfish_response.dict
+
+            return  self.vendor_data.view_response
+
+        if redfish_path is not None:
+            return self.get(redfish_path)
+
+        return None
+
+class PluginData():
+
+    rf = None
 
     __perf_data = list()
     __output_data = dict()
     __log_output_data = list()
     __return_status = "OK"
-    __cached_data = dict()
 
-    def __init__(self):
+    def __init__(self, cli_args = None):
 
         for state in status_types.keys():
             self.__output_data[state] = list()
+
+        if cli_args is None:
+            raise Exception("No args passed to RedfishConnection()")
+
+        self.rf = RedfishConnection(cli_args)
 
     def set_status(self, state):
 
@@ -182,7 +496,7 @@ class GatheredData():
 
         # add data from log commands
         return_text.extend(self.__log_output_data)
-            
+
         return_string = "\n".join(return_text)
 
         # append perfdata if there is any
@@ -200,55 +514,10 @@ class GatheredData():
 
     def do_exit(self):
 
-        #if self.connection is not None:
-        #    self.connection.logout()
-
         print(self.return_output_data())
 
         exit(self.get_return_status(True))
 
-    def get_redfish_data(self, redfish_path):
-
-        if self.__cached_data.get(redfish_path) is None:
-
-            redfish_response = self.connection.get(redfish_path, None)
-
-            if args.verbose:
-                pprint.pprint(redfish_response.dict)
-
-            if redfish_response.dict.get("error"):
-                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
-                self.add_output_data("UNKNOWN","get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
-                self.do_exit()
-
-            self.__cached_data[redfish_path] = redfish_response.dict
-
-        return  self.__cached_data.get(redfish_path)
-
-    def get_redfish_view_data(self):
-
-        if self.vendor_data is not None and \
-           self.vendor_data.view_select is not None and \
-           self.vendor_data.view_sopported:
-        
-            if self.vendor_data.view_response:
-                return self.vendor_data.view_response
-
-            redfish_response = self.connection.post("/redfish/v1/Views/", body=self.vendor_data.view_select)
-
-            if args.verbose:
-                pprint.pprint(redfish_response.dict)
-
-            if redfish_response.dict.get("error"):
-                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
-                self.add_output_data("UNKNOWN","get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
-                self.do_exit()
-
-            self.vendor_data.view_response = redfish_response.dict
-
-        return  self.vendor_data.view_response
-
-    
 class VendorHPEData():
 
     ilo_hostname = None
@@ -257,22 +526,22 @@ class VendorHPEData():
     ilo_health = None
 
     resource_directory = None
-    
+
     """
         Select and store view (supported from ILO 5)
     """
     view_sopported = False
-    view_select = { 
+    view_select = {
         "Select": [
-            { 
+            {
                 "From": "/Systems/1/Memory/?$expand=.",
                 "Properties": [ "Members AS Memory"]
             },
-            { 
+            {
                 "From": "/Systems/1/Processors/?$expand=.",
                 "Properties": [ "Members AS Processors"]
             },
-            { 
+            {
                 "From": "/Systems/1/EthernetInterfaces/?$expand=.",
                 "Properties": [ "Members AS EthernetInterfaces"]
             },
@@ -301,10 +570,14 @@ def parse_command_line():
 
     group = parser.add_argument_group(title="mendatory arguments")
     group.add_argument("-H", "--host",
-                        help="define the host to request" ,
-                        required=True)
-    group.add_argument("--username", help="the login user name")
-    group.add_argument("--password", help="the login password")
+                        help="define the host to request" )
+
+    group = parser.add_argument_group(title="authentication arguments")
+    group.add_argument("-u", "--username", help="the login user name")
+    group.add_argument("-p", "--password", help="the login password")
+    group.add_argument("-f", "--authfile", help="authentication file with user name and password")
+    group.add_argument("--sessionfile", help="define name of session file")
+    group.add_argument("--sessionfiledir", help="define directory where the plugin saves session files")
 
     group = parser.add_argument_group(title="optional arguments")
     group.add_argument("-h", "--help", action='store_true',
@@ -350,6 +623,11 @@ def parse_command_line():
     if result.requested_query is None:
         parser.error("You need to specify at least one query command.")
 
+    # need to check this ourself otherwise it's not
+    # possible to put the help command into a arguments group
+    if result.host is None:
+        parser.error("no remote host defined")
+
     return result
 
 def MiB_to_GB(value):
@@ -361,12 +639,7 @@ def get_power(chassi = 1):
 
     redfish_url = "/redfish/v1/Chassis/%d/Power" % chassi
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        power_response = plugin.get_redfish_view_data()
-    else:
-        power_response = plugin.get_redfish_data(redfish_url)
-
-    power_supplies = power_response.get("PowerSupplies")
+    power_supplies = plugin.rf.get_view(redfish_url).get("PowerSupplies")
 
     health_issue = False
     ps_num = 0
@@ -386,9 +659,9 @@ def get_power(chassi = 1):
 
             if oem_data is not None:
 
-                if plugin.vendor == "HPE":
-                    ps_bay = oem_data.get(plugin.vendor_dict_key).get("BayNumber")
-                    ps_hp_status = oem_data.get(plugin.vendor_dict_key).get("PowerSupplyStatus").get("State")
+                if plugin.rf.vendor == "HPE":
+                    ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("BayNumber")
+                    ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
 
             if ps_bay is None:
                 ps_bay = ps_num
@@ -405,7 +678,7 @@ def get_power(chassi = 1):
             if last_power_output is not None:
                 plugin.add_perf_data("ps_%s" % str(ps_bay), int(last_power_output))
 
-            
+
 
         if args.detailed is False and health_issue == False:
             plugin.add_output_data("OK", "All power supplies (%d) are in good condition" % ps_num)
@@ -421,10 +694,7 @@ def get_temp(chassi = 1):
 
     redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        thermal_data = plugin.get_redfish_view_data()
-    else:
-        thermal_data = plugin.get_redfish_data(redfish_url)
+    thermal_data = plugin.rf.get_view(redfish_url)
 
     health_issue = False
     temp_num = 0
@@ -459,7 +729,7 @@ def get_temp(chassi = 1):
 
         if args.detailed is False and health_issue == False:
             plugin.add_output_data("OK", "All temp sensors (%d) are in good condition" % temp_num)
-            
+
     else:
         plugin.add_output_data("UNKNOWN", "No thermal data returned for API URL '%s'" % redfish_url)
 
@@ -471,10 +741,7 @@ def get_fan(chassi = 1):
 
     redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        thermal_data = plugin.get_redfish_view_data()
-    else:
-        thermal_data = plugin.get_redfish_data(redfish_url)
+    thermal_data = plugin.rf.get_view(redfish_url)
 
     health_issue = False
     fan_num = 0
@@ -482,7 +749,7 @@ def get_fan(chassi = 1):
         for fan in thermal_data.get("Fans"):
 
             fan_num += 1
-            
+
             name = fan.get("FanName") or fan.get("Name")
             health = fan.get("Status").get("Health")
 
@@ -523,7 +790,7 @@ def get_procs(system = 1):
 
     redfish_url = "/redfish/v1/Systems/%s/" % system
 
-    systems_response = plugin.get_redfish_data(redfish_url)
+    systems_response = plugin.rf.get(redfish_url)
 
     if systems_response.get("ProcessorSummary"):
 
@@ -536,10 +803,7 @@ def get_procs(system = 1):
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
     redfish_url =  "/redfish/v1/Systems/%s/Processors" % system
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        processors_response = plugin.get_redfish_view_data()
-    else:
-        processors_response = plugin.get_redfish_data(redfish_url)
+    processors_response = plugin.rf.get_view(redfish_url)
 
     if processors_response.get("Members") or processors_response.get("Processors"):
 
@@ -548,7 +812,7 @@ def get_procs(system = 1):
             if proc.get("@odata.context"):
                 proc_response = proc
             else:
-                proc_response = plugin.get_redfish_data(proc.get("@odata.id"))
+                proc_response = plugin.rf.get(proc.get("@odata.id"))
 
             if proc_response.get("Id"):
                 socket = proc_response.get("Socket")
@@ -578,7 +842,7 @@ def get_mem(system = 1):
 
     redfish_url = "/redfish/v1/Systems/%s/" % system
 
-    systems_response = plugin.get_redfish_data(redfish_url)
+    systems_response = plugin.rf.get(redfish_url)
 
     if systems_response.get("MemorySummary"):
 
@@ -591,10 +855,7 @@ def get_mem(system = 1):
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
     redfish_url = "/redfish/v1/Systems/%s/Memory/" % system
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        memory_response = plugin.get_redfish_view_data()
-    else:
-        memory_response = plugin.get_redfish_data(redfish_url)
+    memory_response = plugin.rf.get_view(redfish_url)
 
     if memory_response.get("Members") or memory_response.get("Memory"):
 
@@ -603,10 +864,10 @@ def get_mem(system = 1):
             if mem_module.get("@odata.context"):
                 mem_module_response = mem_module
             else:
-                mem_module_response = plugin.get_redfish_data(mem_module.get("@odata.id"))
+                mem_module_response = plugin.rf.get(mem_module.get("@odata.id"))
 
             if mem_module_response.get("Id"):
-            
+
                 # ILO 4
                 if mem_module_response.get("DIMMStatus"):
 
@@ -621,8 +882,8 @@ def get_mem(system = 1):
                     if status.get("State") and status.get("State") == "Absent":
                         continue
 
-                    if plugin.vendor == "HPE" and mem_module_response.get("Oem").get(plugin.vendor_dict_key).get("DIMMStatus"):
-                        health = mem_module_response.get("Oem").get(plugin.vendor_dict_key).get("DIMMStatus")
+                    if plugin.rf.vendor == "HPE" and mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus"):
+                        health = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
                     else:
                         health = status.get("Health")
                     size = mem_module_response.get("CapacityMiB") / 1024
@@ -651,12 +912,8 @@ def get_nics(system = 1):
 
     redfish_url = "/redfish/v1/Systems/%d/EthernetInterfaces/" % system
 
-    if plugin.vendor_data and plugin.vendor_data.view_sopported:
-        nics_response = plugin.get_redfish_view_data()
-        data_members = nics_response.get("EthernetInterfaces")
-    else:
-        nics_response = plugin.get_redfish_data(redfish_url)
-        data_members = nics_response.get("Members")
+    nics_response = plugin.rf.get_view(redfish_url)
+    data_members = nics_response.get("EthernetInterfaces") or nics_response.get("Members")
 
     health_issue = False
     nic_num = 0
@@ -667,7 +924,7 @@ def get_nics(system = 1):
             if nic.get("@odata.context"):
                 nic_response = nic
             else:
-                nic_response = plugin.get_redfish_data(nic.get("@odata.id"))
+                nic_response = plugin.rf.get(nic.get("@odata.id"))
 
             if nic_response.get("Id"):
 
@@ -711,10 +968,10 @@ def get_storage(system = 1):
 
     global plugin
 
-    if plugin.vendor == "HPE":
+    if plugin.rf.vendor == "HPE":
         get_storage_hpe(system)
 
-    if not plugin.vendor:
+    if not plugin.rf.vendor:
         plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
 
     return
@@ -723,7 +980,7 @@ def get_storage_hpe(system = 1):
 
     def get_disks(link, type = "DiskDrives"):
 
-        disks_response = plugin.get_redfish_data("%s/%s/?$expand=." % (link,type))
+        disks_response = plugin.rf.get("%s/%s/?$expand=." % (link,type))
 
         if disks_response.get("Members") is None:
             if type == "DiskDrives":
@@ -735,22 +992,22 @@ def get_storage_hpe(system = 1):
             if disk.get("@odata.context"):
                 disk_response = disk
             else:
-                disk_response = plugin.get_redfish_data(disk.get("@odata.id"))
+                disk_response = plugin.rf.get(disk.get("@odata.id"))
 
             health = disk_response.get("Status").get("Health")
             location = disk_response.get("Location")
             size = disk_response.get("CapacityGB")
 
             status_text = "Physical Drive (%s) %sGB Status: %s" % (location, size, health)
-            
+
             if health != "OK":
                 plugin.add_output_data("CRITICAL", status_text)
             else:
                 plugin.add_output_data("OK", status_text)
 
     def get_logical_drives(link):
-    
-        ld_response = plugin.get_redfish_data("%s/LogicalDrives/?$expand=." % link)
+
+        ld_response = plugin.rf.get("%s/LogicalDrives/?$expand=." % link)
 
         if ld_response.get("Members") is None:
             plugin.add_output_data("UNKNOWN", "no logical drives found")
@@ -761,13 +1018,13 @@ def get_storage_hpe(system = 1):
             if logical_drive.get("@odata.context"):
                 logical_drive_response = logical_drive
             else:
-                logical_drive_response = plugin.get_redfish_data(logical_drive.get("@odata.id"))
+                logical_drive_response = plugin.rf.get(logical_drive.get("@odata.id"))
 
             health = logical_drive_response.get("Status").get("Health")
             id = logical_drive_response.get("LogicalDriveNumber")
             size = int(logical_drive_response.get("CapacityMiB")) * 1024 ** 2 / 1000 ** 3
             raid = logical_drive_response.get("Raid")
-            
+
             status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, health)
 
             if health != "OK":
@@ -776,8 +1033,8 @@ def get_storage_hpe(system = 1):
                 plugin.add_output_data("OK", status_text)
 
     def get_enclosures(link):
-    
-        enclosures_response = plugin.get_redfish_data("%s/StorageEnclosures/?$expand=." % link)
+
+        enclosures_response = plugin.rf.get("%s/StorageEnclosures/?$expand=." % link)
 
         if enclosures_response.get("Members") is None:
             plugin.add_output_data("UNKNOWN", "no storage enclosures found")
@@ -788,11 +1045,11 @@ def get_storage_hpe(system = 1):
             if enclosure.get("@odata.context"):
                 enclosure_response = enclosure
             else:
-                enclosure_response = plugin.get_redfish_data(enclosure.get("@odata.id"))
+                enclosure_response = plugin.rf.get(enclosure.get("@odata.id"))
 
             health = enclosure_response.get("Status").get("Health")
             location = enclosure_response.get("Location")
-            
+
             status_text = "StorageEnclosure (%s) Status: %s" % (location, health)
 
             if health != "OK":
@@ -800,12 +1057,12 @@ def get_storage_hpe(system = 1):
             else:
                 plugin.add_output_data("OK", status_text)
 
-    
+
     global plugin
 
     redfish_url = "/redfish/v1/Systems/%s/SmartStorage/" % system
 
-    storage_response = plugin.get_redfish_data(redfish_url)
+    storage_response = plugin.rf.get(redfish_url)
 
     status = storage_response.get("Status").get("Health")
 
@@ -816,8 +1073,7 @@ def get_storage_hpe(system = 1):
     # unhealthy
     redfish_url = "/redfish/v1/Systems/%s/SmartStorage/ArrayControllers/?$expand=." % system
 
-    array_controllers_response = plugin.get_redfish_data(redfish_url)
-
+    array_controllers_response = plugin.rf.get(redfish_url)
 
     if array_controllers_response.get("Members"):
 
@@ -826,7 +1082,7 @@ def get_storage_hpe(system = 1):
             if array_controller.get("@odata.context"):
                 controller_response = array_controller
             else:
-                controller_response = plugin.get_redfish_data(array_controller.get("@odata.id"))
+                controller_response = plugin.rf.get(array_controller.get("@odata.id"))
 
             if controller_response.get("Id"):
                 model = controller_response.get("Model")
@@ -837,7 +1093,7 @@ def get_storage_hpe(system = 1):
                     continue
 
                 health = status.get("Health")
-                
+
                 status_text = "%s (FW: %s) status is: %s" % (model, fw_version, health)
 
                 if health != "OK":
@@ -865,7 +1121,7 @@ def get_event_log(type, system_manager_id = 1):
         plugin.add_output_data("UNKNOWN", "Unknown event log type: %s", type)
         return
 
-    if plugin.vendor == "HPE":
+    if plugin.rf.vendor == "HPE":
         get_event_log_hp(type, system_manager_id)
     else:
         plugin.add_output_data("UNKNOWN", "Command to check %s event log not implemented for this vendor" % type)
@@ -876,8 +1132,8 @@ def get_event_log_hp(type, system_manager_id):
 
     global plugin
 
-    if plugin.vendor_data.ilo_version.lower() != "ilo 5":
-        plugin.add_output_data("UNKNOWN", "Command to check %s event log not supported for ILO version '%s'" % (type, plugin.vendor_data.ilo_version))
+    if plugin.rf.vendor_data.ilo_version.lower() != "ilo 5":
+        plugin.add_output_data("UNKNOWN", "Command to check %s event log not supported for ILO version '%s'" % (type, plugin.rf.vendor_data.ilo_version))
         return
 
     if type == "system":
@@ -885,7 +1141,7 @@ def get_event_log_hp(type, system_manager_id):
     else:
         redfish_url = "/redfish/v1/Managers/%s/LogServices/IEL/Entries?$expand=." % system_manager_id
 
-    event_data = plugin.get_redfish_data(redfish_url)
+    event_data = plugin.rf.get(redfish_url)
 
     # reverse list from newest to oldest entry
     event_entries = event_data.get("Members")
@@ -898,7 +1154,7 @@ def get_event_log_hp(type, system_manager_id):
 
         if type == "manager" and "Browser log" in message:
             continue
-        
+
         num_entry += 1
 
         # obey max results returned
@@ -907,7 +1163,7 @@ def get_event_log_hp(type, system_manager_id):
 
         severity = event_entry.get("Severity")
         date = event_entry.get("Created")
-        repaired = event_entry.get("Oem").get(plugin.vendor_dict_key).get("Repaired")
+        repaired = event_entry.get("Oem").get(plugin.rf.vendor_dict_key).get("Repaired")
 
         if repaired == None:
             repaired = False
@@ -927,27 +1183,28 @@ def get_basic_system_info():
 
     global plugin
 
-    basic_infos = plugin.connection.root
+
+    basic_infos = plugin.rf.connection.root
 
     if basic_infos.get("Oem"):
 
         vendor_string = list(basic_infos.get("Oem"))[0]
 
-        plugin.vendor_dict_key = vendor_string
+        plugin.rf.vendor_dict_key = vendor_string
 
         if vendor_string in ["Hpe", "Hp"]:
-            plugin.vendor = "HPE"
+            plugin.rf.vendor = "HPE"
 
-            plugin.vendor_data = VendorHPEData()
+            plugin.rf.vendor_data = VendorHPEData()
 
             manager_data = basic_infos.get("Oem").get(vendor_string).get("Manager")
 
-            plugin.vendor_data.ilo_hostname = manager_data[0].get("HostName")
-            plugin.vendor_data.ilo_version = manager_data[0].get("ManagerType")
-            plugin.vendor_data.ilo_firmware_version = manager_data[0].get("ManagerFirmwareVersion")
+            plugin.rf.vendor_data.ilo_hostname = manager_data[0].get("HostName")
+            plugin.rf.vendor_data.ilo_version = manager_data[0].get("ManagerType")
+            plugin.rf.vendor_data.ilo_firmware_version = manager_data[0].get("ManagerFirmwareVersion")
 
-            if plugin.vendor_data.ilo_version.lower() == "ilo 5":
-                plugin.vendor_data.view_sopported = True
+            if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
+                plugin.rf.vendor_data.view_sopported = True
 
 
             #resource_directory_response = get_cached_data(handle, "/redfish/v1/ResourceDirectory/")
@@ -988,32 +1245,16 @@ if __name__ == "__main__":
         # initialize logger
         logging.basicConfig(level="DEBUG", format='%(asctime)s - %(levelname)s: %(message)s')
 
-    plugin = GatheredData()
-
-    # initialize connection
-    try:
-        plugin.connection = redfish.redfish_client(base_url="https://%s" % args.host, max_retry=1,)
-    except redfish.rest.v1.ServerDownOrUnreachableError:
-        plugin.add_output_data("CRITICAL", "Host '%s' down or unreachable." % args.host)
-    except redfish.rest.v1.RetriesExhaustedError:
-        plugin.add_output_data("CRITICAL", "Unable to connect to Host '%s', retries exhausted." % args.host)
-
-    if not plugin.connection:
-        plugin.do_exit()
-
-    try:
-        plugin.connection.login(username=args.username, password=args.password, auth="session")
-    except redfish.rest.v1.InvalidCredentialsError:
-        plugin.add_output_data("CRITICAL", "Username or password invalid.")
-        plugin.do_exit()
+    # initialize plugin object
+    plugin = PluginData(args)
 
     # get basic informations
     get_basic_system_info()
 
-    if plugin.vendor is None:
+    if plugin.rf.vendor is None:
 
-        if plugin.vendor_dict_key:
-            plugin.add_output_data("UNKNOWN", "Support for vendor '%s' is currently not implemented." % plugin.vendor_dict_key)
+        if plugin.rf.vendor_dict_key:
+            plugin.add_output_data("UNKNOWN", "Support for vendor '%s' is currently not implemented." % plugin.rf.vendor_dict_key)
         else:
             plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
 
