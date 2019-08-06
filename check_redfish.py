@@ -72,7 +72,7 @@ import redfish
 # -* create new session if current session expired-
 # -* read credentials from environment-
 # -* read credentials from credential file -> username=, password= -> see check_vmware-
-# * take care of 'None' time stamps in event logs
+# -* take care of 'None' time stamps in event logs-
 # * let user force reading event logs on iLO 4, set max to 30
 # * add inventory option
 # * add info command to return model, version, ...
@@ -1168,6 +1168,10 @@ def get_event_log_hp(type, system_manager_id):
         if repaired == None:
             repaired = False
 
+        # take care of date = None
+        if date is None:
+            date = "1970-01-01T00:00:00Z"
+
         status = "OK"
 
         if severity == "Warning" and repaired is False:
@@ -1175,7 +1179,7 @@ def get_event_log_hp(type, system_manager_id):
         elif severity != "OK" and repaired is False:
             status = "CRITICAL"
 
-        plugin.add_log_output_data(status, "%s: %s" %(date, message))
+        plugin.add_log_output_data(status, "%s: %s" % (date, message))
 
     return
 
