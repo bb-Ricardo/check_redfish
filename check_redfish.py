@@ -79,7 +79,7 @@ import redfish
 # * add firmware command to print out current firmware
 # * add bmc info command to return ILO, version, status,
 # * add README
-# * add license
+# -* add license-
 # * add pip install file
 # * document code and add more debugging output
 # -* test behavior on insecure certs-
@@ -89,7 +89,7 @@ __version__ = "0.0.2"
 __version_date__ = "2019-07-19"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
-__license__ = "GPLv3"
+__license__ = "MIT"
 
 
 # define valid return status types
