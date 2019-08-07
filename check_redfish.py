@@ -61,6 +61,7 @@ import tempfile
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import pprint
 import json
+import datetime
 
 # import 3rd party modules
 import redfish
@@ -74,7 +75,7 @@ import redfish
 # -* read credentials from credential file -> username=, password= -> see check_vmware-
 # -* take care of 'None' time stamps in event logs-
 # -* let user force reading event logs on iLO 4, set max to 30-
-# * add warning and critical days to mel for HPE
+# -* add warning and critical days to mel for HPE-
 # * add inventory option
 # * add info command to return model, version, ...
 # * add firmware command to print out current firmware
@@ -1135,6 +1136,7 @@ def get_event_log_hp(type, system_manager_id):
 
     limit_of_returned_itmes = args.max
     forced_limit = False
+    data_now = datetime.datetime.now()
 
     if plugin.rf.vendor_data.ilo_version.lower() != "ilo 5":
         ilo4_limit = 30
@@ -1150,6 +1152,11 @@ def get_event_log_hp(type, system_manager_id):
         redfish_url = "/redfish/v1/Systems/%s/LogServices/IML/Entries/?$expand=." % system_manager_id
     else:
         redfish_url = "/redfish/v1/Managers/%s/LogServices/IEL/Entries?$expand=." % system_manager_id
+
+        if args.warning:
+            date_warning = data_now - datetime.timedelta(days=int(args.warning))
+        if args.critical:
+            date_critical = data_now - datetime.timedelta(days=int(args.critical))
 
     event_data = plugin.rf.get(redfish_url)
 
@@ -1186,10 +1193,20 @@ def get_event_log_hp(type, system_manager_id):
 
         status = "OK"
 
-        if severity == "Warning" and repaired is False:
-            status = "WARNING"
-        elif severity != "OK" and repaired is False:
-            status = "CRITICAL"
+        if type == "system":
+            if severity == "Warning" and repaired is False:
+                status = "WARNING"
+            elif severity != "OK" and repaired is False:
+                status = "CRITICAL"
+        else:
+            entry_data = datetime.datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ")
+
+            if args.critical:
+                if entry_data > date_critical and severity != "OK":
+                    status = "CRITICAL"
+            if args.warning:
+                if entry_data > date_warning and status != "CRITICAL" and severity != "OK":
+                    status = "WARNING"
 
         plugin.add_log_output_data(status, "%s: %s" % (date, message))
 
