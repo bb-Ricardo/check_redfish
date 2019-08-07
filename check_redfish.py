@@ -78,8 +78,7 @@ import redfish
 # -* add warning and critical days to mel for HPE-
 # * add inventory option
 # -* add info command to return model, version, ...-
-# * add firmware command to print out current firmware
-# * add bmc info command to return ILO, version, status,
+# -* add firmware command to print out current firmware-
 # * add README
 # -* add license-
 # -* add pip install file-
@@ -613,6 +612,8 @@ def parse_command_line():
                         help="request network interface status")
     group.add_argument("--info", dest="requested_query", action='append_const', const="info",
                         help="request system informations")
+    group.add_argument("--firmware", dest="requested_query", action='append_const', const="firmware",
+                        help="request firmware informations")
     group.add_argument("--sel", dest="requested_query", action='append_const', const="sel",
                         help="request System Log status")
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
@@ -622,6 +623,7 @@ def parse_command_line():
 
     if result.help:
         parser.print_help()
+        print("")
         exit(0)
 
     if result.requested_query is None:
@@ -1260,6 +1262,60 @@ def get_system_info_hpe(system = 1):
     plugin.add_output_data(status, f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}")
     plugin.add_output_data(status, "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
 
+def get_firmware_info(system = 1):
+
+    global plugin
+
+    if plugin.rf.vendor == "HPE":
+        if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
+            get_firmware_info_hpe_ilo5()
+        else:
+            get_firmware_info_hpe_ilo4(system)
+
+    if not plugin.rf.vendor:
+        plugin.add_output_data("UNKNOWN", "'firmware' command is currently not supported for this system.")
+
+    return
+
+def get_firmware_info_hpe_ilo5():
+
+    global plugin
+
+    redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/?$expand=."
+
+    firmware_response = plugin.rf.get(redfish_url)
+
+    for firmware_entry in firmware_response.get("Members"):
+
+        component_name = firmware_entry.get("Name")
+        component_version = firmware_entry.get("Version")
+        component_context = firmware_entry.get("Oem").get(plugin.rf.vendor_dict_key).get("DeviceContext")
+
+        plugin.add_output_data("OK", f"{component_name} ({component_context}): {component_version}")
+
+    return
+
+def get_firmware_info_hpe_ilo4(system = 1):
+
+    global plugin
+
+
+    redfish_url = "/redfish/v1/Systems/%s/FirmwareInventory/" % system
+
+    firmware_response = plugin.rf.get(redfish_url)
+
+    for key, firmware_entry in firmware_response.get("Current").items():
+
+        for firmware_entry_object in firmware_entry:
+
+            component_name = firmware_entry_object.get("Name")
+            component_version = firmware_entry_object.get("VersionString")
+            component_location = firmware_entry_object.get("Location")
+
+            plugin.add_output_data("OK", f"{component_name} ({component_location}): {component_version}")
+
+    return
+
 def get_basic_system_info():
 
     global plugin
@@ -1317,7 +1373,6 @@ def get_basic_system_info():
 
     return
 
-
 if __name__ == "__main__":
     # start here
     args = parse_command_line()
@@ -1349,6 +1404,7 @@ if __name__ == "__main__":
     if "nic"        in args.requested_query: get_nics()
     if "storage"    in args.requested_query: get_storage()
     if "info"       in args.requested_query: get_system_info()
+    if "firmware"   in args.requested_query: get_firmware_info()
     if "mel"        in args.requested_query: get_event_log("manager")
     if "sel"        in args.requested_query: get_event_log("system")
 
