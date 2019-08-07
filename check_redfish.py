@@ -1,10 +1,8 @@
 #!/usr/bin/env python36
 
 self_description = \
-"""This is a monitoring plugin to check components which support Redfish
-
-This plugin can be used to check component health status which support
-Redfish.
+"""This is a monitoring plugin to check components and
+health status of systems which support Redfish.
 
 R.I.P. IPMI
 """
@@ -54,7 +52,6 @@ rm -rf redfish-2.0.9*
 
 # import build-in modules
 import logging
-#import re
 import pickle
 import os
 import tempfile
@@ -66,28 +63,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-# TODO:
-# -* add options for session file and session file path -> see check_vmware-
-# -* use session key for login-
-# -* read and write session key to file-
-# -* create new session if current session expired-
-# -* read credentials from environment-
-# -* read credentials from credential file -> username=, password= -> see check_vmware-
-# -* take care of 'None' time stamps in event logs-
-# -* let user force reading event logs on iLO 4, set max to 30-
-# -* add warning and critical days to mel for HPE-
-# * add inventory option
-# -* add info command to return model, version, ...-
-# -* add firmware command to print out current firmware-
-# * add README
-# -* add license-
-# -* add pip install file-
-# * document code and add more debugging output
-# -* test behavior on insecure certs-
-# -* fix "./check_redfish.py -h"-
-
-__version__ = "0.0.2"
-__version_date__ = "2019-07-19"
+__version__ = "0.0.3"
+__version_date__ = "2019-08-07"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -569,7 +546,7 @@ def parse_command_line():
         description=self_description + "\nVersion: " + __version__ + " (" + __version_date__ + ")",
         formatter_class=RawDescriptionHelpFormatter, add_help=False)
 
-    group = parser.add_argument_group(title="mendatory arguments")
+    group = parser.add_argument_group(title="mandatory arguments")
     group.add_argument("-H", "--host",
                         help="define the host to request" )
 
