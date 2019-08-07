@@ -82,7 +82,7 @@ import redfish
 # * add bmc info command to return ILO, version, status,
 # * add README
 # -* add license-
-# * add pip install file
+# -* add pip install file-
 # * document code and add more debugging output
 # -* test behavior on insecure certs-
 # -* fix "./check_redfish.py -h"-
