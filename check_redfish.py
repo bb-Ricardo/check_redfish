@@ -7,49 +7,6 @@ health status of systems which support Redfish.
 R.I.P. IPMI
 """
 
-"""
-## Installation
-
-yum install -y python36-six python36-setuptools python36-decorator python36-ply
-
-mkdir -p /usr/local/lib/python3.6/site-packages
-
-tar -xzf recordtype-1.3.cygwin-2.10.0-x86_64.tar.gz
-cp -a cygdrive/c/home/eric/local/recordtype/py3/lib/python3.6/site-packages/recordtype* /usr/local/lib/python3.6/site-packages/
-rm -rf cygdrive recordtype-1.3.cygwin-2.10.0-x86_64.tar.gz
-
-#
-tar -xzf urlparse2-1.1.1.tar.gz
-cd urlparse2-1.1.1
-python36 setup.py install
-cd ..
-rm -rf urlparse2-1.1.1*
-
-tar -xzpf jsonpointer-2.0.tar.gz
-cd jsonpointer-2.0/
-python36 setup.py install
-cd ..
-rm -rf jsonpointer-2.0*
-
-tar -xzpf jsonpath-rw-1.4.0.tar.gz
-cd jsonpath-rw-1.4.0/
-python36 setup.py install
-cd ..
-rm -rf jsonpath-rw-1.4.0*
-
-tar -xzf jsonpatch-1.23.tar.gz
-cd jsonpatch-1.23
-python36 setup.py install
-cd ..
-rm -rf jsonpatch-1.23*
-
-tar -xzf redfish-2.0.9.tar.gz
-cd redfish-2.0.9
-python36 setup.py install
-cd ..
-rm -rf redfish-2.0.9*
-"""
-
 # import build-in modules
 import logging
 import pickle
