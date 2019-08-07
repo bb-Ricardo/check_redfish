@@ -73,7 +73,8 @@ import redfish
 # -* read credentials from environment-
 # -* read credentials from credential file -> username=, password= -> see check_vmware-
 # -* take care of 'None' time stamps in event logs-
-# * let user force reading event logs on iLO 4, set max to 30
+# -* let user force reading event logs on iLO 4, set max to 30-
+# * add warning and critical days to mel for HPE
 # * add inventory option
 # * add info command to return model, version, ...
 # * add firmware command to print out current firmware
@@ -1132,9 +1133,18 @@ def get_event_log_hp(type, system_manager_id):
 
     global plugin
 
+    limit_of_returned_itmes = args.max
+    forced_limit = False
+
     if plugin.rf.vendor_data.ilo_version.lower() != "ilo 5":
-        plugin.add_output_data("UNKNOWN", "Command to check %s event log not supported for ILO version '%s'" % (type, plugin.rf.vendor_data.ilo_version))
-        return
+        ilo4_limit = 30
+        if args.max:
+            limit_of_returned_itmes = min(args.max, ilo4_limit)
+            if args.max > ilo4_limit:
+                forced_limit = True
+        else:
+            forced_limit = True
+            limit_of_returned_itmes = ilo4_limit
 
     if type == "system":
         redfish_url = "/redfish/v1/Systems/%s/LogServices/IML/Entries/?$expand=." % system_manager_id
@@ -1143,23 +1153,25 @@ def get_event_log_hp(type, system_manager_id):
 
     event_data = plugin.rf.get(redfish_url)
 
+    if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
+        plugin.add_output_data("OK", "No log entries found.")
+        return
+
     # reverse list from newest to oldest entry
     event_entries = event_data.get("Members")
     event_entries.reverse()
 
     num_entry = 0
-    for event_entry in event_entries:
+    for event_entry_itme in event_entries:
+
+        if event_entry_itme.get("@odata.context"):
+            event_entry = event_entry_itme
+        else:
+            event_entry = plugin.rf.get(event_entry_itme.get("@odata.id"))
 
         message = event_entry.get("Message")
 
-        if type == "manager" and "Browser log" in message:
-            continue
-
         num_entry += 1
-
-        # obey max results returned
-        if args.max and num_entry > args.max:
-            return
 
         severity = event_entry.get("Severity")
         date = event_entry.get("Created")
@@ -1180,6 +1192,13 @@ def get_event_log_hp(type, system_manager_id):
             status = "CRITICAL"
 
         plugin.add_log_output_data(status, "%s: %s" % (date, message))
+
+        # obey max results returned
+        if num_entry >= limit_of_returned_itmes:
+            if forced_limit:
+                plugin.add_log_output_data("OK", "This is an %s, limited results to %d entries" %
+                    (plugin.rf.vendor_data.ilo_version, limit_of_returned_itmes))
+            return
 
     return
 
