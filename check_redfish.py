@@ -77,7 +77,7 @@ import redfish
 # -* let user force reading event logs on iLO 4, set max to 30-
 # -* add warning and critical days to mel for HPE-
 # * add inventory option
-# * add info command to return model, version, ...
+# -* add info command to return model, version, ...-
 # * add firmware command to print out current firmware
 # * add bmc info command to return ILO, version, status,
 # * add README
@@ -611,6 +611,8 @@ def parse_command_line():
                         help="request fan status")
     group.add_argument("--nic", dest="requested_query", action='append_const', const="nic",
                         help="request network interface status")
+    group.add_argument("--info", dest="requested_query", action='append_const', const="info",
+                        help="request system informations")
     group.add_argument("--sel", dest="requested_query", action='append_const', const="sel",
                         help="request System Log status")
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
@@ -1124,13 +1126,13 @@ def get_event_log(type, system_manager_id = 1):
         return
 
     if plugin.rf.vendor == "HPE":
-        get_event_log_hp(type, system_manager_id)
+        get_event_log_hpe(type, system_manager_id)
     else:
         plugin.add_output_data("UNKNOWN", "Command to check %s event log not implemented for this vendor" % type)
 
     return
 
-def get_event_log_hp(type, system_manager_id):
+def get_event_log_hpe(type, system_manager_id):
 
     global plugin
 
@@ -1219,6 +1221,45 @@ def get_event_log_hp(type, system_manager_id):
 
     return
 
+def get_system_info(system = 1):
+
+    global plugin
+
+    if plugin.rf.vendor == "HPE":
+        get_system_info_hpe(system)
+
+    if not plugin.rf.vendor:
+        plugin.add_output_data("UNKNOWN", "'info' command is currently not supported for this system.")
+
+    return
+
+def get_system_info_hpe(system = 1):
+
+    global plugin
+
+    redfish_url = "/redfish/v1/Systems/%s/" % system
+
+    system_response = plugin.rf.get(redfish_url)
+
+    model = system_response.get("Model")
+    serial = system_response.get("SerialNumber")
+    system_health_state = system_response.get("Status").get("Health")
+    power_state = system_response.get("PowerState")
+    bios_version = system_response.get("BiosVersion")
+    host_name = system_response.get("HostName")
+    cpu_num = system_response.get("ProcessorSummary").get("Count")
+    mem_size = system_response.get("MemorySummary").get("TotalSystemMemoryGiB")
+
+    status = "OK"
+    if system_health_state != "OK":
+        status = "CRITICAL"
+
+    if len(host_name) == 0:
+        host_name = "NOT SET"
+
+    plugin.add_output_data(status, f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}")
+    plugin.add_output_data(status, "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
+
 def get_basic_system_info():
 
     global plugin
@@ -1300,13 +1341,6 @@ if __name__ == "__main__":
 
         plugin.do_exit()
 
-    """
-    print("BIOS Version: %s" % data["BiosVersion"])
-    print("HostName: %s" % data["HostName"])
-    print("Model: %s" % data["Model"])
-    print("PowerState: %s" % data["PowerState"])
-    """
-
     if "power"      in args.requested_query: get_power()
     if "temp"       in args.requested_query: get_temp()
     if "fan"        in args.requested_query: get_fan()
@@ -1314,6 +1348,7 @@ if __name__ == "__main__":
     if "memory"     in args.requested_query: get_mem()
     if "nic"        in args.requested_query: get_nics()
     if "storage"    in args.requested_query: get_storage()
+    if "info"       in args.requested_query: get_system_info()
     if "mel"        in args.requested_query: get_event_log("manager")
     if "sel"        in args.requested_query: get_event_log("system")
 
