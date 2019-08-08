@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.3"
-__version_date__ = "2019-08-07"
+__version__ = "0.0.4"
+__version_date__ = "2019-08-08"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -930,7 +930,7 @@ def get_storage_hpe(system = 1):
 
         if disks_response.get("Members") is None:
             if type == "DiskDrives":
-                plugin.add_output_data("UNKNOWN", "no %s found" % type)
+                plugin.add_output_data("OK", "no %s found for this ArrayController" % type)
             return
 
         for disk in disks_response.get("Members"):
@@ -956,7 +956,7 @@ def get_storage_hpe(system = 1):
         ld_response = plugin.rf.get("%s/LogicalDrives/?$expand=." % link)
 
         if ld_response.get("Members") is None:
-            plugin.add_output_data("UNKNOWN", "no logical drives found")
+            plugin.add_output_data("OK", "no logical drives found for this ArrayController")
             return
 
         for logical_drive in ld_response.get("Members"):
@@ -983,7 +983,7 @@ def get_storage_hpe(system = 1):
         enclosures_response = plugin.rf.get("%s/StorageEnclosures/?$expand=." % link)
 
         if enclosures_response.get("Members") is None:
-            plugin.add_output_data("UNKNOWN", "no storage enclosures found")
+            plugin.add_output_data("OK", "no storage enclosures found for this ArrayController")
             return
 
         for enclosure in enclosures_response.get("Members"):
