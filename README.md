@@ -30,6 +30,9 @@ cd /tmp
 rm -rf /tmp/check_redfish
 ```
 
+### Icinga2
+Command definitions and an a service config example for Icinga2 can be found in [contrib](contrib)
+
 ## HELP
 ```
 usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
