@@ -253,15 +253,21 @@ class RedfishConnection():
         except redfish.rest.v1.ServerDownOrUnreachableError:
             self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
-            self.exit_on_error("Unable to connect to Host '%s', retries exhausted." % self.cli_args.host, "CRITICAL")
+            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
+        except Exception as e:
+            self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
 
         if not self.connection:
             raise Exception("Unable to establish connection.")
 
         try:
             self.connection.login(username=self.username, password=self.password, auth="session")
+        except redfish.rest.v1.RetriesExhaustedError:
+            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.InvalidCredentialsError:
             self.exit_on_error("Username or password invalid.", "CRITICAL")
+        except Exception as e:
+            self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
 
         if self.connection is not None:
             self.save_session_to_file()
