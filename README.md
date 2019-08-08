@@ -4,7 +4,6 @@ This is a monitoring plugin to check components and
 health status of systems which support Redfish.
 
 ## ToDo:
-* add icinga2 command definition
 * add inventory option
 * document code and add more debugging output
 * add support for DELL servers
