@@ -1213,14 +1213,16 @@ def get_system_info_hpe(system = 1):
     mem_size = system_response.get("MemorySummary").get("TotalSystemMemoryGiB")
 
     status = "OK"
-    if system_health_state != "OK":
+    if system_health_state.upper() == "WARNING":
+        status = "WARNING"
+    elif system_health_state != "OK":
         status = "CRITICAL"
 
     if len(host_name) == 0:
         host_name = "NOT SET"
 
     plugin.add_output_data(status, f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}")
-    plugin.add_output_data(status, "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
+    plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
 
 def get_firmware_info(system = 1):
 
