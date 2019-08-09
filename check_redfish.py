@@ -615,7 +615,7 @@ def get_power(chassi = 1):
             ps_num += 1
             # generic data
             last_power = ps.get("LastPowerOutputWatts")
-            health = ps.get("Status").get("Health")
+            health = ps.get("Status").get("Health").upper()
             model = ps.get("Model")
             last_power_output = ps.get("LastPowerOutputWatts")
             ps_bay = None
@@ -635,16 +635,17 @@ def get_power(chassi = 1):
             status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or health)
 
             if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+                if health == "WARNING":
+                    plugin.add_output_data("WARNING", status_text)
+                else:
+                    plugin.add_output_data("CRITICAL", status_text)
                 health_issue = True
             else:
                 if args.detailed:
                     plugin.add_output_data("OK", status_text)
 
-            if last_power_output is not None:
+            if last_power_output is not None and ps_bay is not None:
                 plugin.add_perf_data("ps_%s" % str(ps_bay), int(last_power_output))
-
-
 
         if args.detailed is False and health_issue == False:
             plugin.add_output_data("OK", "All power supplies (%d) are in good condition" % ps_num)
@@ -668,22 +669,26 @@ def get_temp(chassi = 1):
 
         for temp in thermal_data.get("Temperatures"):
 
-            name = temp.get("Name")
-            current_temp = temp.get("ReadingCelsius")
-            critical_temp = temp.get("UpperThresholdCritical")
-            health = temp.get("Status").get("Health")
-
             if temp.get("Status").get("State") == "Absent":
                 continue
+
+            name = temp.get("Name").strip()
+            current_temp = temp.get("ReadingCelsius")
+            critical_temp = temp.get("UpperThresholdCritical")
+            health = temp.get("Status").get("Health").upper();
 
             temp_num += 1
 
             if critical_temp is None or str(critical_temp) == "0":
                 critical_temp = "N/A"
+
             status_text = "Temp sensor %s status is: %s (%s °C) (max: %s °C)" % (name, health, str(current_temp), str(critical_temp))
 
             if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+                if health == "WARNING":
+                    plugin.add_output_data("WARNING", status_text)
+                else:
+                    plugin.add_output_data("CRITICAL", status_text)
                 health_issue = True
             else:
                 if args.detailed:
@@ -717,7 +722,7 @@ def get_fan(chassi = 1):
             fan_num += 1
 
             name = fan.get("FanName") or fan.get("Name")
-            health = fan.get("Status").get("Health")
+            health = fan.get("Status").get("Health").upper()
 
             speed = fan.get("Reading")
             speed_units = fan.get("ReadingUnits")
@@ -732,8 +737,12 @@ def get_fan(chassi = 1):
                 speed_status = " (%s%s)" % (str(speed), str(speed_units))
 
             status_text = "Fan '%s'%s status is: %s" % (name, speed_status, health)
+
             if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+                if health == "WARNING":
+                    plugin.add_output_data("WARNING", status_text)
+                else:
+                    plugin.add_output_data("CRITICAL", status_text)
                 health_issue = True
             else:
                 if args.detailed:
@@ -783,18 +792,19 @@ def get_procs(system = 1):
             if proc_response.get("Id"):
                 socket = proc_response.get("Socket")
                 status = proc_response.get("Status")
-                model =  proc_response.get("Model")
+                model =  proc_response.get("Model").strip()
 
                 if status.get("State") and status.get("State") == "Absent":
                     continue
 
-                health = status.get("Health")
+                health = status.get("Health").upper()
 
                 status_text = "Processor %s (%s) status is: %s" % (socket, model, health)
-                if health != "OK":
-                    plugin.add_output_data("CRITICAL", status_text)
+
+                if health in [ "OK", "WARNING" ]:
+                    plugin.add_output_data(health, status_text)
                 else:
-                    plugin.add_output_data("OK", status_text)
+                    plugin.add_output_data("CRITICAL", status_text)
             else:
                 plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
     else:
@@ -860,8 +870,12 @@ def get_mem(system = 1):
                     continue
 
                 status_text = "Memory module %s (%dGB) status is: %s" % (name, size, health)
+
                 if health not in [ "GoodInUse", "OK" ]:
-                    plugin.add_output_data("CRITICAL", status_text)
+                    if health == "WARNING":
+                        plugin.add_output_data("WARNING", status_text)
+                    else:
+                        plugin.add_output_data("CRITICAL", status_text)
                 else:
                     plugin.add_output_data("OK", status_text)
 
@@ -913,7 +927,10 @@ def get_nics(system = 1):
                     status_text = "NIC %s status is: %s" % (id, health)
 
                 if health != "OK":
-                    plugin.add_output_data("CRITICAL", status_text)
+                    if health == "WARNING":
+                        plugin.add_output_data("WARNING", status_text)
+                    else:
+                        plugin.add_output_data("CRITICAL", status_text)
                     health_issue = True
                 else:
                     if args.detailed:
@@ -960,16 +977,16 @@ def get_storage_hpe(system = 1):
             else:
                 disk_response = plugin.rf.get(disk.get("@odata.id"))
 
-            health = disk_response.get("Status").get("Health")
+            health = disk_response.get("Status").get("Health").upper()
             location = disk_response.get("Location")
             size = disk_response.get("CapacityGB")
 
             status_text = "Physical Drive (%s) %sGB Status: %s" % (location, size, health)
 
-            if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+            if health in [ "OK", "WARNING" ]:
+                plugin.add_output_data(health, status_text)
             else:
-                plugin.add_output_data("OK", status_text)
+                plugin.add_output_data("CRITICAL", status_text)
 
     def get_logical_drives(link):
 
@@ -986,17 +1003,17 @@ def get_storage_hpe(system = 1):
             else:
                 logical_drive_response = plugin.rf.get(logical_drive.get("@odata.id"))
 
-            health = logical_drive_response.get("Status").get("Health")
+            health = logical_drive_response.get("Status").get("Health").upper()
             id = logical_drive_response.get("LogicalDriveNumber")
             size = int(logical_drive_response.get("CapacityMiB")) * 1024 ** 2 / 1000 ** 3
             raid = logical_drive_response.get("Raid")
 
             status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, health)
 
-            if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+            if health in [ "OK", "WARNING" ]:
+                plugin.add_output_data(health, status_text)
             else:
-                plugin.add_output_data("OK", status_text)
+                plugin.add_output_data("CRITICAL", status_text)
 
     def get_enclosures(link):
 
@@ -1013,15 +1030,15 @@ def get_storage_hpe(system = 1):
             else:
                 enclosure_response = plugin.rf.get(enclosure.get("@odata.id"))
 
-            health = enclosure_response.get("Status").get("Health")
+            health = enclosure_response.get("Status").get("Health").upper()
             location = enclosure_response.get("Location")
 
             status_text = "StorageEnclosure (%s) Status: %s" % (location, health)
 
-            if health != "OK":
-                plugin.add_output_data("CRITICAL", status_text)
+            if health in [ "OK", "WARNING" ]:
+                plugin.add_output_data(health, status_text)
             else:
-                plugin.add_output_data("OK", status_text)
+                plugin.add_output_data("CRITICAL", status_text)
 
 
     global plugin
@@ -1030,7 +1047,7 @@ def get_storage_hpe(system = 1):
 
     storage_response = plugin.rf.get(redfish_url)
 
-    status = storage_response.get("Status").get("Health")
+    status = storage_response.get("Status").get("Health").upper()
 
     if status and status == "OK" and args.detailed == False:
         plugin.add_output_data("OK", "Status of HP SmartArray is: %s" % status)
@@ -1058,14 +1075,14 @@ def get_storage_hpe(system = 1):
                 if status.get("State") and status.get("State") == "Absent":
                     continue
 
-                health = status.get("Health")
+                health = status.get("Health").upper()
 
                 status_text = "%s (FW: %s) status is: %s" % (model, fw_version, health)
 
-                if health != "OK":
-                    plugin.add_output_data("CRITICAL", status_text)
+                if health in [ "OK", "WARNING" ]:
+                    plugin.add_output_data(health, status_text)
                 else:
-                    plugin.add_output_data("OK", status_text)
+                    plugin.add_output_data("CRITICAL", status_text)
 
                 get_disks(array_controller.get("@odata.id"))
                 get_logical_drives(array_controller.get("@odata.id"))
@@ -1144,7 +1161,7 @@ def get_event_log_hpe(type, system_manager_id):
 
         num_entry += 1
 
-        severity = event_entry.get("Severity")
+        severity = event_entry.get("Severity").upper()
         date = event_entry.get("Created")
         repaired = event_entry.get("Oem").get(plugin.rf.vendor_dict_key).get("Repaired")
 
@@ -1158,7 +1175,7 @@ def get_event_log_hpe(type, system_manager_id):
         status = "OK"
 
         if type == "system":
-            if severity == "Warning" and repaired is False:
+            if severity == "WARNING" and repaired is False:
                 status = "WARNING"
             elif severity != "OK" and repaired is False:
                 status = "CRITICAL"
@@ -1203,17 +1220,17 @@ def get_system_info_hpe(system = 1):
 
     system_response = plugin.rf.get(redfish_url)
 
-    model = system_response.get("Model")
-    serial = system_response.get("SerialNumber")
-    system_health_state = system_response.get("Status").get("Health")
+    model = system_response.get("Model").strip()
+    serial = system_response.get("SerialNumber").strip()
+    system_health_state = system_response.get("Status").get("Health").upper()
     power_state = system_response.get("PowerState")
     bios_version = system_response.get("BiosVersion")
-    host_name = system_response.get("HostName")
+    host_name = system_response.get("HostName").strip()
     cpu_num = system_response.get("ProcessorSummary").get("Count")
     mem_size = system_response.get("MemorySummary").get("TotalSystemMemoryGiB")
 
     status = "OK"
-    if system_health_state.upper() == "WARNING":
+    if system_health_state == "WARNING":
         status = "WARNING"
     elif system_health_state != "OK":
         status = "CRITICAL"
