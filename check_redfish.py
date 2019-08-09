@@ -50,6 +50,10 @@ class RedfishConnection():
     vendor_data = None
     cli_args = None
 
+    # defaults
+    conn_max_retries = 5
+    conn_timeout = 5
+
     def __init__(self, cli_args = None):
 
         if cli_args is None:
@@ -192,6 +196,10 @@ class RedfishConnection():
         if root_data is not None:
             self.connection.root = redfish.rest.v1.RisObject.parse(root_data)
 
+        # set possible changed connection values
+        self.connection._max_retry = self.conn_max_retries
+        self.connection._timeout = self.conn_timeout
+
         self.session_was_restored = True
 
         return
@@ -260,7 +268,7 @@ class RedfishConnection():
 
         # initialize connection
         try:
-            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=1, timeout=5)
+            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.conn_max_retries, timeout=self.conn_timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
             self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
