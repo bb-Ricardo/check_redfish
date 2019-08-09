@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.4"
-__version_date__ = "2019-08-08"
+__version__ = "0.0.5"
+__version_date__ = "2019-08-09"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
