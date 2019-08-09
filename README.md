@@ -12,9 +12,11 @@ health status of systems which support Redfish.
 
 ## Requirements
 * python >= 3.6
-* redfish >= 2.0.0
+* redfish >= 2.0.9
 
 ## Installation
+
+### RedHat based OS
 * on RedHat/CentOS you need to install python3.6 and pip from EPEL first
 ```
 yum install python36-pip
@@ -25,6 +27,7 @@ yum install python36-pip
 cd /tmp
 git clone https://github.com/bb-Ricardo/check_redfish.git
 cd check_redfish
+pip3 install -r requirements.txt || pip install -r requirements.txt
 install -m 755 check_redfish.py -D /usr/lib64/nagios/plugins/check_redfish.py
 cd /tmp
 rm -rf /tmp/check_redfish
@@ -182,7 +185,9 @@ by **--mel** and **--sel**
 ## Supported Systems
 This plugin is currently tested with following systems
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 or iLO5 should work
+Almost all Server which have iLO4 (2.50) or iLO5 (1.40) should work
+* ProLiant BL460c Gen8
+* ProLiant DL380p Gen8
 * ProLiant DL380 Gen9
 * ProLiant DL380 Gen10
 * ProLiant DL580 Gen8
