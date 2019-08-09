@@ -197,8 +197,9 @@ class RedfishConnection():
             self.connection.root = redfish.rest.v1.RisObject.parse(root_data)
 
         # set possible changed connection values
-        self.connection._max_retry = self.conn_max_retries
-        self.connection._timeout = self.conn_timeout
+        if self.connection is not None:
+            self.connection._max_retry = self.conn_max_retries
+            self.connection._timeout = self.conn_timeout
 
         self.session_was_restored = True
 
