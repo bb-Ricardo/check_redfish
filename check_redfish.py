@@ -209,6 +209,13 @@ class RedfishConnection():
         root_data = self.connection.root
         self.connection.root = None
 
+        # fix for change in redfish 2.0.10
+        # Socket objects can't be pickled. Remove socket object from pickle object and add it back later on
+        connection_socket = self.connection._conn
+        connection_socket_count = self.connection._conn_count
+        self.connection._conn = None
+        self.connection._conn_count = 0
+
         try:
             with open(self.sessionfilepath, 'wb') as pickled_session:
                 pickle.dump(self.connection, pickled_session)
@@ -229,6 +236,10 @@ class RedfishConnection():
 
         # set root attribute again
         self.connection.root = root_data
+
+        # restore connection object
+        self.connection._conn = connection_socket
+        self.connection._conn_count = connection_socket_count
 
         return
 
