@@ -657,6 +657,27 @@ def get_power(chassi = 1):
     else:
         plugin.add_output_data("UNKNOWN", "No power supply data returned for API URL '%s'" % redfish_url)
 
+    # get PowerRedundancy status
+    power_redundancies = plugin.rf.get_view(redfish_url).get("PowerRedundancy")
+
+    if power_redundancies:
+        for power_redundancy in power_redundancies:
+
+            status = power_redundancy.get("Status")
+
+            if status is not None:
+                health = status.get("Health")
+                state = status.get("State")
+
+                if health is not None:
+                    health = health.upper()
+
+                    status_text = "Power redundancy status is: %s" % state
+
+                    if health in [ "OK", "WARNING" ]:
+                        plugin.add_output_data(health, status_text)
+                    else:
+                        plugin.add_output_data("CRITICAL", status_text)
     return
 
 def get_temp(chassi = 1):
@@ -1413,4 +1434,3 @@ if __name__ == "__main__":
     plugin.do_exit()
 
 # EOF
-
