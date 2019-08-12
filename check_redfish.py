@@ -616,7 +616,7 @@ def get_power(chassi = 1):
             # generic data
             last_power = ps.get("LastPowerOutputWatts")
             health = ps.get("Status").get("Health").upper()
-            model = ps.get("Model")
+            model = ps.get("Model").strip()
             last_power_output = ps.get("LastPowerOutputWatts")
             ps_bay = None
             ps_hp_status = None
@@ -631,6 +631,10 @@ def get_power(chassi = 1):
 
             if ps_bay is None:
                 ps_bay = ps_num
+
+            # align check output with temp and fan command
+            if ps_hp_status is not None and ps_hp_status == "Unknown":
+                health = "CRITICAL"
 
             status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or health)
 
@@ -669,13 +673,19 @@ def get_temp(chassi = 1):
 
         for temp in thermal_data.get("Temperatures"):
 
-            if temp.get("Status").get("State") == "Absent":
+            state = temp.get("Status").get("State")
+
+            if state == "Absent":
                 continue
+
+            if state == "Offline":
+                health = state
+            else:
+                health = temp.get("Status").get("Health").upper()
 
             name = temp.get("Name").strip()
             current_temp = temp.get("ReadingCelsius")
             critical_temp = temp.get("UpperThresholdCritical")
-            health = temp.get("Status").get("Health").upper();
 
             temp_num += 1
 
@@ -721,8 +731,16 @@ def get_fan(chassi = 1):
 
             fan_num += 1
 
+            state = fan.get("Status").get("State")
+            if state == "Absent":
+                continue
+
+            if state == "Offline":
+                health = state
+            else:
+                health = fan.get("Status").get("Health").upper()
+
             name = fan.get("FanName") or fan.get("Name")
-            health = fan.get("Status").get("Health").upper()
 
             speed = fan.get("Reading")
             speed_units = fan.get("ReadingUnits")
@@ -822,7 +840,12 @@ def get_mem(system = 1):
 
     if systems_response.get("MemorySummary"):
 
-        health = systems_response.get("MemorySummary").get("Status").get("HealthRollup")
+        health = None
+
+        try:
+            health = systems_response.get("MemorySummary").get("Status").get("HealthRollup")
+        except AttributeError:
+            args.detailed == True
 
         if health == "OK" and args.detailed == False:
             plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" % systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"))
@@ -1192,7 +1215,7 @@ def get_event_log_hpe(type, system_manager_id):
         plugin.add_log_output_data(status, "%s: %s" % (date, message))
 
         # obey max results returned
-        if num_entry >= limit_of_returned_itmes:
+        if limit_of_returned_itmes is not None and num_entry >= limit_of_returned_itmes:
             if forced_limit:
                 plugin.add_log_output_data("OK", "This is an %s, limited results to %d entries" %
                     (plugin.rf.vendor_data.ilo_version, limit_of_returned_itmes))
