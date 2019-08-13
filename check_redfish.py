@@ -965,12 +965,15 @@ def get_nics(system = 1):
                 else:
                     health = "Undefined"
 
+                if health is None:
+                    health = "Undefined"
+
                 if link_status:
                     status_text = "NIC %s status is '%s' and link status is '%s'" % (id, health, link_status)
                 else:
                     status_text = "NIC %s status is: %s" % (id, health)
 
-                if health != "OK":
+                if health not in ["OK", "Undefined"]:
                     if health == "WARNING":
                         plugin.add_output_data("WARNING", status_text)
                     else:
