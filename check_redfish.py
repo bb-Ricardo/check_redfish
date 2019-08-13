@@ -51,8 +51,8 @@ class RedfishConnection():
     cli_args = None
 
     # defaults
-    conn_max_retries = 5
-    conn_timeout = 5
+    conn_max_retries = 3
+    conn_timeout = 7
 
     def __init__(self, cli_args = None):
 
