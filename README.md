@@ -85,6 +85,7 @@ query status/health informations (at least one is required):
   --temp                request temperature sensors status
   --fan                 request fan status
   --nic                 request network interface status
+  --bmc                 request bmc infos and status
   --info                request system informations
   --firmware            request firmware informations
   --sel                 request System Log status

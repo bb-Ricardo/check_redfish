@@ -570,6 +570,8 @@ def parse_command_line():
                         help="request fan status")
     group.add_argument("--nic", dest="requested_query", action='append_const', const="nic",
                         help="request network interface status")
+    group.add_argument("--bmc", dest="requested_query", action='append_const', const="bmc",
+                        help="request bmc infos and status")
     group.add_argument("--info", dest="requested_query", action='append_const', const="info",
                         help="request system informations")
     group.add_argument("--firmware", dest="requested_query", action='append_const', const="firmware",
@@ -1342,6 +1344,120 @@ def get_firmware_info_hpe_ilo4(system = 1):
 
     return
 
+def get_bmc_info(manager = 1):
+
+    global plugin
+
+    if plugin.rf.vendor == "HPE":
+        get_bmc_info_hpe(manager)
+
+    if not plugin.rf.vendor:
+        plugin.add_output_data("UNKNOWN", "'bmc' command is currently not supported for this system.")
+
+    return
+
+def get_bmc_info_hpe(manager = 1):
+
+    global plugin
+
+    health_issue = False
+
+    redfish_url = "/redfish/v1/Managers/%d/?$expand=." % manager
+
+    manager_response = plugin.rf.get(redfish_url)
+
+    # get general informations
+    ilo_data = manager_response.get("Oem").get(plugin.rf.vendor_dict_key)
+
+    # firmware
+    ilo_firmware = ilo_data.get("Firmware").get("Current")
+    ilo_fw_date = ilo_firmware.get("Date")
+    ilo_fw_version = ilo_firmware.get("VersionString")
+
+    if args.detailed:
+        plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_fw_date})")
+
+    # license
+    ilo_license_string = ilo_data.get("License").get("LicenseString")
+    ilo_license_key = ilo_data.get("License").get("LicenseKey")
+
+    if args.detailed:
+        plugin.add_output_data("OK", f"Licenses: {ilo_license_string} ({ilo_license_key})")
+
+    # iLO Self Test
+    for self_test in ilo_data.get("iLOSelfTestResults"):
+
+        status = self_test.get("Status")
+
+        if status is None or status == "Informational":
+            continue
+
+        status = status.upper()
+
+        name = self_test.get("SelfTestName")
+        notes = self_test.get("Notes").strip()
+
+        if notes is not None and len(notes) != 0:
+            status_text = f"SelfTest {name} ({notes}) status: {status}"
+        else:
+            status_text = f"SelfTest {name} status: {status}"
+
+        if status != "OK":
+            health_issue = True
+
+        if status in ["OK", "WARNING"]:
+            if status == "WARNING" or status == "OK" and args.detailed:
+                plugin.add_output_data(status, status_text)
+        else:
+            plugin.add_output_data("CRITICAL", status_text)
+
+    # iLO Network interfaces
+    redfish_url = "/redfish/v1/Managers/%d/EthernetInterfaces/?$expand=." % manager
+
+    manager_nic_response = plugin.rf.get(redfish_url)
+
+    if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+        plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
+        return
+
+    for manager_nic_member in manager_nic_response.get("Members"):
+
+        if manager_nic_member.get("@odata.context"):
+            manager_nic = manager_nic_member
+        else:
+            manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
+
+        status = manager_nic.get("Status")
+
+        if status is None or status.get("State") is None:
+            continue
+
+        if status.get("State") == "Disabled":
+            continue
+
+        health = status.get("Health").upper()
+        speed = manager_nic.get("SpeedMbps")
+        duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
+        autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
+        host_name = manager_nic.get("HostName")
+        nic_id = manager_nic.get("Id")
+
+        status_text = f"iLO NIC {nic_id} '{host_name}' (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {health}"
+
+        if health != "OK":
+            health_issue = True
+
+        if health in ["OK", "WARNING"]:
+            if status == "WARNING" or status == "OK" and args.detailed:
+                plugin.add_output_data(health, status_text)
+        else:
+            plugin.add_output_data("CRITICAL", status_text)
+
+    if health_issue == False and args.detailed == False:
+        plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_license_string} license) all self tests and nics are in 'OK' state.")
+
+    return
+
 def get_basic_system_info():
 
     global plugin
@@ -1429,6 +1545,7 @@ if __name__ == "__main__":
     if "memory"     in args.requested_query: get_mem()
     if "nic"        in args.requested_query: get_nics()
     if "storage"    in args.requested_query: get_storage()
+    if "bmc"        in args.requested_query: get_bmc_info()
     if "info"       in args.requested_query: get_system_info()
     if "firmware"   in args.requested_query: get_firmware_info()
     if "mel"        in args.requested_query: get_event_log("manager")
