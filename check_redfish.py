@@ -78,7 +78,7 @@ class RedfishConnection():
 
         """
             Order of credential reading from highest to lowest priority
-            1. cli_args username and apssword
+            1. cli_args username and password
             2. credentials from auth file
             3. credentials from environment
         """
@@ -376,18 +376,31 @@ class PluginData():
 
     __perf_data = list()
     __output_data = dict()
-    __log_output_data = list()
+    __log_output_data = dict()
     __return_status = "OK"
+    __current_command = "global"
+    __global_summary = ""
 
     def __init__(self, cli_args = None):
-
-        for state in status_types.keys():
-            self.__output_data[state] = list()
 
         if cli_args is None:
             raise Exception("No args passed to RedfishConnection()")
 
         self.rf = RedfishConnection(cli_args)
+
+    def set_global_summary(self, summary_text = None):
+
+        if summary_text is None:
+            raise Exception("summary_text not set")
+
+        self.__global_summary = summary_text
+
+    def set_current_command(self, current_command = None):
+
+        if current_command is None:
+            raise Exception("current_command not set")
+
+        self.__current_command = current_command
 
     def set_status(self, state):
 
@@ -400,7 +413,7 @@ class PluginData():
         if status_types[state] > status_types[self.__return_status]:
             self.__return_status = state
 
-    def add_output_data(self, state = None, text = None):
+    def add_output_data(self, state = None, text = None, summary = False):
 
         if state is None:
             raise Exception("state not set")
@@ -410,7 +423,20 @@ class PluginData():
 
         self.set_status(state)
 
-        self.__output_data[state].append(text)
+        if self.__output_data.get(self.__current_command) is None:
+            self.__output_data[self.__current_command] = dict()
+            self.__output_data[self.__current_command]["issues_found"] = False
+
+        if summary is True:
+            self.__output_data[self.__current_command]["summary"] = text
+        else:
+            if self.__output_data[self.__current_command].get(state) is None:
+                self.__output_data[self.__current_command][state] = list()
+
+            if state != "OK":
+                self.__output_data[self.__current_command]["issues_found"] = True
+
+            self.__output_data[self.__current_command][state].append(text)
 
     def add_log_output_data(self, state = None, text = None):
 
@@ -422,7 +448,14 @@ class PluginData():
 
         self.set_status(state)
 
-        self.__log_output_data.append("[%s]: %s" % (state, text))
+        if self.__log_output_data.get(self.__current_command) is None:
+            self.__log_output_data[self.__current_command] = list()
+
+        self.__log_output_data[self.__current_command].append(
+            { "status": state,
+              "text": "[%s]: %s" % (state, text)
+            }
+        )
 
     def add_perf_data(self, name, value, perf_uom = None, warning = None, critical = None):
 
@@ -451,12 +484,50 @@ class PluginData():
     def return_output_data(self):
 
         return_text = list()
-        for key, value in sorted(status_types.items(), key=lambda item: item[1], reverse=True):
-            for data_output in self.__output_data[key]:
-                return_text.append("[%s]: %s" % (key, data_output))
+
+        for command, _ in self.__output_data.items():
+
+            if self.__output_data[command].get("issues_found") == False and args.detailed == False:
+                return_text.append("[OK]: %s" % self.__output_data[command].get("summary"))
+            else:
+                for status_type_name, _ in sorted(status_types.items(), key=lambda item: item[1], reverse=True):
+
+                    if self.__output_data[command].get(status_type_name) is None:
+                        continue
+
+                    for data_output in self.__output_data[command].get(status_type_name):
+                        if status_type_name != "OK" or args.detailed == True:
+                            return_text.append("[%s]: %s" % (status_type_name, data_output))
 
         # add data from log commands
-        return_text.extend(self.__log_output_data)
+        for command, log_entries in self.__log_output_data.items():
+
+            command_status = "OK"
+            most_recent = dict()
+            log_entry_counter = dict()
+
+            for log_entry in log_entries:
+
+                if args.detailed == True:
+                    return_text.append(log_entry.get("text"))
+                else:
+
+                    if status_types[log_entry.get("status")] > status_types[command_status]:
+                        command_status = log_entry.get("status")
+
+                    if log_entry_counter.get(log_entry.get("status")):
+                        log_entry_counter[log_entry.get("status")] += 1
+                    else:
+                        log_entry_counter[log_entry.get("status")] = 1
+
+                    if most_recent.get(log_entry.get("status")) is None:
+                        most_recent[log_entry.get("status")] = log_entry.get("text")
+
+            if args.detailed == False:
+
+                message_summary = " and ".join([ "%d %s" % (value, key) for key,value in log_entry_counter.items() ])
+
+                return_text.append(f"[{command_status}]: Found {message_summary} {command} entries. Most recent notable: %s" % most_recent.get(command_status))
 
         return_string = "\n".join(return_text)
 
@@ -605,19 +676,21 @@ def get_power(chassi = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Chassis/%d/Power" % chassi
+    plugin.set_current_command("Power")
+
+    redfish_url = f"/redfish/v1/Chassis/{chassi}/Power"
 
     power_supplies = plugin.rf.get_view(redfish_url).get("PowerSupplies")
 
-    health_issue = False
+    default_text = ""
     ps_num = 0
     if power_supplies:
         for ps in power_supplies:
 
             ps_num += 1
-            # generic data
+
             last_power = ps.get("LastPowerOutputWatts")
-            health = ps.get("Status").get("Health").upper()
+            status = ps.get("Status").get("Health").upper()
             model = ps.get("Model").strip()
             last_power_output = ps.get("LastPowerOutputWatts")
             ps_bay = None
@@ -636,61 +709,58 @@ def get_power(chassi = 1):
 
             # align check output with temp and fan command
             if ps_hp_status is not None and ps_hp_status == "Unknown":
-                health = "CRITICAL"
+                status = "CRITICAL"
 
-            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or health)
+            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or status)
 
-            if health != "OK":
-                if health == "WARNING":
-                    plugin.add_output_data("WARNING", status_text)
-                else:
-                    plugin.add_output_data("CRITICAL", status_text)
-                health_issue = True
-            else:
-                if args.detailed:
-                    plugin.add_output_data("OK", status_text)
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             if last_power_output is not None and ps_bay is not None:
-                plugin.add_perf_data("ps_%s" % str(ps_bay), int(last_power_output))
+                plugin.add_perf_data(f"ps_{ps_bay}", int(last_power_output))
 
-        if args.detailed is False and health_issue == False:
-            plugin.add_output_data("OK", "All power supplies (%d) are in good condition" % ps_num)
+        default_text = f"All power supplies ({ps_num}) are in good condition"
 
     else:
-        plugin.add_output_data("UNKNOWN", "No power supply data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
     power_redundancies = plugin.rf.get_view(redfish_url).get("PowerRedundancy")
 
     if power_redundancies:
+        status_text = ""
         for power_redundancy in power_redundancies:
 
-            status = power_redundancy.get("Status")
+            pr_status = power_redundancy.get("Status")
 
-            if status is not None:
-                health = status.get("Health")
-                state = status.get("State")
+            if pr_status is not None:
+                status = pr_status.get("Health")
+                state = pr_status.get("State")
 
-                if health is not None:
-                    health = health.upper()
+                if status is not None:
+                    status = status.upper()
 
-                    status_text = "Power redundancy status is: %s" % state
+                    status_text = f"power redundancy status is: {state}"
 
-                    if health in [ "OK", "WARNING" ]:
-                        plugin.add_output_data(health, status_text)
-                    else:
-                        plugin.add_output_data("CRITICAL", status_text)
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text[0].upper() + status_text[1:])
+
+        if len(status_text) != 0:
+            default_text += f" and {status_text}"
+
+    plugin.add_output_data("OK", default_text, summary = True)
+
     return
 
 def get_temp(chassi = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
+    plugin.set_current_command("Temp")
+
+    redfish_url = f"/redfish/v1/Chassis/{chassi}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
 
-    health_issue = False
+    default_text = ""
     temp_num = 0
     if "Temperatures" in thermal_data:
 
@@ -702,9 +772,9 @@ def get_temp(chassi = 1):
                 continue
 
             if state == "Offline":
-                health = state
+                status = state
             else:
-                health = temp.get("Status").get("Health").upper()
+                status = temp.get("Status").get("Health").upper()
 
             name = temp.get("Name").strip()
             current_temp = temp.get("ReadingCelsius")
@@ -715,27 +785,19 @@ def get_temp(chassi = 1):
             if critical_temp is None or str(critical_temp) == "0":
                 critical_temp = "N/A"
 
-            status_text = "Temp sensor %s status is: %s (%s °C) (max: %s °C)" % (name, health, str(current_temp), str(critical_temp))
+            status_text = f"Temp sensor {name} status is: {status} ({current_temp} °C) (max: {critical_temp} °C)"
 
-            if health != "OK":
-                if health == "WARNING":
-                    plugin.add_output_data("WARNING", status_text)
-                else:
-                    plugin.add_output_data("CRITICAL", status_text)
-                health_issue = True
-            else:
-                if args.detailed:
-                    plugin.add_output_data("OK", status_text)
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             critical_temp = critical_temp if critical_temp != 0 else None
 
-            plugin.add_perf_data("Temp_%s" % str(name), int(current_temp), critical=critical_temp)
+            plugin.add_perf_data(f"Temp_{name}", int(current_temp), critical=critical_temp)
 
-        if args.detailed is False and health_issue == False:
-            plugin.add_output_data("OK", "All temp sensors (%d) are in good condition" % temp_num)
-
+        default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
-        plugin.add_output_data("UNKNOWN", "No thermal data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
+
+    plugin.add_output_data("OK", default_text, summary = True)
 
     return
 
@@ -743,11 +805,13 @@ def get_fan(chassi = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Chassis/%s/Thermal" % chassi
+    plugin.set_current_command("Fan")
+
+    redfish_url = f"/redfish/v1/Chassis/{chassi}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
 
-    health_issue = False
+    default_text = ""
     fan_num = 0
     if "Fans" in thermal_data:
         for fan in thermal_data.get("Fans"):
@@ -759,9 +823,9 @@ def get_fan(chassi = 1):
                 continue
 
             if state == "Offline":
-                health = state
+                status = state
             else:
-                health = fan.get("Status").get("Health").upper()
+                status = fan.get("Status").get("Health").upper()
 
             name = fan.get("FanName") or fan.get("Name")
 
@@ -775,28 +839,20 @@ def get_fan(chassi = 1):
 
             speed_status = ""
             if speed:
-                speed_status = " (%s%s)" % (str(speed), str(speed_units))
+                speed_status = f" ({speed}{speed_units})"
 
-            status_text = "Fan '%s'%s status is: %s" % (name, speed_status, health)
+            status_text = f"Fan '{name}'{speed_status} status is: {status}"
 
-            if health != "OK":
-                if health == "WARNING":
-                    plugin.add_output_data("WARNING", status_text)
-                else:
-                    plugin.add_output_data("CRITICAL", status_text)
-                health_issue = True
-            else:
-                if args.detailed:
-                    plugin.add_output_data("OK", status_text)
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             if speed:
-                plugin.add_perf_data("Fan_%s" % str(name), int(speed), perf_uom=speed_units, warning=args.warning, critical=args.critical)
+                plugin.add_perf_data(f"Fan_{name}", int(speed), perf_uom=speed_units, warning=args.warning, critical=args.critical)
 
-        if args.detailed is False and health_issue == False:
-            plugin.add_output_data("OK", "All fans (%d) are in good condition" % fan_num)
-
+        default_text = f"All fans ({fan_num}) are in good condition"
     else:
-        plugin.add_output_data("UNKNOWN", "No thermal data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
+
+    plugin.add_output_data("OK", default_text, summary = True)
 
     return plugin
 
@@ -804,7 +860,9 @@ def get_procs(system = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Systems/%s/" % system
+    plugin.set_current_command("Procs")
+
+    redfish_url = f"/redfish/v1/Systems/{system}/"
 
     systems_response = plugin.rf.get(redfish_url)
 
@@ -813,11 +871,11 @@ def get_procs(system = 1):
         health = systems_response.get("ProcessorSummary").get("Status").get("HealthRollup")
 
         if health == "OK" and args.detailed == False:
-            plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"))
+            plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"), summary = True)
             return
 
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url =  "/redfish/v1/Systems/%s/Processors" % system
+    redfish_url = f"/redfish/v1/Systems/{system}/Processors"
 
     processors_response = plugin.rf.get_view(redfish_url)
 
@@ -832,24 +890,22 @@ def get_procs(system = 1):
 
             if proc_response.get("Id"):
                 socket = proc_response.get("Socket")
-                status = proc_response.get("Status")
+                proc_status = proc_response.get("Status")
                 model =  proc_response.get("Model").strip()
 
-                if status.get("State") and status.get("State") == "Absent":
+                if proc_status.get("State") and proc_status.get("State") == "Absent":
                     continue
 
-                health = status.get("Health").upper()
+                status = proc_status.get("Health").upper()
 
-                status_text = "Processor %s (%s) status is: %s" % (socket, model, health)
+                status_text = f"Processor {socket} ({model}) status is: {status}"
 
-                if health in [ "OK", "WARNING" ]:
-                    plugin.add_output_data(health, status_text)
-                else:
-                    plugin.add_output_data("CRITICAL", status_text)
+                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
             else:
                 plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
     else:
-        plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No processor data returned for API URL '{redfish_url}'")
 
     return
 
@@ -857,7 +913,9 @@ def get_mem(system = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Systems/%s/" % system
+    plugin.set_current_command("Mem")
+
+    redfish_url = f"/redfish/v1/Systems/{system}/"
 
     systems_response = plugin.rf.get(redfish_url)
 
@@ -871,11 +929,12 @@ def get_mem(system = 1):
             args.detailed == True
 
         if health == "OK" and args.detailed == False:
-            plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" % systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"))
+            plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
+                systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"), summary = True)
             return
 
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url = "/redfish/v1/Systems/%s/Memory/" % system
+    redfish_url = f"/redfish/v1/Systems/{system}/Memory/"
 
     memory_response = plugin.rf.get_view(redfish_url)
 
@@ -893,42 +952,40 @@ def get_mem(system = 1):
                 # ILO 4
                 if mem_module_response.get("DIMMStatus"):
 
-                    health = mem_module_response.get("DIMMStatus")
+                    status = mem_module_response.get("DIMMStatus")
                     size = mem_module_response.get("SizeMB") / 1024
                     name = mem_module_response.get("SocketLocator")
 
                 elif mem_module_response.get("Status"):
 
-                    status = mem_module_response.get("Status")
+                    module_status = mem_module_response.get("Status")
 
-                    if status.get("State") and status.get("State") == "Absent":
+                    if module_status.get("State") and module_status.get("State") == "Absent":
                         continue
 
                     if plugin.rf.vendor == "HPE" and mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus"):
-                        health = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
+                        status = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
                     else:
-                        health = status.get("Health")
+                        status = module_status.get("Health")
+
                     size = mem_module_response.get("CapacityMiB") / 1024
                     name = mem_module_response.get("DeviceLocator")
 
                 else:
-                    plugin.add_output_data("UNKNOWN", "Error retrieving memory module status: %s" % mem_module_response)
+                    plugin.add_output_data("UNKNOWN", f"Error retrieving memory module status: {mem_module_response}")
                     continue
 
-                status_text = "Memory module %s (%dGB) status is: %s" % (name, size, health)
+                status_text = f"Memory module {name} ({size}GB) status is: {status}"
 
-                if health not in [ "GoodInUse", "OK" ]:
-                    if health == "WARNING":
-                        plugin.add_output_data("WARNING", status_text)
-                    else:
-                        plugin.add_output_data("CRITICAL", status_text)
-                else:
-                    plugin.add_output_data("OK", status_text)
+                if status == "GoodInUse":
+                    status = "OK"
+
+                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
     else:
-        plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
 
     return
 
@@ -936,12 +993,14 @@ def get_nics(system = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Systems/%d/EthernetInterfaces/" % system
+    plugin.set_current_command("NICs")
+
+    redfish_url = f"/redfish/v1/Systems/{system}/EthernetInterfaces/"
 
     nics_response = plugin.rf.get_view(redfish_url)
     data_members = nics_response.get("EthernetInterfaces") or nics_response.get("Members")
 
-    health_issue = False
+    default_text = ""
     nic_num = 0
     if data_members:
 
@@ -961,44 +1020,41 @@ def get_nics(system = 1):
 
                 if nic_response.get("Status"):
 
-                    health = nic_response.get("Status").get("Health")
+                    status = nic_response.get("Status").get("Health")
                     link_status = nic_response.get("LinkStatus")
 
                 else:
-                    health = "Undefined"
+                    status = "Undefined"
 
-                if health is None:
-                    health = "Undefined"
+                if status is None:
+                    status = "Undefined"
+
+                status_text = f"NIC {id} status is: {status}"
 
                 if link_status:
-                    status_text = "NIC %s status is '%s' and link status is '%s'" % (id, health, link_status)
-                else:
-                    status_text = "NIC %s status is: %s" % (id, health)
+                    status_text += f" and link status is '{link_status}'"
 
-                if health not in ["OK", "Undefined"]:
-                    if health == "WARNING":
-                        plugin.add_output_data("WARNING", status_text)
-                    else:
-                        plugin.add_output_data("CRITICAL", status_text)
-                    health_issue = True
-                else:
-                    if args.detailed:
-                        plugin.add_output_data("OK", status_text)
+                if status == "Undefined":
+                    status = "OK"
+
+                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No network interface data returned for API URL '%s'" % nic.get("@odata.id"))
 
-        if args.detailed is False and health_issue == False:
-            plugin.add_output_data("OK", "All network interfaces (%d) are in good condition" % nic_num)
-
+        default_text = f"All network interfaces ({nic_num}) are in good condition"
     else:
-        plugin.add_output_data("UNKNOWN", "No network interface data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No network interface data returned for API URL '{redfish_url}'")
+
+    plugin.add_output_data("OK", default_text, summary = True)
 
     return
 
 def get_storage(system = 1):
 
     global plugin
+
+    plugin.set_current_command("Storage")
 
     if plugin.rf.vendor == "HPE":
         get_storage_hpe(system)
@@ -1016,7 +1072,7 @@ def get_storage_hpe(system = 1):
 
         if disks_response.get("Members") is None:
             if type == "DiskDrives":
-                plugin.add_output_data("OK", "no %s found for this ArrayController" % type)
+                plugin.add_output_data("OK", f"no {type} found for this Controller")
             return
 
         for disk in disks_response.get("Members"):
@@ -1026,23 +1082,20 @@ def get_storage_hpe(system = 1):
             else:
                 disk_response = plugin.rf.get(disk.get("@odata.id"))
 
-            health = disk_response.get("Status").get("Health").upper()
+            status = disk_response.get("Status").get("Health").upper()
             location = disk_response.get("Location")
             size = disk_response.get("CapacityGB")
 
-            status_text = "Physical Drive (%s) %sGB Status: %s" % (location, size, health)
+            status_text = f"Physical Drive ({location}) {size}GB Status: {status}"
 
-            if health in [ "OK", "WARNING" ]:
-                plugin.add_output_data(health, status_text)
-            else:
-                plugin.add_output_data("CRITICAL", status_text)
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
     def get_logical_drives(link):
 
         ld_response = plugin.rf.get("%s/LogicalDrives/?$expand=." % link)
 
         if ld_response.get("Members") is None:
-            plugin.add_output_data("OK", "no logical drives found for this ArrayController")
+            plugin.add_output_data("OK", "no logical drives found for this Controller")
             return
 
         for logical_drive in ld_response.get("Members"):
@@ -1052,24 +1105,21 @@ def get_storage_hpe(system = 1):
             else:
                 logical_drive_response = plugin.rf.get(logical_drive.get("@odata.id"))
 
-            health = logical_drive_response.get("Status").get("Health").upper()
+            status = logical_drive_response.get("Status").get("Health").upper()
             id = logical_drive_response.get("LogicalDriveNumber")
             size = int(logical_drive_response.get("CapacityMiB")) * 1024 ** 2 / 1000 ** 3
             raid = logical_drive_response.get("Raid")
 
-            status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, health)
+            status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, status)
 
-            if health in [ "OK", "WARNING" ]:
-                plugin.add_output_data(health, status_text)
-            else:
-                plugin.add_output_data("CRITICAL", status_text)
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
     def get_enclosures(link):
 
         enclosures_response = plugin.rf.get("%s/StorageEnclosures/?$expand=." % link)
 
         if enclosures_response.get("Members") is None:
-            plugin.add_output_data("OK", "no storage enclosures found for this ArrayController")
+            plugin.add_output_data("OK", "no storage enclosures found for this Controller")
             return
 
         for enclosure in enclosures_response.get("Members"):
@@ -1079,31 +1129,29 @@ def get_storage_hpe(system = 1):
             else:
                 enclosure_response = plugin.rf.get(enclosure.get("@odata.id"))
 
-            health = enclosure_response.get("Status").get("Health").upper()
+            status = enclosure_response.get("Status").get("Health").upper()
             location = enclosure_response.get("Location")
 
-            status_text = "StorageEnclosure (%s) Status: %s" % (location, health)
+            status_text = f"StorageEnclosure ({location}) Status: {status}"
 
-            if health in [ "OK", "WARNING" ]:
-                plugin.add_output_data(health, status_text)
-            else:
-                plugin.add_output_data("CRITICAL", status_text)
-
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
     global plugin
 
-    redfish_url = "/redfish/v1/Systems/%s/SmartStorage/" % system
+    plugin.set_current_command("Storage")
+
+    redfish_url = f"/redfish/v1/Systems/{system}/SmartStorage/"
 
     storage_response = plugin.rf.get(redfish_url)
 
     status = storage_response.get("Status").get("Health").upper()
 
     if status and status == "OK" and args.detailed == False:
-        plugin.add_output_data("OK", "Status of HP SmartArray is: %s" % status)
+        plugin.add_output_data("OK", f"Status of HP SmartArray is: {status}", summary = True)
         return
 
     # unhealthy
-    redfish_url = "/redfish/v1/Systems/%s/SmartStorage/ArrayControllers/?$expand=." % system
+    redfish_url = f"/redfish/v1/Systems/{system}/SmartStorage/ArrayControllers/?$expand=."
 
     array_controllers_response = plugin.rf.get(redfish_url)
 
@@ -1119,19 +1167,16 @@ def get_storage_hpe(system = 1):
             if controller_response.get("Id"):
                 model = controller_response.get("Model")
                 fw_version = controller_response.get("FirmwareVersion").get("Current").get("VersionString")
-                status = controller_response.get("Status")
+                controller_status = controller_response.get("Status")
 
-                if status.get("State") and status.get("State") == "Absent":
+                if controller_status.get("State") and controller_status.get("State") == "Absent":
                     continue
 
-                health = status.get("Health").upper()
+                status = controller_status.get("Health").upper()
 
-                status_text = "%s (FW: %s) status is: %s" % (model, fw_version, health)
+                status_text = f"{model} (FW: {fw_version}) status is: {status}"
 
-                if health in [ "OK", "WARNING" ]:
-                    plugin.add_output_data(health, status_text)
-                else:
-                    plugin.add_output_data("CRITICAL", status_text)
+                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
                 get_disks(array_controller.get("@odata.id"))
                 get_logical_drives(array_controller.get("@odata.id"))
@@ -1141,7 +1186,7 @@ def get_storage_hpe(system = 1):
                 plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % array_controller.get("@odata.id"))
 
     else:
-        plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % redfish_url)
+        plugin.add_output_data("UNKNOWN", f"No array controller data returned for API URL '{redfish_url}'")
 
     return
 
@@ -1149,14 +1194,15 @@ def get_event_log(type, system_manager_id = 1):
 
     global plugin
 
-    if type not in ["manager", "system"]:
-        plugin.add_output_data("UNKNOWN", "Unknown event log type: %s", type)
-        return
+    if type not in ["Manager", "System"]:
+        raise Exception("Unknown event log type: %s", type)
+
+    plugin.set_current_command("%s Event Log" % type)
 
     if plugin.rf.vendor == "HPE":
         get_event_log_hpe(type, system_manager_id)
     else:
-        plugin.add_output_data("UNKNOWN", "Command to check %s event log not implemented for this vendor" % type)
+        plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor")
 
     return
 
@@ -1178,10 +1224,10 @@ def get_event_log_hpe(type, system_manager_id):
             forced_limit = True
             limit_of_returned_itmes = ilo4_limit
 
-    if type == "system":
-        redfish_url = "/redfish/v1/Systems/%s/LogServices/IML/Entries/?$expand=." % system_manager_id
+    if type == "System":
+        redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/IML/Entries/?$expand=."
     else:
-        redfish_url = "/redfish/v1/Managers/%s/LogServices/IEL/Entries?$expand=." % system_manager_id
+        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/LogServices/IEL/Entries?$expand=."
 
         if args.warning:
             date_warning = data_now - datetime.timedelta(days=int(args.warning))
@@ -1191,7 +1237,7 @@ def get_event_log_hpe(type, system_manager_id):
     event_data = plugin.rf.get(redfish_url)
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin.add_output_data("OK", "No log entries found.")
+        plugin.add_output_data("OK", "No log entries found.", summary = True)
         return
 
     # reverse list from newest to oldest entry
@@ -1223,7 +1269,7 @@ def get_event_log_hpe(type, system_manager_id):
 
         status = "OK"
 
-        if type == "system":
+        if type == "System":
             if severity == "WARNING" and repaired is False:
                 status = "WARNING"
             elif severity != "OK" and repaired is False:
@@ -1253,6 +1299,8 @@ def get_system_info(system = 1):
 
     global plugin
 
+    plugin.set_current_command("System Info")
+
     if plugin.rf.vendor == "HPE":
         get_system_info_hpe(system)
 
@@ -1265,9 +1313,13 @@ def get_system_info_hpe(system = 1):
 
     global plugin
 
-    redfish_url = "/redfish/v1/Systems/%s/" % system
+    redfish_url = f"/redfish/v1/Systems/{system}/"
 
     system_response = plugin.rf.get(redfish_url)
+
+    if system_response is None:
+        plugin.add_output_data("UNKNOWN", f"No system information data returned for API URL '{redfish_url}'")
+        return
 
     model = system_response.get("Model").strip()
     serial = system_response.get("SerialNumber").strip()
@@ -1287,12 +1339,19 @@ def get_system_info_hpe(system = 1):
     if len(host_name) == 0:
         host_name = "NOT SET"
 
-    plugin.add_output_data(status, f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}")
-    plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
+    status_text = f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}"
+
+    if args.detailed == False:
+        plugin.add_output_data(status, status_text, summary = True)
+    else:
+        plugin.add_output_data(status, status_text)
+        plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
 
 def get_firmware_info(system = 1):
 
     global plugin
+
+    plugin.set_current_command("Firmware Info")
 
     if plugin.rf.vendor == "HPE":
         if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
@@ -1321,14 +1380,15 @@ def get_firmware_info_hpe_ilo5():
 
         plugin.add_output_data("OK", f"{component_name} ({component_context}): {component_version}")
 
+    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Members")), summary = True)
+
     return
 
 def get_firmware_info_hpe_ilo4(system = 1):
 
     global plugin
 
-
-    redfish_url = "/redfish/v1/Systems/%s/FirmwareInventory/" % system
+    redfish_url = f"/redfish/v1/Systems/{system}/FirmwareInventory/"
 
     firmware_response = plugin.rf.get(redfish_url)
 
@@ -1342,11 +1402,15 @@ def get_firmware_info_hpe_ilo4(system = 1):
 
             plugin.add_output_data("OK", f"{component_name} ({component_location}): {component_version}")
 
+    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Current")), summary = True)
+
     return
 
 def get_bmc_info(manager = 1):
 
     global plugin
+
+    plugin.set_current_command("BMC Info")
 
     if plugin.rf.vendor == "HPE":
         get_bmc_info_hpe(manager)
@@ -1360,9 +1424,7 @@ def get_bmc_info_hpe(manager = 1):
 
     global plugin
 
-    health_issue = False
-
-    redfish_url = "/redfish/v1/Managers/%d/?$expand=." % manager
+    redfish_url = f"/redfish/v1/Managers/{manager}/?$expand=."
 
     manager_response = plugin.rf.get(redfish_url)
 
@@ -1374,15 +1436,13 @@ def get_bmc_info_hpe(manager = 1):
     ilo_fw_date = ilo_firmware.get("Date")
     ilo_fw_version = ilo_firmware.get("VersionString")
 
-    if args.detailed:
-        plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_fw_date})")
+    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_fw_date})")
 
     # license
     ilo_license_string = ilo_data.get("License").get("LicenseString")
     ilo_license_key = ilo_data.get("License").get("LicenseKey")
 
-    if args.detailed:
-        plugin.add_output_data("OK", f"Licenses: {ilo_license_string} ({ilo_license_key})")
+    plugin.add_output_data("OK", f"Licenses: {ilo_license_string} ({ilo_license_key})")
 
     # iLO Self Test
     for self_test in ilo_data.get("iLOSelfTestResults"):
@@ -1402,17 +1462,10 @@ def get_bmc_info_hpe(manager = 1):
         else:
             status_text = f"SelfTest {name} status: {status}"
 
-        if status != "OK":
-            health_issue = True
-
-        if status in ["OK", "WARNING"]:
-            if status == "WARNING" or status == "OK" and args.detailed:
-                plugin.add_output_data(status, status_text)
-        else:
-            plugin.add_output_data("CRITICAL", status_text)
+        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
     # iLO Network interfaces
-    redfish_url = "/redfish/v1/Managers/%d/EthernetInterfaces/?$expand=." % manager
+    redfish_url = f"/redfish/v1/Managers/{manager}/EthernetInterfaces/?$expand=."
 
     manager_nic_response = plugin.rf.get(redfish_url)
 
@@ -1427,34 +1480,26 @@ def get_bmc_info_hpe(manager = 1):
         else:
             manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
 
-        status = manager_nic.get("Status")
+        nic_status = manager_nic.get("Status")
 
-        if status is None or status.get("State") is None:
+        if nic_status is None or nic_status.get("State") is None:
             continue
 
-        if status.get("State") == "Disabled":
+        if nic_status.get("State") == "Disabled":
             continue
 
-        health = status.get("Health").upper()
+        status = nic_status.get("Health").upper()
         speed = manager_nic.get("SpeedMbps")
         duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
         autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
         host_name = manager_nic.get("HostName")
         nic_id = manager_nic.get("Id")
 
-        status_text = f"iLO NIC {nic_id} '{host_name}' (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {health}"
+        status_text = f"iLO NIC {nic_id} '{host_name}' (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
 
-        if health != "OK":
-            health_issue = True
+        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-        if health in ["OK", "WARNING"]:
-            if status == "WARNING" or status == "OK" and args.detailed:
-                plugin.add_output_data(health, status_text)
-        else:
-            plugin.add_output_data("CRITICAL", status_text)
-
-    if health_issue == False and args.detailed == False:
-        plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_license_string} license) all self tests and nics are in 'OK' state.")
+    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_license_string} license) all self tests and nics are in 'OK' state.", summary = True)
 
     return
 
@@ -1548,8 +1593,8 @@ if __name__ == "__main__":
     if "bmc"        in args.requested_query: get_bmc_info()
     if "info"       in args.requested_query: get_system_info()
     if "firmware"   in args.requested_query: get_firmware_info()
-    if "mel"        in args.requested_query: get_event_log("manager")
-    if "sel"        in args.requested_query: get_event_log("system")
+    if "mel"        in args.requested_query: get_event_log("Manager")
+    if "sel"        in args.requested_query: get_event_log("System")
 
     plugin.do_exit()
 
