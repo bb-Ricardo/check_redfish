@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.5"
-__version_date__ = "2019-08-09"
+__version__ = "0.0.6"
+__version_date__ = "2019-08-16"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -379,7 +379,6 @@ class PluginData():
     __log_output_data = dict()
     __return_status = "OK"
     __current_command = "global"
-    __global_summary = ""
 
     def __init__(self, cli_args = None):
 
@@ -387,13 +386,6 @@ class PluginData():
             raise Exception("No args passed to RedfishConnection()")
 
         self.rf = RedfishConnection(cli_args)
-
-    def set_global_summary(self, summary_text = None):
-
-        if summary_text is None:
-            raise Exception("summary_text not set")
-
-        self.__global_summary = summary_text
 
     def set_current_command(self, current_command = None):
 

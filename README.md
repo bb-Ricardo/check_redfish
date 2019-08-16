@@ -42,15 +42,15 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--sessionfile SESSIONFILE]
                         [--sessionfiledir SESSIONFILEDIR] [-h] [-w WARNING]
                         [-c CRITICAL] [-v] [-d] [-m MAX] [--storage] [--proc]
-                        [--memory] [--power] [--temp] [--fan] [--nic] [--info]
-                        [--firmware] [--sel] [--mel]
+                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
+                        [--info] [--firmware] [--sel] [--mel]
 
 This is a monitoring plugin to check components and
 health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.5 (2019-08-09)
+Version: 0.0.6 (2019-08-16)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
@@ -90,6 +90,7 @@ query status/health informations (at least one is required):
   --firmware            request firmware informations
   --sel                 request System Log status
   --mel                 request Management Processor Log status
+
 ```
 
 ## General usage
