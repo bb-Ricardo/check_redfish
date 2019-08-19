@@ -1480,7 +1480,14 @@ def get_bmc_info_hpe(manager = 1):
         if nic_status.get("State") == "Disabled":
             continue
 
-        status = nic_status.get("Health").upper()
+        # workaround for older ILO versions
+        if nic_status.get("Health"):
+            status = nic_status.get("Health").upper()
+        elif nic_status.get("State") == "Enabled":
+            status = "OK"
+        else:
+            status = "UNKNOWN"
+
         speed = manager_nic.get("SpeedMbps")
         duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
         autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
