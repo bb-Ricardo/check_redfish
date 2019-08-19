@@ -50,7 +50,7 @@ health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.6 (2019-08-16)
+Version: 0.0.7 (2019-08-19)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
@@ -182,7 +182,8 @@ by **--mel** and **--sel**
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
 * On HPE systems the nic status is reported unreliable
-
+* On Lenovo Systems the commands **--mel** and **--sel** are not implemented due to
+issues with timeouts
 
 ## Supported Systems
 This plugin is currently tested with following systems
@@ -197,6 +198,9 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.40) should work
 * ProLiant DL380 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
+
+### Lenovo
+* ThinkSystem SR650 (BMC Version 2.12)
 
 
 ## License

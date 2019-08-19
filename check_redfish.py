@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.6"
-__version_date__ = "2019-08-16"
+__version__ = "0.0.7"
+__version_date__ = "2019-08-19"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -338,7 +338,7 @@ class RedfishConnection():
 
         if self.vendor_data is not None and \
            self.vendor_data.view_select is not None and \
-           self.vendor_data.view_sopported:
+           self.vendor_data.view_supported:
 
             if self.vendor_data.view_response:
                 return self.vendor_data.view_response
@@ -554,7 +554,7 @@ class VendorHPEData():
     """
         Select and store view (supported from ILO 5)
     """
-    view_sopported = False
+    view_supported = False
     view_select = {
         "Select": [
             {
@@ -581,6 +581,11 @@ class VendorHPEData():
     }
 
     view_response = None
+
+class VendorLenovoData():
+
+    view_supported = False
+    view_select = None
 
 def parse_command_line():
     """parse command line arguments
@@ -681,10 +686,10 @@ def get_power(chassi = 1):
 
             ps_num += 1
 
-            last_power = ps.get("LastPowerOutputWatts")
-            status = ps.get("Status").get("Health").upper()
-            model = ps.get("Model").strip()
-            last_power_output = ps.get("LastPowerOutputWatts")
+            status = ps.get("Status").get("Health").upper() # HP, Lenovo
+            model = ps.get("Model") # HP
+            part_number = ps.get("PartNumber") # Lenovo
+            last_power_output = ps.get("LastPowerOutputWatts") # HP, Lenovo
             ps_bay = None
             ps_hp_status = None
 
@@ -696,14 +701,23 @@ def get_power(chassi = 1):
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("BayNumber")
                     ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
 
+                elif plugin.rf.vendor == "Lenovo":
+                    ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("Location").get("Info")
+
             if ps_bay is None:
                 ps_bay = ps_num
+
+            if model is None:
+                model = part_number
+
+            if model is None:
+                model = "Unknown model"
 
             # align check output with temp and fan command
             if ps_hp_status is not None and ps_hp_status == "Unknown":
                 status = "CRITICAL"
 
-            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model, ps_hp_status or status)
+            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model.strip(), ps_hp_status or status)
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
@@ -716,7 +730,12 @@ def get_power(chassi = 1):
         plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
-    power_redundancies = plugin.rf.get_view(redfish_url).get("PowerRedundancy")
+    if plugin.rf.vendor == "HPE":
+        redundancy_key = "PowerRedundancy"
+    else:
+        redundancy_key = "Redundancy"
+
+    power_redundancies = plugin.rf.get_view(redfish_url).get(redundancy_key)
 
     if power_redundancies:
         status_text = ""
@@ -765,25 +784,38 @@ def get_temp(chassi = 1):
 
             if state == "Offline":
                 status = state
+            elif state == "Enabled" and temp.get("Status").get("Health") is None:
+                status = "OK"
             else:
                 status = temp.get("Status").get("Health").upper()
 
             name = temp.get("Name").strip()
             current_temp = temp.get("ReadingCelsius")
             critical_temp = temp.get("UpperThresholdCritical")
+            warning_temp = temp.get("UpperThresholdNonCritical")
 
             temp_num += 1
 
+            if warning_temp is None or str(warning_temp) == "0":
+                warning_temp = "N/A"
+
+            if warning_temp != "N/A" and current_temp >= warning_temp:
+                status = "WARNING"
+
             if critical_temp is None or str(critical_temp) == "0":
                 critical_temp = "N/A"
+
+            if critical_temp != "N/A" and current_temp >= critical_temp:
+                status = "CRITICAL"
 
             status_text = f"Temp sensor {name} status is: {status} ({current_temp} °C) (max: {critical_temp} °C)"
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-            critical_temp = critical_temp if critical_temp != 0 else None
+            warning_temp = warning_temp if warning_temp != "N/A" else None
+            critical_temp = critical_temp if critical_temp != "N/A" else None
 
-            plugin.add_perf_data(f"Temp_{name}", int(current_temp), critical=critical_temp)
+            plugin.add_perf_data(f"Temp_{name}", int(current_temp), warning=warning_temp, critical=critical_temp)
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
@@ -820,6 +852,11 @@ def get_fan(chassi = 1):
                 status = fan.get("Status").get("Health").upper()
 
             name = fan.get("FanName") or fan.get("Name")
+
+            if fan.get("Oem") is not None:
+
+                if plugin.rf.vendor == "Lenovo":
+                    name = fan.get("Oem").get(plugin.rf.vendor_dict_key).get("Location").get("Info")
 
             speed = fan.get("Reading")
             speed_units = fan.get("ReadingUnits")
@@ -867,7 +904,7 @@ def get_procs(system = 1):
             return
 
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url = f"/redfish/v1/Systems/{system}/Processors"
+    redfish_url = f"/redfish/v1/Systems/{system}/Processors/" # ?$expand=*"
 
     processors_response = plugin.rf.get_view(redfish_url)
 
@@ -926,7 +963,7 @@ def get_mem(system = 1):
             return
 
     # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url = f"/redfish/v1/Systems/{system}/Memory/"
+    redfish_url = f"/redfish/v1/Systems/{system}/Memory/" #?$expand=Members"
 
     memory_response = plugin.rf.get_view(redfish_url)
 
@@ -1051,7 +1088,10 @@ def get_storage(system = 1):
     if plugin.rf.vendor == "HPE":
         get_storage_hpe(system)
 
-    if not plugin.rf.vendor:
+    elif plugin.rf.vendor == "Lenovo":
+        get_storage_lenovo(system)
+
+    else:
         plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
 
     return
@@ -1182,6 +1222,111 @@ def get_storage_hpe(system = 1):
 
     return
 
+def get_storage_lenovo(system = 1):
+
+    def get_disks(link):
+
+        disks_response = plugin.rf.get("%s/?$expand=*" % link)
+
+        if disks_response.get("value") is None:
+            plugin.add_output_data("OK", f"no disk found for this Controller")
+            return
+
+        for disk_response in disks_response.get("value"):
+
+            name = disk_response.get("Name").strip()
+            status = disk_response.get("Status").get("Health").upper()
+            location = disk_response.get("Location") or disk_response.get("PhysicalLocation")
+            location = location[0].get("Info")
+            size = disk_response.get("CapacityBytes")
+
+            if size is not None and size > 0:
+                size = size / ( 1000 ** 3)
+
+            status_text = f"Physical Drive {name} ({location}) %0.2fGiB Status: {status}" % size
+
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+    def get_volumes(link):
+
+        volumes_response = plugin.rf.get("%s/?$expand=*" % link)
+
+        if len(volumes_response.get("Members")) == 0:
+            plugin.add_output_data("OK", f"no volumes found for this Controller")
+            return
+
+        for volume_response in volumes_response.get("Members"):
+
+            name = volume_response.get("Name").strip()
+            status = volume_response.get("Status").get("Health").upper()
+            size = int(volume_response.get("CapacityBytes")) / ( 1000 ** 3)
+            raid = volume_response.get("Oem").get(plugin.rf.vendor_dict_key).get("RaidLevel")
+
+            status_text = "Logical Drive %s %.0fGiB (%s) Status: %s" % (name, size, raid, status)
+
+            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+    global plugin
+
+    plugin.set_current_command("Storage")
+
+    redfish_url = f"/redfish/v1/Systems/{system}/Storage/?$expand=Members"
+
+    storage_response = plugin.rf.get(redfish_url)
+
+    if storage_response is not None:
+
+        storage_status = list()
+        storage_controller_names = list()
+
+        for storage_member in storage_response.get("Members"):
+
+            if storage_member.get("Id"):
+
+                name = storage_member.get("Name")
+
+                storage_status.append(storage_member.get("Status").get("HealthRollup").upper())
+
+                for storage_controller in storage_member.get("StorageControllers"):
+                    model = storage_controller.get("Model")
+                    fw_version = storage_controller.get("FirmwareVersion")
+                    location = storage_controller.get("Oem").get(plugin.rf.vendor_dict_key).get("Location").get("Info")
+                    controller_status = storage_controller.get("Status")
+
+                    if controller_status.get("State") and controller_status.get("State") == "Absent":
+                        continue
+
+                    status = controller_status.get("Health").upper()
+
+                    storage_controller_names.append(f"{name} {model}")
+
+                    status_text = f"{name} {model} ({location}) (FW: {fw_version}) status is: {status}"
+
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+
+                get_disks(storage_member.get("Drives@odata.navigationLink"))
+                get_volumes(storage_member.get("Volumes").get("@odata.id"))
+
+            else:
+                plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % storage_member.get("@odata.id"))
+
+        if "CRITICAL" in storage_status:
+            status = "CRITICAL"
+        elif "WARNING" in storage_status:
+            status = "WARNING"
+        else:
+            status = "OK"
+
+        if status != "OK":
+            plugin.add_output_data("CRITICAL", "One or more storage controller report a issue")
+        else:
+            plugin.add_output_data("OK", "Status of %s is: OK" % " and ".join(storage_controller_names), summary = True)
+    else:
+        plugin.add_output_data("UNKNOWN", f"No storage controller data returned for API URL '{redfish_url}'")
+
+    return
+
 def get_event_log(type, system_manager_id = 1):
 
     global plugin
@@ -1193,6 +1338,10 @@ def get_event_log(type, system_manager_id = 1):
 
     if plugin.rf.vendor == "HPE":
         get_event_log_hpe(type, system_manager_id)
+
+    elif plugin.rf.vendor == "Lenovo":
+        get_event_log_lenovo(type, system_manager_id)
+
     else:
         plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor")
 
@@ -1287,21 +1436,33 @@ def get_event_log_hpe(type, system_manager_id):
 
     return
 
+def get_event_log_lenovo(type, system_manager_id):
+
+    global plugin
+
+    if type == "System":
+        redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/ActiveLog/Entries/" # /Entries/?$expand=.
+    else:
+        redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/StandardLog/Entries/" # ML/Entries/?$expand=.
+
+    # event_data = plugin.rf.get(redfish_url)
+
+    plugin.add_output_data("UNKNOWN", f"Request of {type} Event Log entries currently not implemented due to timeout issues.")
+
 def get_system_info(system = 1):
 
     global plugin
 
     plugin.set_current_command("System Info")
 
-    if plugin.rf.vendor == "HPE":
-        get_system_info_hpe(system)
-
-    if not plugin.rf.vendor:
+    if plugin.rf.vendor in [ "HPE", "Lenovo" ]:
+        get_system_info_hpe_lenovo(system)
+    else:
         plugin.add_output_data("UNKNOWN", "'info' command is currently not supported for this system.")
 
     return
 
-def get_system_info_hpe(system = 1):
+def get_system_info_hpe_lenovo(system = 1):
 
     global plugin
 
@@ -1333,11 +1494,12 @@ def get_system_info_hpe(system = 1):
 
     status_text = f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}"
 
-    if args.detailed == False:
+    if args.detailed is False:
         plugin.add_output_data(status, status_text, summary = True)
     else:
         plugin.add_output_data(status, status_text)
-        plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
+        if plugin.rf.vendor == "HPE":
+            plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
 
 def get_firmware_info(system = 1):
 
@@ -1351,7 +1513,9 @@ def get_firmware_info(system = 1):
         else:
             get_firmware_info_hpe_ilo4(system)
 
-    if not plugin.rf.vendor:
+    elif plugin.rf.vendor == "Lenovo":
+        get_firmware_info_lenovo()
+    else:
         plugin.add_output_data("UNKNOWN", "'firmware' command is currently not supported for this system.")
 
     return
@@ -1398,6 +1562,34 @@ def get_firmware_info_hpe_ilo4(system = 1):
 
     return
 
+def get_firmware_info_lenovo():
+
+    global plugin
+
+    redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/"
+
+    firmware_response = plugin.rf.get(redfish_url)
+
+    if args.detailed is False:
+        plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Members")), summary = True)
+        return
+
+    for firmware_member in firmware_response.get("Members"):
+
+        if firmware_member.get("@odata.type"):
+            firmware_entry = firmware_member
+        else:
+            firmware_entry = plugin.rf.get(firmware_member.get("@odata.id"))
+
+        component_name = firmware_entry.get("Name")
+        component_version = firmware_entry.get("Version")
+        component_id = firmware_entry.get("Id")
+
+        plugin.add_output_data("OK", f"{component_name} ({component_id}): {component_version}")
+
+
+    return
+
 def get_bmc_info(manager = 1):
 
     global plugin
@@ -1407,7 +1599,10 @@ def get_bmc_info(manager = 1):
     if plugin.rf.vendor == "HPE":
         get_bmc_info_hpe(manager)
 
-    if not plugin.rf.vendor:
+    elif plugin.rf.vendor == "Lenovo":
+        get_bmc_info_lenovo(manager)
+
+    else:
         plugin.add_output_data("UNKNOWN", "'bmc' command is currently not supported for this system.")
 
     return
@@ -1502,10 +1697,40 @@ def get_bmc_info_hpe(manager = 1):
 
     return
 
-def get_basic_system_info():
+def get_bmc_info_lenovo(manager = 1):
 
     global plugin
 
+    redfish_url = f"/redfish/v1/Managers/{manager}/"
+
+    manager_response = plugin.rf.get(redfish_url)
+
+    imm_model = manager_response.get("Model")
+    imm_fw_version = manager_response.get("FirmwareVersion")
+
+    summary = True
+    if args.detailed is True:
+        summary = False
+
+    status_text = f"{imm_model} ({imm_fw_version})"
+
+    redfish_url = "/redfish/v1/Chassis/1/"
+
+    chassi_response = plugin.rf.get(redfish_url)
+
+    located_data = chassi_response.get("Oem").get(plugin.rf.vendor_dict_key).get("LocatedIn")
+
+    if located_data is not None:
+        descriptive_name = located_data.get("DescriptiveName")
+        rack = located_data.get("Rack")
+
+        status_text += f" system name: {descriptive_name} ({rack})"
+
+    plugin.add_output_data("OK", status_text, summary=summary)
+
+def get_basic_system_info():
+
+    global plugin
 
     basic_infos = plugin.rf.connection.root
 
@@ -1556,6 +1781,11 @@ def get_basic_system_info():
             pprint.pprint(list(filter(r.match, resource_list)))
             #response.vendor_data.resource_directory =
             """
+
+        if vendor_string in ["Lenovo"]:
+            plugin.rf.vendor = "Lenovo"
+
+            plugin.rf.vendor_data = VendorLenovoData()
 
     return
 
