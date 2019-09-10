@@ -782,10 +782,11 @@ def get_temp(chassi = 1):
             if state == "Absent":
                 continue
 
-            if state == "Offline":
-                status = state
-            elif state == "Enabled" and temp.get("Status").get("Health") is None:
-                status = "OK"
+            if temp.get("Status").get("Health") is None:
+                if state == "Enabled":
+                    status = "OK"
+                else:
+                    status = state
             else:
                 status = temp.get("Status").get("Health").upper()
 
@@ -846,8 +847,11 @@ def get_fan(chassi = 1):
             if state == "Absent":
                 continue
 
-            if state == "Offline":
-                status = state
+            if fan.get("Status").get("Health") is None:
+                if state == "Enabled":
+                    status = "OK"
+                else:
+                    status = state
             else:
                 status = fan.get("Status").get("Health").upper()
 
@@ -978,30 +982,42 @@ def get_mem(system = 1):
 
             if mem_module_response.get("Id"):
 
-                # ILO 4
-                if mem_module_response.get("DIMMStatus"):
+                # get size
+                size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB")
+
+                if size is None:
+                    size = 0
+                else:
+                    size = size / 1024
+
+                # get name
+                name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
+
+                if name is None:
+                    name = "UnknownNameLocation"
+
+                # get status
+                if plugin.rf.vendor == "HPE" and mem_module_response.get("Oem") and mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus"):
+                    status = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
+
+                elif mem_module_response.get("DIMMStatus"):
 
                     status = mem_module_response.get("DIMMStatus")
-                    size = mem_module_response.get("SizeMB") / 1024
-                    name = mem_module_response.get("SocketLocator")
 
                 elif mem_module_response.get("Status"):
 
                     module_status = mem_module_response.get("Status")
 
                     if module_status.get("State") and module_status.get("State") == "Absent":
-                        continue
-
-                    if plugin.rf.vendor == "HPE" and mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus"):
-                        status = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
+                        status = module_status.get("State") == "Absent"
                     else:
                         status = module_status.get("Health")
 
-                    size = mem_module_response.get("CapacityMiB") / 1024
-                    name = mem_module_response.get("DeviceLocator")
-
                 else:
                     plugin.add_output_data("UNKNOWN", f"Error retrieving memory module status: {mem_module_response}")
+                    continue
+
+                if status in [ "Absent", "NotPresent"]:
                     continue
 
                 status_text = f"Memory module {name} ({size}GB) status is: {status}"
