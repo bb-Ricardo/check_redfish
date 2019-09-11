@@ -37,6 +37,10 @@ status_types = {
 
 plugin = None
 
+# defaults
+default_conn_max_retries = 3
+default_conn_timeout = 7
+
 class RedfishConnection():
 
     sessionfilepath = None
@@ -49,10 +53,6 @@ class RedfishConnection():
     vendor_dict_key = None
     vendor_data = None
     cli_args = None
-
-    # defaults
-    conn_max_retries = 3
-    conn_timeout = 7
 
     def __init__(self, cli_args = None):
 
@@ -198,8 +198,8 @@ class RedfishConnection():
 
         # set possible changed connection values
         if self.connection is not None:
-            self.connection._max_retry = self.conn_max_retries
-            self.connection._timeout = self.conn_timeout
+            self.connection._max_retry = self.cli_args.retries
+            self.connection._timeout = self.cli_args.timeout
 
         self.session_was_restored = True
 
@@ -269,7 +269,7 @@ class RedfishConnection():
 
         # initialize connection
         try:
-            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.conn_max_retries, timeout=self.conn_timeout)
+            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
             self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
@@ -621,6 +621,10 @@ def parse_command_line():
                         help="always print detailed result")
     group.add_argument("-m", "--max",  type=int,
                         help="set maximum of returned items for --sel or --mel")
+    group.add_argument("-r", "--retries",  type=int, default=default_conn_max_retries,
+                        help="set number of maximum retries (default: %d)" % default_conn_max_retries)
+    group.add_argument("-t", "--timeout",  type=int, default=default_conn_timeout,
+                        help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health informations (at least one is required)")
