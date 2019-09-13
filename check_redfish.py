@@ -363,7 +363,7 @@ class RedfishConnection():
 
             self.vendor_data.view_response = redfish_response.dict
 
-            return  self.vendor_data.view_response
+            return self.vendor_data.view_response
 
         if redfish_path is not None:
             return self.get(redfish_path)
@@ -553,6 +553,11 @@ class VendorHPEData():
 
     """
         Select and store view (supported from ILO 5)
+
+        ATTENTION: This will only work as long as we are querying servers
+        with "1" System, "1" Chassi and "1" Manager
+
+        OK for now but will be changed once we have to query blade centers
     """
     view_supported = False
     view_select = {
@@ -571,11 +576,19 @@ class VendorHPEData():
             },
             {
                 "From": "/Chassis/1/Power/?$expand=.",
-                "Properties" : ["PowerSupplies", "Redundancy AS PowerRedundancy"]
+                "Properties": ["PowerSupplies", "Redundancy AS PowerRedundancy"]
             },
             {
                 "From": "/Chassis/1/Thermal/",
-                "Properties" : ["Temperatures", "Fans" ]
+                "Properties": ["Temperatures", "Fans" ]
+            },
+            {
+                "From": "/Managers/?$expand=.",
+                "Properties": [ "Members as ILO" ]
+            },
+            {
+                "From": "/Managers/1/EthernetInterfaces/?$expand=.",
+                "Properties": [ "Members as ILOInterfaces" ]
             }
         ]
     }
@@ -1633,7 +1646,12 @@ def get_bmc_info_hpe(manager = 1):
 
     redfish_url = f"/redfish/v1/Managers/{manager}/?$expand=."
 
-    manager_response = plugin.rf.get(redfish_url)
+    view_response = plugin.rf.get_view(redfish_url)
+
+    if view_response.get("ILO"):
+        manager_response = view_response.get("ILO")[0]
+    else:
+        manager_response = view_response
 
     # get general informations
     ilo_data = manager_response.get("Oem").get(plugin.rf.vendor_dict_key)
@@ -1674,13 +1692,14 @@ def get_bmc_info_hpe(manager = 1):
     # iLO Network interfaces
     redfish_url = f"/redfish/v1/Managers/{manager}/EthernetInterfaces/?$expand=."
 
-    manager_nic_response = plugin.rf.get(redfish_url)
+    if view_response.get("ILOInterfaces") is None:
+        manager_nic_response = plugin.rf.get(redfish_url)
 
-    if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
-        plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
-        return
+        if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+            plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
+            return
 
-    for manager_nic_member in manager_nic_response.get("Members"):
+    for manager_nic_member in view_response.get("ILOInterfaces") or manager_nic_response.get("Members"):
 
         if manager_nic_member.get("@odata.context"):
             manager_nic = manager_nic_member
@@ -1772,7 +1791,7 @@ def get_basic_system_info():
             plugin.rf.vendor_data.ilo_firmware_version = manager_data[0].get("ManagerFirmwareVersion")
 
             if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
-                plugin.rf.vendor_data.view_sopported = True
+                plugin.rf.vendor_data.view_supported = True
 
 
             #resource_directory_response = get_cached_data(handle, "/redfish/v1/ResourceDirectory/")
