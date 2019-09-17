@@ -463,13 +463,13 @@ class PluginData():
             perf_string += perf_uom
 
         if critical is not None and warning is None:
-            warning = -1
+            warning = ""
 
         if warning is not None:
-            perf_string += ",%s" % str(warning)
+            perf_string += ";%s" % str(warning)
 
         if critical is not None:
-            perf_string += ",%s" % str(critical)
+            perf_string += ";%s" % str(critical)
 
         self.__perf_data.append(perf_string)
 
@@ -624,9 +624,9 @@ def parse_command_line():
     group = parser.add_argument_group(title="optional arguments")
     group.add_argument("-h", "--help", action='store_true',
                         help="show this help message and exit")
-    group.add_argument("-w", "--warning", default=-1,
+    group.add_argument("-w", "--warning", default="",
                         help="set warning value")
-    group.add_argument("-c", "--critical", default=-1,
+    group.add_argument("-c", "--critical", default="",
                         help="set critical value")
     group.add_argument("-v", "--verbose",  action='store_true',
                         help="this will add all requests and responses to output")
