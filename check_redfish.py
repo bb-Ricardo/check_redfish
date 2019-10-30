@@ -699,7 +699,7 @@ def get_power(chassi = 1):
 
                 if plugin.rf.vendor == "HPE":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("BayNumber")
-                    ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
+                    ps_hp_status = ps.get("Status").get("State")
 
                 elif plugin.rf.vendor == "Lenovo":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("Location").get("Info")
