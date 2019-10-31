@@ -698,12 +698,14 @@ def get_power(chassi = 1):
 
     default_text = ""
     ps_num = 0
+    ps_absent = 0
     if power_supplies:
         for ps in power_supplies:
 
             ps_num += 1
 
             status = ps.get("Status").get("Health").upper() # HP, Lenovo
+            ps_op_status = ps.get("Status").get("State") # HP, Lenovo
             model = ps.get("Model") # HP
             part_number = ps.get("PartNumber") # Lenovo
             last_power_output = ps.get("LastPowerOutputWatts") # HP, Lenovo
@@ -716,7 +718,8 @@ def get_power(chassi = 1):
 
                 if plugin.rf.vendor == "HPE":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("BayNumber")
-                    ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
+                    if oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus") is not None:
+                        ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
 
                 elif plugin.rf.vendor == "Lenovo":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("Location").get("Info")
@@ -734,14 +737,19 @@ def get_power(chassi = 1):
             if ps_hp_status is not None and ps_hp_status == "Unknown":
                 status = "CRITICAL"
 
-            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model.strip(), ps_hp_status or status)
+            if ps_op_status is not None and ps_op_status == "Absent":
+                status_text = "Power supply %s status is: %s" % (str(ps_bay), ps_op_status)
+                status = "OK"
+                ps_absent += 1
+            else:
+                status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model.strip(), ps_hp_status or status)
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             if last_power_output is not None and ps_bay is not None:
                 plugin.add_perf_data(f"ps_{ps_bay}", int(last_power_output))
 
-        default_text = f"All power supplies ({ps_num}) are in good condition"
+        default_text = "All power supplies (%d) are in good condition" % ( ps_num - ps_absent )
 
     else:
         plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")

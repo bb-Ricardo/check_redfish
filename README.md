@@ -211,6 +211,7 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ProLiant DL380p Gen8
 * ProLiant DL380 Gen9
 * ProLiant DL380 Gen10
+* ProLiant DL560 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
 
