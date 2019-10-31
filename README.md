@@ -50,7 +50,7 @@ health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.7 (2019-08-19)
+Version: 0.0.8 (2019-10-31)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
