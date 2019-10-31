@@ -8,7 +8,6 @@ health status of systems which support Redfish.
 * document code and add more debugging output
 * add support for DELL servers
 * add support for Fujitsu servers
-* add support for Lenovo servers
 
 ## Requirements
 * python >= 3.6
@@ -34,23 +33,24 @@ rm -rf /tmp/check_redfish
 ```
 
 ### Icinga2
-Command definitions and an a service config example for Icinga2 can be found in [contrib](contrib)
+Command definitions and a service config example for Icinga2 can be found in [contrib](contrib)
 
 ## HELP
 ```
 usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--sessionfile SESSIONFILE]
                         [--sessionfiledir SESSIONFILEDIR] [-h] [-w WARNING]
-                        [-c CRITICAL] [-v] [-d] [-m MAX] [--storage] [--proc]
-                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
-                        [--info] [--firmware] [--sel] [--mel]
+                        [-c CRITICAL] [-v] [-d] [-m MAX] [-r RETRIES]
+                        [-t TIMEOUT] [--storage] [--proc] [--memory] [--power]
+                        [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware]
+                        [--sel] [--mel]
 
 This is a monitoring plugin to check components and
 health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.7 (2019-08-19)
+Version: 0.0.8 (2019-10-31)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
@@ -76,6 +76,11 @@ optional arguments:
   -v, --verbose         this will add all requests and responses to output
   -d, --detailed        always print detailed result
   -m MAX, --max MAX     set maximum of returned items for --sel or --mel
+  -r RETRIES, --retries RETRIES
+                        set number of maximum retries (default: 3)
+  -t TIMEOUT, --timeout TIMEOUT
+                        set number of request timeout per try/retry (default:
+                        7)
 
 query status/health informations (at least one is required):
   --storage             request storage health
@@ -172,11 +177,21 @@ If multiline output by default is preferred the option ```--detailed``` needs to
 Use option ```--verbose``` to check for connection problems.
 All redfish requests and responses will be printed.
 
-
 ### Max option
 This option can be used to limit the results output for event log entries requested
 by **--mel** and **--sel**
 
+### Timeout and Retries
+Sometimes an iLO4 BMC can be very slow in answering Redfish request. To avoid getting "retries exhausted"
+alarms you can increase the number of retries and/or the timeout. The timeout defines the seconds after each
+try/retry times out. If you increase theses values make sure to also adjust the ```check_timeout``` setting
+in your [Icinga2 service definition](contrib/icinga2_hw_service_checks_example.conf). The total runtime of
+this plugin (if all retries fail) can be calculated like this: (1. try + num retries) * timeout
+
+The default number of retries is set to 3 and the default timeout is set to 7. In case all retries fail then
+the plugin would be finished after 28 seconds.
+
+```(1 + 3) * 7 = 28```
 
 ## Known limitations
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
@@ -188,7 +203,7 @@ issues with timeouts
 ## Supported Systems
 This plugin is currently tested with following systems
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 (2.50) or iLO5 (1.40) should work
+Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ProLiant BL460c Gen8
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
@@ -196,6 +211,7 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.40) should work
 * ProLiant DL380p Gen8
 * ProLiant DL380 Gen9
 * ProLiant DL380 Gen10
+* ProLiant DL560 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
 

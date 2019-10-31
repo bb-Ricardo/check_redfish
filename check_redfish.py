@@ -1,4 +1,4 @@
-#!/usr/bin/env python36
+#!/usr/bin/env python3.6
 
 self_description = \
 """This is a monitoring plugin to check components and
@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.7"
-__version_date__ = "2019-08-19"
+__version__ = "0.0.8"
+__version_date__ = "2019-10-31"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -37,6 +37,10 @@ status_types = {
 
 plugin = None
 
+# defaults
+default_conn_max_retries = 3
+default_conn_timeout = 7
+
 class RedfishConnection():
 
     sessionfilepath = None
@@ -49,10 +53,6 @@ class RedfishConnection():
     vendor_dict_key = None
     vendor_data = None
     cli_args = None
-
-    # defaults
-    conn_max_retries = 3
-    conn_timeout = 7
 
     def __init__(self, cli_args = None):
 
@@ -198,8 +198,8 @@ class RedfishConnection():
 
         # set possible changed connection values
         if self.connection is not None:
-            self.connection._max_retry = self.conn_max_retries
-            self.connection._timeout = self.conn_timeout
+            self.connection._max_retry = self.cli_args.retries
+            self.connection._timeout = self.cli_args.timeout
 
         self.session_was_restored = True
 
@@ -269,7 +269,7 @@ class RedfishConnection():
 
         # initialize connection
         try:
-            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.conn_max_retries, timeout=self.conn_timeout)
+            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
             self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
@@ -363,7 +363,7 @@ class RedfishConnection():
 
             self.vendor_data.view_response = redfish_response.dict
 
-            return  self.vendor_data.view_response
+            return self.vendor_data.view_response
 
         if redfish_path is not None:
             return self.get(redfish_path)
@@ -463,13 +463,13 @@ class PluginData():
             perf_string += perf_uom
 
         if critical is not None and warning is None:
-            warning = -1
+            warning = ""
 
         if warning is not None:
-            perf_string += ",%s" % str(warning)
+            perf_string += ";%s" % str(warning)
 
         if critical is not None:
-            perf_string += ",%s" % str(critical)
+            perf_string += ";%s" % str(critical)
 
         self.__perf_data.append(perf_string)
 
@@ -553,6 +553,11 @@ class VendorHPEData():
 
     """
         Select and store view (supported from ILO 5)
+
+        ATTENTION: This will only work as long as we are querying servers
+        with "1" System, "1" Chassi and "1" Manager
+
+        OK for now but will be changed once we have to query blade centers
     """
     view_supported = False
     view_select = {
@@ -571,11 +576,19 @@ class VendorHPEData():
             },
             {
                 "From": "/Chassis/1/Power/?$expand=.",
-                "Properties" : ["PowerSupplies", "Redundancy AS PowerRedundancy"]
+                "Properties": ["PowerSupplies", "Redundancy AS PowerRedundancy"]
             },
             {
                 "From": "/Chassis/1/Thermal/",
-                "Properties" : ["Temperatures", "Fans" ]
+                "Properties": ["Temperatures", "Fans" ]
+            },
+            {
+                "From": "/Managers/?$expand=.",
+                "Properties": [ "Members as ILO" ]
+            },
+            {
+                "From": "/Managers/1/EthernetInterfaces/?$expand=.",
+                "Properties": [ "Members as ILOInterfaces" ]
             }
         ]
     }
@@ -611,9 +624,9 @@ def parse_command_line():
     group = parser.add_argument_group(title="optional arguments")
     group.add_argument("-h", "--help", action='store_true',
                         help="show this help message and exit")
-    group.add_argument("-w", "--warning", default=-1,
+    group.add_argument("-w", "--warning", default="",
                         help="set warning value")
-    group.add_argument("-c", "--critical", default=-1,
+    group.add_argument("-c", "--critical", default="",
                         help="set critical value")
     group.add_argument("-v", "--verbose",  action='store_true',
                         help="this will add all requests and responses to output")
@@ -621,6 +634,10 @@ def parse_command_line():
                         help="always print detailed result")
     group.add_argument("-m", "--max",  type=int,
                         help="set maximum of returned items for --sel or --mel")
+    group.add_argument("-r", "--retries",  type=int, default=default_conn_max_retries,
+                        help="set number of maximum retries (default: %d)" % default_conn_max_retries)
+    group.add_argument("-t", "--timeout",  type=int, default=default_conn_timeout,
+                        help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health informations (at least one is required)")
@@ -681,12 +698,14 @@ def get_power(chassi = 1):
 
     default_text = ""
     ps_num = 0
+    ps_absent = 0
     if power_supplies:
         for ps in power_supplies:
 
             ps_num += 1
 
             status = ps.get("Status").get("Health").upper() # HP, Lenovo
+            ps_op_status = ps.get("Status").get("State") # HP, Lenovo
             model = ps.get("Model") # HP
             part_number = ps.get("PartNumber") # Lenovo
             last_power_output = ps.get("LastPowerOutputWatts") # HP, Lenovo
@@ -699,7 +718,8 @@ def get_power(chassi = 1):
 
                 if plugin.rf.vendor == "HPE":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("BayNumber")
-                    ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
+                    if oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus") is not None:
+                        ps_hp_status = oem_data.get(plugin.rf.vendor_dict_key).get("PowerSupplyStatus").get("State")
 
                 elif plugin.rf.vendor == "Lenovo":
                     ps_bay = oem_data.get(plugin.rf.vendor_dict_key).get("Location").get("Info")
@@ -717,14 +737,19 @@ def get_power(chassi = 1):
             if ps_hp_status is not None and ps_hp_status == "Unknown":
                 status = "CRITICAL"
 
-            status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model.strip(), ps_hp_status or status)
+            if ps_op_status is not None and ps_op_status == "Absent":
+                status_text = "Power supply %s status is: %s" % (str(ps_bay), ps_op_status)
+                status = "OK"
+                ps_absent += 1
+            else:
+                status_text = "Power supply %s (%s) status is: %s" % (str(ps_bay), model.strip(), ps_hp_status or status)
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
             if last_power_output is not None and ps_bay is not None:
                 plugin.add_perf_data(f"ps_{ps_bay}", int(last_power_output))
 
-        default_text = f"All power supplies ({ps_num}) are in good condition"
+        default_text = "All power supplies (%d) are in good condition" % ( ps_num - ps_absent )
 
     else:
         plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")
@@ -1629,7 +1654,12 @@ def get_bmc_info_hpe(manager = 1):
 
     redfish_url = f"/redfish/v1/Managers/{manager}/?$expand=."
 
-    manager_response = plugin.rf.get(redfish_url)
+    view_response = plugin.rf.get_view(redfish_url)
+
+    if view_response.get("ILO"):
+        manager_response = view_response.get("ILO")[0]
+    else:
+        manager_response = view_response
 
     # get general informations
     ilo_data = manager_response.get("Oem").get(plugin.rf.vendor_dict_key)
@@ -1670,13 +1700,14 @@ def get_bmc_info_hpe(manager = 1):
     # iLO Network interfaces
     redfish_url = f"/redfish/v1/Managers/{manager}/EthernetInterfaces/?$expand=."
 
-    manager_nic_response = plugin.rf.get(redfish_url)
+    if view_response.get("ILOInterfaces") is None:
+        manager_nic_response = plugin.rf.get(redfish_url)
 
-    if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
-        plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
-        return
+        if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+            plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
+            return
 
-    for manager_nic_member in manager_nic_response.get("Members"):
+    for manager_nic_member in view_response.get("ILOInterfaces") or manager_nic_response.get("Members"):
 
         if manager_nic_member.get("@odata.context"):
             manager_nic = manager_nic_member
@@ -1768,7 +1799,7 @@ def get_basic_system_info():
             plugin.rf.vendor_data.ilo_firmware_version = manager_data[0].get("ManagerFirmwareVersion")
 
             if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
-                plugin.rf.vendor_data.view_sopported = True
+                plugin.rf.vendor_data.view_supported = True
 
 
             #resource_directory_response = get_cached_data(handle, "/redfish/v1/ResourceDirectory/")
