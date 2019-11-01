@@ -686,13 +686,37 @@ def parse_command_line():
 def MiB_to_GB(value):
     return int(value) * 1024 ** 2 / 1000 ** 3
 
-def get_power(chassi = 1):
+def get_chassi_data(data_type = None):
+
+    global plugin
+
+    if data_type is None or data_type not in [ "power", "temp", "fan" ]:
+        plugin.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_chassi_data()")
+        return
+
+    chassis = plugin.rf.connection.system_properties.get("chassis")
+
+    if chassis is None or len(chassis) == 0:
+        plugin.add_output_data("UNKNOWN", "No 'chassis' property found in root path '/redfish/v1'")
+        return
+
+    for chassi in chassis:
+        if data_type == "power":
+            get_single_chassi_power(chassi)
+        if data_type == "temp":
+            get_single_chassi_temp(chassi)
+        if data_type == "fan":
+            get_single_chassi_fan(chassi)
+
+    return
+
+def get_single_chassi_power(redfish_url):
 
     global plugin
 
     plugin.set_current_command("Power")
 
-    redfish_url = f"/redfish/v1/Chassis/{chassi}/Power"
+    redfish_url = f"{redfish_url}/Power"
 
     power_supplies = plugin.rf.get_view(redfish_url).get("PowerSupplies")
 
@@ -786,13 +810,13 @@ def get_power(chassi = 1):
 
     return
 
-def get_temp(chassi = 1):
+def get_single_chassi_temp(redfish_url):
 
     global plugin
 
     plugin.set_current_command("Temp")
 
-    redfish_url = f"/redfish/v1/Chassis/{chassi}/Thermal"
+    redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
 
@@ -804,7 +828,7 @@ def get_temp(chassi = 1):
 
             state = temp.get("Status").get("State")
 
-            if state == "Absent":
+            if state in [ "Absent", "Disabled" ]:
                 continue
 
             if temp.get("Status").get("Health") is None:
@@ -851,13 +875,13 @@ def get_temp(chassi = 1):
 
     return
 
-def get_fan(chassi = 1):
+def get_single_chassi_fan(redfish_url):
 
     global plugin
 
     plugin.set_current_command("Fan")
 
-    redfish_url = f"/redfish/v1/Chassis/{chassi}/Thermal"
+    redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
 
@@ -887,16 +911,25 @@ def get_fan(chassi = 1):
                 if plugin.rf.vendor == "Lenovo":
                     name = fan.get("Oem").get(plugin.rf.vendor_dict_key).get("Location").get("Info")
 
-            speed = fan.get("Reading")
-            speed_units = fan.get("ReadingUnits")
+            speed_status = ""
 
-            if speed_units:
-                speed_units = speed_units.replace("Percent", "%")
-            else:
+            # DELL
+            if fan.get("ReadingRPM"):
+                speed = fan.get("ReadingRPM")
                 speed_units = ""
 
-            speed_status = ""
-            if speed:
+                speed_status = f" ({speed} RPM)"
+
+            # HP, Lenovo
+            else:
+                speed = fan.get("Reading")
+                speed_units = fan.get("ReadingUnits")
+
+                if speed_units:
+                    speed_units = speed_units.replace("Percent", "%")
+                else:
+                    speed_units = ""
+
                 speed_status = f" ({speed}{speed_units})"
 
             status_text = f"Fan '{name}'{speed_status} status is: {status}"
@@ -910,36 +943,91 @@ def get_fan(chassi = 1):
     else:
         plugin.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
 
+    # get FanRedundancy status
+    if plugin.rf.vendor == "HPE":
+        redundancy_key = "FanRedundancy"
+    else:
+        redundancy_key = "Redundancy"
+
+    fan_redundancies = plugin.rf.get_view(redfish_url).get(redundancy_key)
+
+    if fan_redundancies:
+        status_text = ""
+        for fan_redundancy in fan_redundancies:
+
+            fr_status = fan_redundancy.get("Status")
+
+            if fr_status is not None:
+                status = fr_status.get("Health")
+                state = fr_status.get("State")
+
+                if status is not None:
+                    status = status.upper()
+
+                    status_text = f"fan redundancy status is: {state}"
+
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text[0].upper() + status_text[1:])
+
+        if len(status_text) != 0:
+            default_text += f" and {status_text}"
+
     plugin.add_output_data("OK", default_text, summary = True)
 
     return plugin
 
-def get_procs(system = 1):
+def get_system_data(data_type):
+
+    global plugin
+
+    if data_type is None or data_type not in [ "procs", "mem", "nics" ]:
+        plugin.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
+        return
+
+    systems = plugin.rf.connection.system_properties.get("systems")
+
+    if systems is None or len(systems) == 0:
+        plugin.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+        return
+
+    for system in systems:
+        if data_type == "procs":
+            get_single_system_procs(system)
+        if data_type == "mem":
+            get_single_system_mem(system)
+        if data_type == "nics":
+            get_single_system_nics(system)
+
+    return
+
+def get_single_system_procs(redfish_url):
 
     global plugin
 
     plugin.set_current_command("Procs")
 
-    redfish_url = f"/redfish/v1/Systems/{system}/"
-
     systems_response = plugin.rf.get(redfish_url)
 
     if systems_response.get("ProcessorSummary"):
 
-        health = systems_response.get("ProcessorSummary").get("Status").get("HealthRollup")
+        proc_health = systems_response.get("ProcessorSummary").get("Status")
+
+        # DELL is HealthRollUp not HealthRollup
+        health = proc_health.get("HealthRollup") or proc_health.get("HealthRollUp")
 
         if health == "OK" and args.detailed == False:
             plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"), summary = True)
             return
 
-    # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url = f"/redfish/v1/Systems/{system}/Processors/" # ?$expand=*"
+    system_response_proc_key = "Processors"
+    if systems_response.get(system_response_proc_key) is None:
+        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'")
+        return
 
-    processors_response = plugin.rf.get_view(redfish_url)
+    processors_response = plugin.rf.get_view(systems_response.get(system_response_proc_key).get("@odata.id"))
 
-    if processors_response.get("Members") or processors_response.get("Processors"):
+    if processors_response.get("Members") or processors_response.get(system_response_proc_key):
 
-        for proc in processors_response.get("Members") or processors_response.get("Processors"):
+        for proc in processors_response.get("Members") or processors_response.get(system_response_proc_key):
 
             if proc.get("@odata.context"):
                 proc_response = proc
@@ -947,12 +1035,14 @@ def get_procs(system = 1):
                 proc_response = plugin.rf.get(proc.get("@odata.id"))
 
             if proc_response.get("Id"):
-                socket = proc_response.get("Socket")
+
                 proc_status = proc_response.get("Status")
-                model =  proc_response.get("Model").strip()
 
                 if proc_status.get("State") and proc_status.get("State") == "Absent":
                     continue
+
+                socket = proc_response.get("Socket")
+                model =  proc_response.get("Model").strip()
 
                 status = proc_status.get("Health").upper()
 
@@ -967,13 +1057,11 @@ def get_procs(system = 1):
 
     return
 
-def get_mem(system = 1):
+def get_single_system_mem(redfish_url):
 
     global plugin
 
     plugin.set_current_command("Mem")
-
-    redfish_url = f"/redfish/v1/Systems/{system}/"
 
     systems_response = plugin.rf.get(redfish_url)
 
@@ -981,24 +1069,28 @@ def get_mem(system = 1):
 
         health = None
 
+        memory_health = systems_response.get("MemorySummary").get("Status")
+
         try:
-            health = systems_response.get("MemorySummary").get("Status").get("HealthRollup")
+            health = memory_health.get("HealthRollup") or memory_health.get("HealthRollUp")
         except AttributeError:
-            args.detailed == True
+            args.detailed = True
 
         if health == "OK" and args.detailed == False:
             plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
                 systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"), summary = True)
             return
 
-    # if "HealthRollup" is not "OK" or we want detailed informations we have to dig deeper
-    redfish_url = f"/redfish/v1/Systems/{system}/Memory/" #?$expand=Members"
+    system_response_memory_key = "Memory"
+    if systems_response.get(system_response_memory_key) is None:
+        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'")
+        return
 
-    memory_response = plugin.rf.get_view(redfish_url)
+    memory_response = plugin.rf.get_view(systems_response.get(system_response_memory_key).get("@odata.id"))
 
-    if memory_response.get("Members") or memory_response.get("Memory"):
+    if memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
-        for mem_module in memory_response.get("Members") or memory_response.get("Memory"):
+        for mem_module in memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
             if mem_module.get("@odata.context"):
                 mem_module_response = mem_module
@@ -1059,13 +1151,13 @@ def get_mem(system = 1):
 
     return
 
-def get_nics(system = 1):
+def get_single_system_nics(redfish_url):
 
     global plugin
 
     plugin.set_current_command("NICs")
 
-    redfish_url = f"/redfish/v1/Systems/{system}/EthernetInterfaces/"
+    redfish_url = f"{redfish_url}/EthernetInterfaces/"
 
     nics_response = plugin.rf.get_view(redfish_url)
     data_members = nics_response.get("EthernetInterfaces") or nics_response.get("Members")
@@ -1490,24 +1582,26 @@ def get_event_log_lenovo(type, system_manager_id):
 
     plugin.add_output_data("UNKNOWN", f"Request of {type} Event Log entries currently not implemented due to timeout issues.")
 
-def get_system_info(system = 1):
+def get_system_info():
 
     global plugin
 
     plugin.set_current_command("System Info")
 
-    if plugin.rf.vendor in [ "HPE", "Lenovo" ]:
-        get_system_info_hpe_lenovo(system)
-    else:
-        plugin.add_output_data("UNKNOWN", "'info' command is currently not supported for this system.")
+    systems = plugin.rf.connection.system_properties.get("systems")
+
+    if systems is None or len(systems) == 0:
+        plugin.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+        return
+
+    for system in systems:
+        get_single_system_info(system)
 
     return
 
-def get_system_info_hpe_lenovo(system = 1):
+def get_single_system_info(redfish_url):
 
     global plugin
-
-    redfish_url = f"/redfish/v1/Systems/{system}/"
 
     system_response = plugin.rf.get(redfish_url)
 
@@ -1516,6 +1610,7 @@ def get_system_info_hpe_lenovo(system = 1):
         return
 
     model = system_response.get("Model").strip()
+    vendor_name = system_response.get("Manufacturer").strip()
     serial = system_response.get("SerialNumber").strip()
     system_health_state = system_response.get("Status").get("Health").upper()
     power_state = system_response.get("PowerState")
@@ -1533,7 +1628,7 @@ def get_system_info_hpe_lenovo(system = 1):
     if len(host_name) == 0:
         host_name = "NOT SET"
 
-    status_text = f"Type: {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}"
+    status_text = f"Type: {vendor_name} {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}"
 
     if args.detailed is False:
         plugin.add_output_data(status, status_text, summary = True)
@@ -1631,30 +1726,42 @@ def get_firmware_info_lenovo():
 
     return
 
-def get_bmc_info(manager = 1):
+def get_bmc_info():
 
     global plugin
+    known_manager = False
 
     plugin.set_current_command("BMC Info")
 
-    if plugin.rf.vendor == "HPE":
-        get_bmc_info_hpe(manager)
+    managers = plugin.rf.connection.system_properties.get("managers")
 
-    elif plugin.rf.vendor == "Lenovo":
-        get_bmc_info_lenovo(manager)
+    if managers is None or len(managers) == 0:
+        plugin.add_output_data("UNKNOWN", "No 'managers' property found in root path '/redfish/v1'")
+        return
 
-    else:
+    for manager in managers:
+        if plugin.rf.vendor == "HPE":
+            known_manager = True
+            get_bmc_info_hpe(manager)
+
+        if plugin.rf.vendor == "Lenovo":
+            known_manager = True
+            get_bmc_info_lenovo(manager)
+
+        if "iDRAC" in manager:
+            known_manager = True
+            get_bmc_info_dell(manager)
+
+    if known_manager == False:
         plugin.add_output_data("UNKNOWN", "'bmc' command is currently not supported for this system.")
 
     return
 
-def get_bmc_info_hpe(manager = 1):
+def get_bmc_info_hpe(redfish_url):
 
     global plugin
 
-    redfish_url = f"/redfish/v1/Managers/{manager}/?$expand=."
-
-    view_response = plugin.rf.get_view(redfish_url)
+    view_response = plugin.rf.get_view(f"{redfish_url}/?$expand=.")
 
     if view_response.get("ILO"):
         manager_response = view_response.get("ILO")[0]
@@ -1698,7 +1805,7 @@ def get_bmc_info_hpe(manager = 1):
         plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
     # iLO Network interfaces
-    redfish_url = f"/redfish/v1/Managers/{manager}/EthernetInterfaces/?$expand=."
+    redfish_url = f"{redfish_url}/EthernetInterfaces/?$expand=."
 
     if view_response.get("ILOInterfaces") is None:
         manager_nic_response = plugin.rf.get(redfish_url)
@@ -1744,11 +1851,9 @@ def get_bmc_info_hpe(manager = 1):
 
     return
 
-def get_bmc_info_lenovo(manager = 1):
+def get_bmc_info_lenovo(redfish_url):
 
     global plugin
-
-    redfish_url = f"/redfish/v1/Managers/{manager}/"
 
     manager_response = plugin.rf.get(redfish_url)
 
@@ -1761,6 +1866,9 @@ def get_bmc_info_lenovo(manager = 1):
 
     status_text = f"{imm_model} ({imm_fw_version})"
 
+    # FixMe:
+    #   * this has to be retrieved from manager infos,
+    #     which chassie(s) this manager is responsible for
     redfish_url = "/redfish/v1/Chassis/1/"
 
     chassi_response = plugin.rf.get(redfish_url)
@@ -1774,6 +1882,42 @@ def get_bmc_info_lenovo(manager = 1):
         status_text += f" system name: {descriptive_name} ({rack})"
 
     plugin.add_output_data("OK", status_text, summary=summary)
+
+def get_bmc_info_dell(redfish_url):
+
+    global plugin
+
+    manager_response = plugin.rf.get(redfish_url)
+
+    idrac_model = manager_response.get("Model")
+    idrac_fw_version = manager_response.get("FirmwareVersion")
+
+    summary = True
+    if args.detailed is True:
+        summary = False
+
+    status_text = f"iDRAC {idrac_model} ({idrac_fw_version})"
+
+    status = manager_response.get("Status").get("Health").upper()
+
+    # iDRAC Network interfaces
+
+    manager_nic_response = None
+    if manager_response.get("EthernetInterfaces"):
+        manager_nic_response = plugin.rf.get(manager_response.get("EthernetInterfaces").get("@odata.id"))
+
+    if manager_nic_response is not None:
+
+        if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+            status_text = f"{status_text} but no informations about the iDRAC network interfaces found"
+        else:
+            for manager_nic in manager_nic_response.get("Members"):
+                manager_nic_response = plugin.rf.get(manager_nic.get("@odata.id"))
+
+                pprint.pprint(manager_nic_response)
+
+
+    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text, summary=summary)
 
 def get_basic_system_info():
 
@@ -1836,6 +1980,35 @@ def get_basic_system_info():
 
     return
 
+def discover_system_properties():
+
+    global plugin
+
+    if vars(plugin.rf.connection).get("system_properties") is not None:
+        return
+
+    system_properties = dict()
+
+    root_objects = [ "Chassis", "Managers", "Systems" ]
+
+    for root_object in root_objects:
+        if plugin.rf.connection.root.get(root_object) is None:
+            continue
+
+        rf_path = plugin.rf.get(plugin.rf.connection.root.get(root_object).get("@odata.id"))
+
+        if rf_path is None:
+            continue
+        pprint.pprint(rf_path)
+        system_properties[root_object.lower()] = list()
+        for entity in rf_path.get("Members"):
+            system_properties[root_object.lower()].append(entity.get("@odata.id"))
+
+    plugin.rf.connection.system_properties = system_properties
+    plugin.rf.save_session_to_file()
+
+    return
+
 if __name__ == "__main__":
     # start here
     args = parse_command_line()
@@ -1847,9 +2020,12 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args)
 
+    discover_system_properties()
+
     # get basic informations
     get_basic_system_info()
 
+    """
     if plugin.rf.vendor is None:
 
         if plugin.rf.vendor_dict_key:
@@ -1858,13 +2034,14 @@ if __name__ == "__main__":
             plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
 
         plugin.do_exit()
+    """
 
-    if "power"      in args.requested_query: get_power()
-    if "temp"       in args.requested_query: get_temp()
-    if "fan"        in args.requested_query: get_fan()
-    if "proc"       in args.requested_query: get_procs()
-    if "memory"     in args.requested_query: get_mem()
-    if "nic"        in args.requested_query: get_nics()
+    if "power"      in args.requested_query: get_chassi_data("power")
+    if "temp"       in args.requested_query: get_chassi_data("temp")
+    if "fan"        in args.requested_query: get_chassi_data("fan")
+    if "proc"       in args.requested_query: get_system_data("procs")
+    if "memory"     in args.requested_query: get_system_data("mem")
+    if "nic"        in args.requested_query: get_system_data("nics")
     if "storage"    in args.requested_query: get_storage()
     if "bmc"        in args.requested_query: get_bmc_info()
     if "info"       in args.requested_query: get_system_info()
