@@ -1255,7 +1255,7 @@ def get_storage():
 
     return
 
-def get_storage_hpe(system = 1):
+def get_storage_hpe(system):
 
     def get_disks(link, type = "DiskDrives"):
 
@@ -1331,7 +1331,7 @@ def get_storage_hpe(system = 1):
 
     plugin.set_current_command("Storage")
 
-    redfish_url = f"/redfish/v1/Systems/{system}/SmartStorage/"
+    redfish_url = f"{system}/SmartStorage/"
 
     storage_response = plugin.rf.get(redfish_url)
 
@@ -1342,7 +1342,7 @@ def get_storage_hpe(system = 1):
         return
 
     # unhealthy
-    redfish_url = f"/redfish/v1/Systems/{system}/SmartStorage/ArrayControllers/?$expand=."
+    redfish_url = f"{system}/SmartStorage/ArrayControllers/?$expand=."
 
     array_controllers_response = plugin.rf.get(redfish_url)
 
@@ -1381,7 +1381,7 @@ def get_storage_hpe(system = 1):
 
     return
 
-def get_storage_lenovo(system = 1):
+def get_storage_lenovo(system):
 
     def get_disks(link):
 
@@ -1429,7 +1429,7 @@ def get_storage_lenovo(system = 1):
 
     plugin.set_current_command("Storage")
 
-    redfish_url = f"/redfish/v1/Systems/{system}/Storage/?$expand=Members"
+    redfish_url = f"{system}/Storage/?$expand=Members"
 
     storage_response = plugin.rf.get(redfish_url)
 
