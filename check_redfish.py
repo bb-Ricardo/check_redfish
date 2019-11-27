@@ -321,7 +321,7 @@ class RedfishConnection():
 
             if redfish_response.dict.get("error"):
                 error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
-                self.exit_on_error("get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+                self.exit_on_error("got error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
 
             self.__cached_data[redfish_path] = redfish_response.dict
 
@@ -549,6 +549,8 @@ class VendorHPEData():
     ilo_firmware_version = None
     ilo_health = None
 
+    expand_string = "$expand=."
+
     resource_directory = None
 
     """
@@ -599,6 +601,15 @@ class VendorLenovoData():
 
     view_supported = False
     view_select = None
+
+    expand_string = "$expand=*"
+
+class VendorDellData():
+
+    view_supported = False
+    view_select = None
+
+    expand_string = "?$expand=*($levels=1)"
 
 def parse_command_line():
     """parse command line arguments
@@ -691,8 +702,7 @@ def get_chassi_data(data_type = None):
     global plugin
 
     if data_type is None or data_type not in [ "power", "temp", "fan" ]:
-        plugin.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_chassi_data()")
-        return
+        raise Exception("Unknown data_type not set for get_chassi_data(): %s", type)
 
     chassis = plugin.rf.connection.system_properties.get("chassis")
 
@@ -1023,7 +1033,7 @@ def get_single_system_procs(redfish_url):
         plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'")
         return
 
-    processors_response = plugin.rf.get_view(systems_response.get(system_response_proc_key).get("@odata.id"))
+    processors_response = plugin.rf.get_view(systems_response.get(system_response_proc_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string)
 
     if processors_response.get("Members") or processors_response.get(system_response_proc_key):
 
@@ -1086,7 +1096,9 @@ def get_single_system_mem(redfish_url):
         plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'")
         return
 
-    memory_response = plugin.rf.get_view(systems_response.get(system_response_memory_key).get("@odata.id"))
+    redfish_url = systems_response.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
+
+    memory_response = plugin.rf.get_view(redfish_url)
 
     if memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
@@ -1105,7 +1117,10 @@ def get_single_system_mem(redfish_url):
                 if size is None:
                     size = 0
                 else:
-                    size = size / 1024
+                    #size = MiB_to_GB(size)
+                    # DELL
+                    size = size * 1024 / 1000 ** 2
+                    #size = size / 1024
 
                 # get name
                 name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
@@ -1212,20 +1227,31 @@ def get_single_system_nics(redfish_url):
 
     return
 
-def get_storage(system = 1):
+def get_storage():
 
     global plugin
 
     plugin.set_current_command("Storage")
 
-    if plugin.rf.vendor == "HPE":
-        get_storage_hpe(system)
+    systems = plugin.rf.connection.system_properties.get("systems")
 
-    elif plugin.rf.vendor == "Lenovo":
-        get_storage_lenovo(system)
+    if systems is None or len(systems) == 0:
+        plugin.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+        return
 
-    else:
-        plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
+    for system in systems:
+
+        if plugin.rf.vendor == "HPE":
+            get_storage_hpe(system)
+
+        elif plugin.rf.vendor == "Lenovo":
+            get_storage_lenovo(system)
+
+        elif plugin.rf.vendor == "Dell":
+            get_storage_dell(system)
+
+        else:
+            plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
 
     return
 
@@ -1460,7 +1486,79 @@ def get_storage_lenovo(system = 1):
 
     return
 
-def get_event_log(type, system_manager_id = 1):
+def get_storage_dell(redfish_url):
+
+    """
+        disks and volumes are currently not implemented
+    """
+
+    global plugin
+
+    plugin.set_current_command("Storage")
+
+    redfish_url = f"{redfish_url}/Storage" + "%s" % plugin.rf.vendor_data.expand_string
+
+    storage_response = plugin.rf.get(redfish_url)
+
+    if storage_response is not None:
+
+        storage_status = list()
+        storage_controller_names = list()
+
+        for storage_member in storage_response.get("Members"):
+
+            if storage_member.get("Id"):
+
+                name = storage_member.get("Name")
+
+                this_storage_status = storage_member.get("Status").get("HealthRollup")
+
+                if this_storage_status is None:
+                    continue
+
+                storage_status.append(this_storage_status.upper())
+
+                for storage_controller in storage_member.get("StorageControllers"):
+                    model = storage_controller.get("Model")
+                    fw_version = storage_controller.get("FirmwareVersion")
+                    controller_status = storage_controller.get("Status")
+
+                    if controller_status.get("State") and controller_status.get("State") == "Absent":
+                        continue
+
+                    status = controller_status.get("Health").upper()
+
+                    storage_controller_names.append(f"{name} {model}")
+
+                    status_text = f"{name} {model} (FW: {fw_version}) status is: {status}"
+
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+
+                #get_disks(storage_member.get("Drives"))
+                #get_volumes(storage_member.get("Volumes").get("@odata.id"))
+
+            else:
+                plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % storage_member.get("@odata.id"))
+
+        if "CRITICAL" in storage_status:
+            status = "CRITICAL"
+        elif "WARNING" in storage_status:
+            status = "WARNING"
+        else:
+            status = "OK"
+
+        if status != "OK":
+            plugin.add_output_data("CRITICAL", "One or more storage controller report a issue")
+        else:
+            plugin.add_output_data("OK", "Status of %s is: OK" % " and ".join(storage_controller_names), summary = True)
+    else:
+        plugin.add_output_data("UNKNOWN", f"No storage controller data returned for API URL '{redfish_url}'")
+
+    return
+
+
+def get_event_log(type):
 
     global plugin
 
@@ -1470,10 +1568,13 @@ def get_event_log(type, system_manager_id = 1):
     plugin.set_current_command("%s Event Log" % type)
 
     if plugin.rf.vendor == "HPE":
-        get_event_log_hpe(type, system_manager_id)
+        get_event_log_hpe(type, 1)
 
     elif plugin.rf.vendor == "Lenovo":
-        get_event_log_lenovo(type, system_manager_id)
+        get_event_log_lenovo(type)
+
+    elif plugin.rf.vendor == "Dell":
+        get_event_log_dell(type, "iDRAC.Embedded.1")
 
     else:
         plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor")
@@ -1569,18 +1670,114 @@ def get_event_log_hpe(type, system_manager_id):
 
     return
 
-def get_event_log_lenovo(type, system_manager_id):
+def get_event_log_lenovo(type):
 
     global plugin
 
+    """
     if type == "System":
         redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/ActiveLog/Entries/" # /Entries/?$expand=.
     else:
         redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/StandardLog/Entries/" # ML/Entries/?$expand=.
 
     # event_data = plugin.rf.get(redfish_url)
+    """
 
     plugin.add_output_data("UNKNOWN", f"Request of {type} Event Log entries currently not implemented due to timeout issues.")
+
+def get_event_log_dell(type, system_manager_id):
+
+    global plugin
+
+    limit_of_returned_itmes = args.max
+    forced_limit = False
+    data_now = datetime.datetime.now()
+
+    if type == "System":
+        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/Logs/Sel"
+    else:
+        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/Logs/Lclog"
+
+        if args.warning:
+            date_warning = data_now - datetime.timedelta(days=int(args.warning))
+        if args.critical:
+            date_critical = data_now - datetime.timedelta(days=int(args.critical))
+
+    event_data = plugin.rf.get(redfish_url)
+
+    if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
+        plugin.add_output_data("OK", "No log entries found.", summary = True)
+        return
+
+    event_entries = event_data.get("Members")
+
+    message_id_status = dict()
+
+    num_entry = 0
+    for event_entry_itme in event_entries:
+
+        if event_entry_itme.get("Severity"):
+            event_entry = event_entry_itme
+        else:
+            event_entry = plugin.rf.get(event_entry_itme.get("@odata.id"))
+
+        message = event_entry.get("Message")
+
+        num_entry += 1
+
+        severity = event_entry.get("Severity").upper()
+        date = event_entry.get("Created")
+
+        # take care of date = None
+        if date is None:
+            date = "1970-01-01T00:00:00-00:00"
+
+        status = "OK"
+
+        # keep track of message IDs
+        # newer message can clear a status for older messages
+        if type == "System":
+
+            # get message ID
+            message_id = event_entry.get("MessageId")
+
+            # found an old message that has been cleared
+            if message_id_status.get(message_id) == "cleared":
+                message += " (severity '%s' cleared)" % severity
+            else:
+                if severity == "WARNING":
+                    status = "WARNING"
+                elif severity != "OK":
+                    status = "CRITICAL"
+
+            # keep track of messages that clear an older message
+            # get entry code
+            if event_entry.get("EntryCode") is not None:
+                if event_entry.get("EntryCode")[0].get("Member") == "Deassert" and message_id is not None:
+                    message_id_status[message_id] = "cleared"
+
+        else:
+            # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
+            # from:
+            #   2019-11-01T15:03:32-05:00
+            # to:
+            #   2019-11-01T15:03:32-0500
+
+            entry_data = datetime.datetime.strptime(date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+
+            if args.critical:
+              if entry_data > date_critical.astimezone(entry_data.tzinfo) and severity != "OK":
+                    status = "CRITICAL"
+            if args.warning:
+                if entry_data > date_warning.astimezone(entry_data.tzinfo) and status != "CRITICAL" and severity != "OK":
+                    status = "WARNING"
+
+        plugin.add_log_output_data(status, "%s: %s" % (date, message))
+
+        # obey max results returned
+        if limit_of_returned_itmes is not None and num_entry >= limit_of_returned_itmes:
+            return
+    return
 
 def get_system_info():
 
@@ -1649,8 +1846,8 @@ def get_firmware_info(system = 1):
         else:
             get_firmware_info_hpe_ilo4(system)
 
-    elif plugin.rf.vendor == "Lenovo":
-        get_firmware_info_lenovo()
+    elif plugin.rf.vendor in [ "Lenovo", "Dell" ]:
+        get_firmware_info_lenovo_dell()
     else:
         plugin.add_output_data("UNKNOWN", "'firmware' command is currently not supported for this system.")
 
@@ -1698,11 +1895,11 @@ def get_firmware_info_hpe_ilo4(system = 1):
 
     return
 
-def get_firmware_info_lenovo():
+def get_firmware_info_lenovo_dell():
 
     global plugin
 
-    redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/"
+    redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/" + "%s" % plugin.rf.vendor_data.expand_string
 
     firmware_response = plugin.rf.get(redfish_url)
 
@@ -1722,7 +1919,6 @@ def get_firmware_info_lenovo():
         component_id = firmware_entry.get("Id")
 
         plugin.add_output_data("OK", f"{component_name} ({component_id}): {component_version}")
-
 
     return
 
@@ -1892,32 +2088,57 @@ def get_bmc_info_dell(redfish_url):
     idrac_model = manager_response.get("Model")
     idrac_fw_version = manager_response.get("FirmwareVersion")
 
-    summary = True
-    if args.detailed is True:
-        summary = False
-
     status_text = f"iDRAC {idrac_model} ({idrac_fw_version})"
 
     status = manager_response.get("Status").get("Health").upper()
 
-    # iDRAC Network interfaces
+    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
+    # iDRAC Network interfaces
     manager_nic_response = None
     if manager_response.get("EthernetInterfaces"):
-        manager_nic_response = plugin.rf.get(manager_response.get("EthernetInterfaces").get("@odata.id"))
+        manager_nic_response = plugin.rf.get(manager_response.get("EthernetInterfaces").get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string)
 
     if manager_nic_response is not None:
 
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
             status_text = f"{status_text} but no informations about the iDRAC network interfaces found"
         else:
-            for manager_nic in manager_nic_response.get("Members"):
-                manager_nic_response = plugin.rf.get(manager_nic.get("@odata.id"))
 
-                pprint.pprint(manager_nic_response)
+            for manager_nic_member in manager_nic_response.get("Members"):
 
+                if manager_nic_member.get("@odata.context"):
+                    manager_nic = manager_nic_member
+                else:
+                    manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
 
-    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text, summary=summary)
+                nic_status = manager_nic.get("Status")
+
+                if nic_status is None or nic_status.get("State") is None:
+                    continue
+
+                if nic_status.get("State") == "Disabled":
+                    continue
+
+                if nic_status.get("Health"):
+                    status = nic_status.get("Health").upper()
+                elif nic_status.get("State") == "Enabled":
+                    status = "OK"
+                else:
+                    status = "UNKNOWN"
+
+                speed = manager_nic.get("SpeedMbps")
+                duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
+                autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
+                host_name = manager_nic.get("HostName")
+                nic_id = manager_nic.get("Id")
+                ip_address = manager_nic.get("IPv4Addresses")[0].get("Address")
+
+                status_text = f"NIC {nic_id} '{host_name}' ({ip_address}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
+
+                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+    plugin.add_output_data("OK", f"iDRAC {idrac_model} ({idrac_fw_version}) and nics are in 'OK' state.", summary = True)
 
 def get_basic_system_info():
 
@@ -1978,6 +2199,11 @@ def get_basic_system_info():
 
             plugin.rf.vendor_data = VendorLenovoData()
 
+        if vendor_string in ["Dell"]:
+            plugin.rf.vendor = "Dell"
+
+            plugin.rf.vendor_data = VendorDellData()
+
     return
 
 def discover_system_properties():
@@ -1999,10 +2225,11 @@ def discover_system_properties():
 
         if rf_path is None:
             continue
-        pprint.pprint(rf_path)
+
         system_properties[root_object.lower()] = list()
         for entity in rf_path.get("Members"):
-            system_properties[root_object.lower()].append(entity.get("@odata.id"))
+            if "RAID" not in entity.get("@odata.id"):
+                system_properties[root_object.lower()].append(entity.get("@odata.id"))
 
     plugin.rf.connection.system_properties = system_properties
     plugin.rf.save_session_to_file()
@@ -2025,7 +2252,6 @@ if __name__ == "__main__":
     # get basic informations
     get_basic_system_info()
 
-    """
     if plugin.rf.vendor is None:
 
         if plugin.rf.vendor_dict_key:
@@ -2034,7 +2260,7 @@ if __name__ == "__main__":
             plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
 
         plugin.do_exit()
-    """
+
 
     if "power"      in args.requested_query: get_chassi_data("power")
     if "temp"       in args.requested_query: get_chassi_data("temp")
