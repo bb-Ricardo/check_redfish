@@ -6,8 +6,8 @@ health status of systems which support Redfish.
 ## ToDo:
 * add inventory option
 * document code and add more debugging output
-* add support for DELL servers
 * add support for Fujitsu servers
+* add support for Huawei servers
 
 ## Requirements
 * python >= 3.6
@@ -17,6 +17,7 @@ health status of systems which support Redfish.
 
 ### RedHat based OS
 * on RedHat/CentOS you need to install python3.6 and pip from EPEL first
+* on RedHat/CentOS 8 systems the package name changed to `python3-pip`
 ```
 yum install python36-pip
 ```
@@ -50,7 +51,7 @@ health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.8 (2019-10-31)
+Version: 0.0.9 (2019-11-28)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
@@ -199,6 +200,8 @@ the plugin would be finished after 28 seconds.
 * On HPE systems the nic status is reported unreliable
 * On Lenovo Systems the commands **--mel** and **--sel** are not implemented due to
 issues with timeouts
+* On Dell Systems only the HealthRollUp for the storage controller will be reported.
+Disks and Volumes are currently not implemented
 
 ## Supported Systems
 This plugin is currently tested with following systems
@@ -218,6 +221,8 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
 
+### Dell
+* PowerEdge R930 (iDRAC Version 2.70.70.70)
 
 ## License
 >You can check out the full license [here](LICENSE.txt)

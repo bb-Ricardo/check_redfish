@@ -20,8 +20,8 @@ import datetime
 # import 3rd party modules
 import redfish
 
-__version__ = "0.0.8"
-__version_date__ = "2019-10-31"
+__version__ = "0.0.9"
+__version_date__ = "2019-11-28"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -1557,7 +1557,6 @@ def get_storage_dell(redfish_url):
 
     return
 
-
 def get_event_log(type):
 
     global plugin
@@ -2228,6 +2227,10 @@ def discover_system_properties():
 
         system_properties[root_object.lower()] = list()
         for entity in rf_path.get("Members"):
+
+            # ToDo:
+            #  * This is a DELL workaround
+            #  * If RAID chassi is requested the iDRAC will restart
             if "RAID" not in entity.get("@odata.id"):
                 system_properties[root_object.lower()].append(entity.get("@odata.id"))
 
@@ -2247,6 +2250,7 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args)
 
+    # try to get systems, managers and chassis IDs
     discover_system_properties()
 
     # get basic informations
