@@ -549,7 +549,7 @@ class VendorHPEData():
     ilo_firmware_version = None
     ilo_health = None
 
-    expand_string = "$expand=."
+    expand_string = "?$expand=."
 
     resource_directory = None
 
@@ -602,7 +602,7 @@ class VendorLenovoData():
     view_supported = False
     view_select = None
 
-    expand_string = "$expand=*"
+    expand_string = "?$expand=*"
 
 class VendorDellData():
 
@@ -1092,11 +1092,18 @@ def get_single_system_mem(redfish_url):
             return
 
     system_response_memory_key = "Memory"
-    if systems_response.get(system_response_memory_key) is None:
+    if systems_response.get("Oem") and systems_response.get("Oem").get(plugin.rf.vendor_dict_key) and \
+        systems_response.get("Oem").get(plugin.rf.vendor_dict_key).get("Links") and \
+        systems_response.get("Oem").get(plugin.rf.vendor_dict_key).get("Links").get("Memory"):
+            memory_path_dict = systems_response.get("Oem").get(plugin.rf.vendor_dict_key).get("Links")
+    else:
+        memory_path_dict = systems_response
+
+    if memory_path_dict.get(system_response_memory_key) is None:
         plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'")
         return
 
-    redfish_url = systems_response.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
+    redfish_url = memory_path_dict.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
 
     memory_response = plugin.rf.get_view(redfish_url)
 
@@ -1119,8 +1126,10 @@ def get_single_system_mem(redfish_url):
                 else:
                     #size = MiB_to_GB(size)
                     # DELL
-                    size = size * 1024 / 1000 ** 2
-                    #size = size / 1024
+                    if plugin.rf.vendor == "Dell":
+                        size = size * 1024 / 1000 ** 2
+                    else:
+                        size = size / 1024
 
                 # get name
                 name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
