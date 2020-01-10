@@ -1099,8 +1099,14 @@ def get_single_system_mem(redfish_url):
             args.detailed = True
 
         if health == "OK" and args.detailed == False:
+
+            total_mem = systems_response.get("MemorySummary").get("TotalSystemMemoryGiB")
+
+            if plugin.rf.vendor == "Dell":
+                total_mem = total_mem * 1024 ** 3 / 1000 ** 3
+
             plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
-                systems_response.get("MemorySummary").get("TotalSystemMemoryGiB"), summary = True)
+                total_mem, summary = True)
             return
 
     system_response_memory_key = "Memory"
@@ -1139,7 +1145,7 @@ def get_single_system_mem(redfish_url):
                     #size = MiB_to_GB(size)
                     # DELL
                     if plugin.rf.vendor == "Dell":
-                        size = size * 1024 / 1000 ** 2
+                        size = round(size * 1024 ** 2 / 1000 ** 2) / 1024
                     else:
                         size = size / 1024
 
@@ -1269,10 +1275,10 @@ def get_storage():
             get_storage_lenovo(system)
 
         elif plugin.rf.vendor == "Dell":
-            get_storage_dell(system)
+            get_storage_dell_huawei(system)
 
         elif plugin.rf.vendor == "Huawei":
-            get_storage_huawei(system)
+            get_storage_dell_huawei(system)
 
         else:
             plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
@@ -1510,78 +1516,7 @@ def get_storage_lenovo(system):
 
     return
 
-def get_storage_dell(system):
-
-    """
-        disks and volumes are currently not implemented
-    """
-
-    global plugin
-
-    plugin.set_current_command("Storage")
-
-    redfish_url = f"{system}/Storage" + "%s" % plugin.rf.vendor_data.expand_string
-
-    storage_response = plugin.rf.get(redfish_url)
-
-    if storage_response is not None:
-
-        storage_status = list()
-        storage_controller_names = list()
-
-        for storage_member in storage_response.get("Members"):
-
-            if storage_member.get("Id"):
-
-                name = storage_member.get("Name")
-
-                this_storage_status = storage_member.get("Status").get("HealthRollup")
-
-                if this_storage_status is None:
-                    continue
-
-                storage_status.append(this_storage_status.upper())
-
-                for storage_controller in storage_member.get("StorageControllers"):
-                    model = storage_controller.get("Model")
-                    fw_version = storage_controller.get("FirmwareVersion")
-                    controller_status = storage_controller.get("Status")
-
-                    if controller_status.get("State") and controller_status.get("State") == "Absent":
-                        continue
-
-                    status = controller_status.get("Health").upper()
-
-                    storage_controller_names.append(f"{name} {model}")
-
-                    status_text = f"{name} {model} (FW: {fw_version}) status is: {status}"
-
-                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
-
-
-                #get_disks(storage_member.get("Drives"))
-                #get_volumes(storage_member.get("Volumes").get("@odata.id"))
-
-            else:
-                plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % storage_member.get("@odata.id"))
-
-        if "CRITICAL" in storage_status:
-            status = "CRITICAL"
-        elif "WARNING" in storage_status:
-            status = "WARNING"
-        else:
-            status = "OK"
-
-        if status != "OK":
-            plugin.add_output_data("CRITICAL", "One or more storage controller report a issue")
-        else:
-            plugin.add_output_data("OK", "Status of %s is: OK" % " and ".join(storage_controller_names), summary = True)
-    else:
-        plugin.add_output_data("UNKNOWN", f"No storage controller data returned for API URL '{redfish_url}'")
-
-    return
-
-def get_storage_huawei(system):
+def get_storage_dell_huawei(system):
 
     def get_drive(drive_link):
 
@@ -1636,8 +1571,16 @@ def get_storage_huawei(system):
             else:
                 size = 0
 
-            raid_level = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeRaidLevel")
-            volume_name = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeName")
+            raid_level = None
+            volume_name = None
+
+            if plugin.rf.vendor == "Huawei":
+                raid_level = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeRaidLevel")
+                volume_name = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeName")
+
+            if plugin.rf.vendor == "Dell":
+                raid_level = volume_data.get("VolumeType")
+                volume_name = volume_data.get("Description")
 
             status_text = "Logical Drive %s (%s) %.0fGiB (%s) Status: %s" % (name, volume_name, size, raid_level, status)
 
@@ -1666,7 +1609,10 @@ def get_storage_huawei(system):
 
     plugin.set_current_command("Storage")
 
-    redfish_url = f"{system}/Storages" + "%s" % plugin.rf.vendor_data.expand_string
+    if plugin.rf.vendor == "Huawei":
+        redfish_url = f"{system}/Storages" + "%s" % plugin.rf.vendor_data.expand_string
+    else:
+        redfish_url = f"{system}/Storage" + "%s" % plugin.rf.vendor_data.expand_string
 
     storage_response = plugin.rf.get(redfish_url)
 
@@ -1685,6 +1631,9 @@ def get_storage_huawei(system):
             else:
                 controller_response = plugin.rf.get(storage_member.get("@odata.id"))
 
+            if controller_response.get("Status") and len(controller_response.get("Status")) > 0 and controller_response.get("Status").get("Health") is None:
+                continue
+
             if controller_response.get("Id"):
 
                 for storage_controller in controller_response.get("StorageControllers"):
@@ -1693,12 +1642,18 @@ def get_storage_huawei(system):
                     fw_version = storage_controller.get("FirmwareVersion")
                     controller_status = storage_controller.get("Status")
 
-                    controller_oem_data = storage_controller.get("Oem").get(plugin.rf.vendor_dict_key)
+                    controller_oem_data = None
+                    if storage_controller.get("Oem") is not None:
+                        controller_oem_data = storage_controller.get("Oem").get(plugin.rf.vendor_dict_key)
 
                     if controller_oem_data is not None:
                         model = controller_oem_data.get("Type") if controller_oem_data.get("Type") else model
 
+                    # ignore absent and Health None controllers
                     if controller_status.get("State") and controller_status.get("State") == "Absent":
+                        continue
+
+                    if controller_status.get("Health") is None:
                         continue
 
                     status = controller_status.get("Health").upper()
@@ -1741,7 +1696,7 @@ def get_storage_huawei(system):
     # check for other drives in system
     system_response = plugin.rf.get(system)
 
-    if system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary") is not None:
+    if system_response.get("Oem") is not None and system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary") is not None:
 
         for system_drive in system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary").get("Drives"):
             drive_url = system_drive.get("Link").get("@odata.id")
@@ -2191,9 +2146,14 @@ def get_single_system_info(redfish_url):
     cpu_num = system_response.get("ProcessorSummary").get("Count")
     mem_size = system_response.get("MemorySummary").get("TotalSystemMemoryGiB")
 
-    # Huawei Model
+    # Huawei system
     if plugin.rf.vendor == "Huawei":
         model = system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("ProductName")
+
+    # Dell system
+    # just WHY?
+    if plugin.rf.vendor == "Dell":
+        mem_size = round(mem_size * 1024 ** 3 / 1000 ** 3)
 
     if host_name is not None:
         host_name = host_name.strip()

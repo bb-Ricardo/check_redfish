@@ -204,8 +204,6 @@ the plugin would be finished after 28 seconds.
 issues with timeouts
 * To monitor Huawei systems you currently need [redfish-library in current master](https://github.com/DMTF/python-redfish-library/tree/f969eea1025c296a5b9ce1ec5eff8d6fa0fe29f7)
 * On Huawei systems the command **--mel** is not implemented
-* On Dell systems only the HealthRollUp for the storage controller will be reported.
-Disks and Volumes are currently not implemented
 
 ## Supported Systems
 This plugin is currently tested with following systems
@@ -227,6 +225,7 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 
 ### Dell
 * PowerEdge R930 (iDRAC Version 2.70.70.70)
+* PowerEdge R630 (iDRAC Version 2.70.70.70)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
