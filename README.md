@@ -7,7 +7,6 @@ health status of systems which support Redfish.
 * add inventory option
 * document code and add more debugging output
 * add support for Fujitsu servers
-* add support for Huawei servers
 
 ## Requirements
 * python >= 3.6
@@ -157,6 +156,9 @@ be alerted anymore. On HPE systems it is not possible to set management event lo
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
 
+**--sel** (values are passed as "days")<br>
+works the same way as stated above for HPE systems just for SEL on Huawei systems
+
 Example: ```--mel --critical 1 --warning 3```
 
 * Entries with a != OK severity which are not older then 24 hours are reported as CRITICAL
@@ -198,9 +200,11 @@ the plugin would be finished after 28 seconds.
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
 * On HPE systems the nic status is reported unreliable
-* On Lenovo Systems the commands **--mel** and **--sel** are not implemented due to
+* On Lenovo systems the commands **--mel** and **--sel** are not implemented due to
 issues with timeouts
-* On Dell Systems only the HealthRollUp for the storage controller will be reported.
+* To monitor Huawei systems you currently need [redfish-library in current master](https://github.com/DMTF/python-redfish-library/tree/f969eea1025c296a5b9ce1ec5eff8d6fa0fe29f7)
+* On Huawei systems the command **--mel** is not implemented
+* On Dell systems only the HealthRollUp for the storage controller will be reported.
 Disks and Volumes are currently not implemented
 
 ## Supported Systems
@@ -223,6 +227,9 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 
 ### Dell
 * PowerEdge R930 (iDRAC Version 2.70.70.70)
+
+### Huawei
+* TaiShan 2280 V2 (iBMC Version 3.63)
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
