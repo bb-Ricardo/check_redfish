@@ -1,1 +1,1 @@
-redfish>=2.0.9
+redfish>=2.1.4

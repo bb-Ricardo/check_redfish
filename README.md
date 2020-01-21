@@ -10,7 +10,7 @@ health status of systems which support Redfish.
 
 ## Requirements
 * python >= 3.6
-* redfish >= 2.0.9
+* redfish >= 2.1.4
 
 ## Installation
 
@@ -50,7 +50,7 @@ health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.9 (2019-11-28)
+Version: 0.0.10 (2020-01-21)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request
