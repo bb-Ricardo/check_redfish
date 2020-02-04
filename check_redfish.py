@@ -290,6 +290,7 @@ class RedfishConnection():
             self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
 
         if self.connection is not None:
+            self.connection.system_properties = None
             self.save_session_to_file()
 
         return
@@ -620,6 +621,13 @@ class VendorHuaweiData():
     # currently $expand is not supported
     expand_string = "" #?$expand=."
 
+class VendorFujitsuData():
+
+    view_supported = False
+    view_select = None
+
+    expand_string = "" #"?$expand=*($levels=1)"
+
 def parse_command_line():
     """parse command line arguments
     Also add current version and version date to description
@@ -850,7 +858,7 @@ def get_single_chassi_temp(redfish_url):
 
             state = temp.get("Status").get("State")
 
-            if state in [ "Absent", "Disabled" ]:
+            if state in [ "Absent", "Disabled", "UnavailableOffline" ]:
                 continue
 
             if temp.get("Status").get("Health") is None:
@@ -867,6 +875,9 @@ def get_single_chassi_temp(redfish_url):
             warning_temp = temp.get("UpperThresholdNonCritical")
 
             temp_num += 1
+
+            if current_temp is None:
+                current_temp = 0
 
             if warning_temp is None or str(warning_temp) == "0":
                 warning_temp = "N/A"
@@ -935,9 +946,9 @@ def get_single_chassi_fan(redfish_url):
 
             speed_status = ""
 
-            # DELL
-            if fan.get("ReadingRPM"):
-                speed = fan.get("ReadingRPM")
+            # DELL, Fujitsu, Huawei
+            if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
+                speed = fan.get("ReadingRPM") or fan.get("Reading")
                 speed_units = ""
 
                 speed_status = f" ({speed} RPM)"
@@ -1034,7 +1045,8 @@ def get_single_system_procs(redfish_url):
         proc_health = systems_response.get("ProcessorSummary").get("Status")
 
         # DELL is HealthRollUp not HealthRollup
-        health = proc_health.get("HealthRollup") or proc_health.get("HealthRollUp")
+        # Fujitsu is just Health an not HealthRollup
+        health = proc_health.get("HealthRollup") or proc_health.get("HealthRollUp") or proc_health.get("Health")
 
         if health == "OK" and args.detailed == False:
             plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"), summary = True)
@@ -1094,7 +1106,9 @@ def get_single_system_mem(redfish_url):
         memory_health = systems_response.get("MemorySummary").get("Status")
 
         try:
-            health = memory_health.get("HealthRollup") or memory_health.get("HealthRollUp")
+            # DELL is HealthRollUp not HealthRollup
+            # Fujitsu is just Health an not HealthRollup
+            health = memory_health.get("HealthRollup") or memory_health.get("HealthRollUp") or memory_health.get("Health")
         except AttributeError:
             args.detailed = True
 
@@ -1124,6 +1138,8 @@ def get_single_system_mem(redfish_url):
     redfish_url = memory_path_dict.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
 
     memory_response = plugin.rf.get_view(redfish_url)
+
+    found_memory_data = False
 
     if memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
@@ -1168,7 +1184,7 @@ def get_single_system_mem(redfish_url):
                     module_status = mem_module_response.get("Status")
 
                     if module_status.get("State") and module_status.get("State") == "Absent":
-                        status = module_status.get("State") == "Absent"
+                        status = module_status.get("State")
                     else:
                         status = module_status.get("Health")
 
@@ -1179,6 +1195,8 @@ def get_single_system_mem(redfish_url):
                 if status in [ "Absent", "NotPresent"]:
                     continue
 
+                found_memory_data = True
+
                 status_text = f"Memory module {name} ({size}GB) status is: {status}"
 
                 if status == "GoodInUse":
@@ -1188,7 +1206,8 @@ def get_single_system_mem(redfish_url):
 
             else:
                 plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
-    else:
+
+    if found_memory_data == False:
         plugin.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
 
     return
@@ -1274,14 +1293,8 @@ def get_storage():
         elif plugin.rf.vendor == "Lenovo":
             get_storage_lenovo(system)
 
-        elif plugin.rf.vendor == "Dell":
-            get_storage_dell_huawei(system)
-
-        elif plugin.rf.vendor == "Huawei":
-            get_storage_dell_huawei(system)
-
         else:
-            plugin.add_output_data("UNKNOWN", "'storage' command is currently not supported for this system.")
+            get_storage_generic(system)
 
     return
 
@@ -1516,7 +1529,7 @@ def get_storage_lenovo(system):
 
     return
 
-def get_storage_dell_huawei(system):
+def get_storage_generic(system):
 
     def get_drive(drive_link):
 
@@ -1581,6 +1594,10 @@ def get_storage_dell_huawei(system):
             if plugin.rf.vendor == "Dell":
                 raid_level = volume_data.get("VolumeType")
                 volume_name = volume_data.get("Description")
+
+            if plugin.rf.vendor == "Fujitsu":
+                raid_level = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("RaidLevel")
+                volume_name = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("Name")
 
             status_text = "Logical Drive %s (%s) %.0fGiB (%s) Status: %s" % (name, volume_name, size, raid_level, status)
 
@@ -1743,18 +1760,12 @@ def get_event_log(type):
 
     plugin.set_current_command("%s Event Log" % type)
 
-    if plugin.rf.vendor == "HPE":
-        get_event_log_hpe(type, 1)
-
-    elif plugin.rf.vendor == "Lenovo":
+    if plugin.rf.vendor == "Lenovo":
         get_event_log_lenovo(type)
 
-    elif plugin.rf.vendor == "Dell":
-        get_event_log_dell(type, "iDRAC.Embedded.1")
+    elif plugin.rf.vendor in [ "Huawei", "Fujitsu", "HPE", "Dell" ]:
 
-    elif plugin.rf.vendor == "Huawei":
-
-        if type == "System":
+        if type == "System" and plugin.rf.vendor in [ "Huawei", "HPE" ]:
             property_name = "systems"
         else:
             property_name = "managers"
@@ -1762,15 +1773,22 @@ def get_event_log(type):
         system_manager_ids = plugin.rf.connection.system_properties.get(property_name)
 
         if system_manager_ids is None or len(system_manager_ids) == 0:
-            plugin.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'")
+            plugin.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'", summary = not args.detailed)
             return
 
         for system_manager_id in system_manager_ids:
 
-            get_event_log_huawei(type, system_manager_id)
+            if plugin.rf.vendor == "HPE":
+                get_event_log_hpe(type, system_manager_id)
+
+            elif plugin.rf.vendor == "Huawei":
+                get_event_log_huawei(type, system_manager_id)
+
+            elif plugin.rf.vendor in [ "Dell", "Fujitsu" ]:
+                get_event_log_dell_fujitsu(type, system_manager_id)
 
     else:
-        plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor")
+        plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor", summary = not args.detailed)
 
     return
 
@@ -1793,9 +1811,9 @@ def get_event_log_hpe(type, system_manager_id):
             limit_of_returned_itmes = ilo4_limit
 
     if type == "System":
-        redfish_url = f"/redfish/v1/Systems/{system_manager_id}/LogServices/IML/Entries/?$expand=."
+        redfish_url = f"{system_manager_id}/LogServices/IML/Entries/?$expand=."
     else:
-        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/LogServices/IEL/Entries?$expand=."
+        redfish_url = f"{system_manager_id}/LogServices/IEL/Entries?$expand=."
 
         if args.warning:
             date_warning = data_now - datetime.timedelta(days=int(args.warning))
@@ -1805,7 +1823,7 @@ def get_event_log_hpe(type, system_manager_id):
     event_data = plugin.rf.get(redfish_url)
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin.add_output_data("OK", "No log entries found.", summary = True)
+        plugin.add_output_data("OK", "No log entries found.", summary = not args.detailed)
         return
 
     # reverse list from newest to oldest entry
@@ -1878,7 +1896,7 @@ def get_event_log_lenovo(type):
 
     plugin.add_output_data("UNKNOWN", f"Request of {type} Event Log entries currently not implemented due to timeout issues.")
 
-def get_event_log_dell(type, system_manager_id):
+def get_event_log_dell_fujitsu(type, system_manager_id):
 
     global plugin
 
@@ -1889,9 +1907,15 @@ def get_event_log_dell(type, system_manager_id):
     date_critical = None
 
     if type == "System":
-        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/Logs/Sel"
+        if plugin.rf.vendor == "Dell":
+            redfish_url = f"{system_manager_id}/Logs/Sel"
+        else:
+            redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/" # /Entries/?$expand=.
     else:
-        redfish_url = f"/redfish/v1/Managers/{system_manager_id}/Logs/Lclog"
+        if plugin.rf.vendor == "Dell":
+            redfish_url = f"{system_manager_id}/Logs/Lclog"
+        else:
+            redfish_url = f"/redfish/v1/Managers/iRMC/LogServices/InternalEventLog/Entries/" # ML/Entries/?$expand=.
 
         if args.warning:
             date_warning = data_now - datetime.timedelta(days=int(args.warning))
@@ -1901,12 +1925,12 @@ def get_event_log_dell(type, system_manager_id):
     event_data = plugin.rf.get(redfish_url)
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin.add_output_data("OK", "No log entries found.", summary = True)
+        plugin.add_output_data("OK", "No log entries found.", summary = not args.detailed)
         return
 
     event_entries = event_data.get("Members")
 
-    message_id_status = dict()
+    assoc_id_status = dict()
 
     num_entry = 0
     for event_entry_item in event_entries:
@@ -1920,7 +1944,10 @@ def get_event_log_dell(type, system_manager_id):
 
         num_entry += 1
 
-        severity = event_entry.get("Severity").upper()
+        severity = event_entry.get("Severity")
+        if severity is not None:
+            severity = severity.upper()
+
         date = event_entry.get("Created")
 
         # take care of date = None
@@ -1933,23 +1960,31 @@ def get_event_log_dell(type, system_manager_id):
         # newer message can clear a status for older messages
         if type == "System":
 
-            # get message ID
-            message_id = event_entry.get("MessageId")
+            # get log entry id to associate older log entries
+            if plugin.rf.vendor == "Dell":
+                assoc_id = event_entry.get("MessageId")
+            if plugin.rf.vendor == "Fujitsu":
+                assoc_id = event_entry.get("SensorNumber")
 
             # found an old message that has been cleared
-            if message_id_status.get(message_id) == "cleared":
+            if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
                 message += " (severity '%s' cleared)" % severity
             else:
                 if severity == "WARNING":
-                    status = "WARNING"
+                    status = severity
                 elif severity != "OK":
                     status = "CRITICAL"
 
             # keep track of messages that clear an older message
             # get entry code
-            if event_entry.get("EntryCode") is not None:
-                if event_entry.get("EntryCode")[0].get("Member") == "Deassert" and message_id is not None:
-                    message_id_status[message_id] = "cleared"
+            if plugin.rf.vendor == "Dell":
+                if event_entry.get("EntryCode") is not None:
+                    if event_entry.get("EntryCode")[0].get("Member") == "Deassert" and assoc_id is not None:
+                        assoc_id_status[assoc_id] = "cleared"
+
+            if plugin.rf.vendor == "Fujitsu":
+                if event_entry.get("SensorNumber") is not None and severity == "OK":
+                    assoc_id_status[assoc_id] = "cleared"
 
         else:
             # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
@@ -2175,28 +2210,54 @@ def get_single_system_info(redfish_url):
         plugin.add_output_data(status, status_text, summary = True)
     else:
         plugin.add_output_data(status, status_text)
+        # add ILO data
         if plugin.rf.vendor == "HPE":
             plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
+        # add SDCard status
+        if plugin.rf.vendor == "Fujitsu":
+            sd_card = plugin.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
 
-def get_firmware_info(system = 1):
+            if sd_card.get("Inserted") is True:
+                sd_card_status = sd_card.get("Status")
+                sd_card_capacity = sd_card.get("CapacityMB")
+                sd_card_free_space = sd_card.get("FreeSpaceMB")
+
+                status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
+                plugin.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status, status_text)
+
+    return
+
+def get_firmware_info():
 
     global plugin
 
     plugin.set_current_command("Firmware Info")
 
-    if plugin.rf.vendor == "HPE" and plugin.rf.vendor_data.ilo_version.lower() == "ilo 4":
-        get_firmware_info_hpe_ilo4(system)
+    if (plugin.rf.vendor == "HPE" and plugin.rf.vendor_data.ilo_version.lower() == "ilo 4") or plugin.rf.vendor == "Fujitsu":
+
+        system_ids = plugin.rf.connection.system_properties.get("systems")
+
+        if system_ids is None or len(system_ids) == 0:
+            plugin.add_output_data("UNKNOWN", f"No 'systems' property found in root path '/redfish/v1'")
+            return
+
+        for system_id in system_ids:
+
+            if plugin.rf.vendor == "Fujitsu":
+                get_firmware_info_fujitsu(system_id)
+            else:
+                get_firmware_info_hpe_ilo4(system_id)
 
     else:
         get_firmware_info_generic()
 
     return
 
-def get_firmware_info_hpe_ilo4(system = 1):
+def get_firmware_info_hpe_ilo4(system_id = 1):
 
     global plugin
 
-    redfish_url = f"/redfish/v1/Systems/{system}/FirmwareInventory/"
+    redfish_url = f"{system_id}/FirmwareInventory/"
 
     firmware_response = plugin.rf.get(redfish_url)
 
@@ -2211,6 +2272,122 @@ def get_firmware_info_hpe_ilo4(system = 1):
             plugin.add_output_data("OK", f"{component_name} ({component_location}): {component_version}")
 
     plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Current")), summary = True)
+
+    return
+
+def get_firmware_info_fujitsu(system_id):
+
+    # there is room for improvement
+
+    global plugin
+
+    # list of dicts: keys: {name, version, location}
+    firmware_entries = list()
+
+    # get iRMC firmware
+    manager_ids = plugin.rf.connection.system_properties.get("managers")
+
+    if manager_ids is not None and len(manager_ids) > 0:
+
+        irmc_firmware_informations = get_bmc_firmware_fujitsu(manager_ids[0])
+
+        if irmc_firmware_informations is not None:
+            for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
+                fw_info = irmc_firmware_informations.get(bmc_fw_bank)
+                if fw_info is not None:
+                    firmware_entries.append(
+                        { "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
+                          "version": "%s, Booter %s, SDDR: %s/%s (%s)," % (
+                            fw_info.get("FirmwareVersion"),
+                            fw_info.get("BooterVersion"),
+                            fw_info.get("SDRRVersion"),
+                            fw_info.get("SDRRId"),
+                            fw_info.get("FirmwareBuildDate")
+                          ),
+                          "location": "System Board"
+                        }
+                    )
+
+    # get power supply firmware
+    chassie_ids = plugin.rf.connection.system_properties.get("chassis")
+
+    if chassie_ids is not None and len(chassie_ids) > 0:
+
+        for chassie_id in chassie_ids:
+            power_data = plugin.rf.get(f"{chassie_id}/Power")
+
+            if power_data.get("PowerSupplies") is not None and len(power_data.get("PowerSupplies")) > 0:
+
+                for ps_data in power_data.get("PowerSupplies"):
+                    ps_manufacturer = ps_data.get("Manufacturer")
+                    ps_location = ps_data.get("Name")
+                    ps_model = ps_data.get("Model")
+                    ps_fw_version = ps_data.get("FirmwareVersion")
+
+                    firmware_entries.append({
+                        "name": f"Power Supply {ps_manufacturer} {ps_model}",
+                        "version": f"{ps_fw_version}",
+                        "location": f"{ps_location}"
+                    })
+
+
+    # get other firmware
+    redfish_url = f"{system_id}/Oem/%s/FirmwareInventory/" % plugin.rf.vendor_dict_key
+
+    firmware_response = plugin.rf.get(redfish_url)
+
+    # get BIOS
+    if firmware_response.get("SystemBIOS"):
+        firmware_entries.append({
+            "name": "SystemBIOS",
+            "version": "%s" % firmware_response.get("SystemBIOS"),
+            "location": "System Board"
+        })
+
+    # get other components
+    for key, value in firmware_response.items():
+
+        if key.startswith("@"):
+            continue
+
+        if isinstance(value, dict) and value.get("@odata.id") is not None:
+            component_fw_data = plugin.rf.get(value.get("@odata.id"))
+
+            if component_fw_data.get("Ports") is not None and len(component_fw_data.get("Ports")) > 0:
+
+                for component_entry in component_fw_data.get("Ports"):
+                    component_name = component_entry.get("AdapterName")
+                    component_location = component_entry.get("ModuleName")
+                    component_bios_version = component_entry.get("BiosVersion")
+                    component_fw_version = component_entry.get("FirmwareVersion")
+                    component_slot = component_entry.get("SlotId")
+                    component_port = component_entry.get("PortId")
+
+                    firmware_entries.append({
+                        "name": f"{component_name}",
+                        "version": f"{component_fw_version} (BIOS: {component_bios_version})",
+                        "location": f"{component_location} {component_slot}/{component_port}"
+                    })
+
+            if component_fw_data.get("Adapters") is not None and len(component_fw_data.get("Adapters")) > 0:
+
+                for component_entry in component_fw_data.get("Adapters"):
+                    component_name = component_entry.get("ModuleName")
+                    component_vendor = component_entry.get("VendorName")
+                    component_bios_version = component_entry.get("BiosVersion")
+                    component_fw_version = component_entry.get("FirmwareVersion")
+
+                    firmware_entries.append({
+                        "name": f"{component_name} controller",
+                        "version": f"{component_fw_version} (BIOS: {component_bios_version})",
+                        "location": f"{component_vendor}"
+                    })
+
+    if args.detailed is True:
+        for fw_entry in firmware_entries:
+            plugin.add_output_data("OK", "%s (%s): %s" % (fw_entry.get("name"), fw_entry.get("location"), fw_entry.get("version")))
+
+    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_entries), summary = True)
 
     return
 
@@ -2269,9 +2446,9 @@ def get_bmc_info():
             known_manager = True
             get_bmc_info_lenovo(manager)
 
-        if "iDRAC" in manager:
+        if plugin.rf.vendor in ["Dell", "Fujitsu"]:
             known_manager = True
-            get_bmc_info_dell(manager)
+            get_bmc_info_dell_fujitsu(manager)
 
         if plugin.rf.vendor == "Huawei":
             known_manager = True
@@ -2408,22 +2585,43 @@ def get_bmc_info_lenovo(redfish_url):
 
     plugin.add_output_data("OK", status_text, summary=summary)
 
-def get_bmc_info_dell(redfish_url):
+def get_bmc_firmware_fujitsu(manager_url):
+
+    manager_response = plugin.rf.get(manager_url)
+
+    # get configuration
+    iRMCConfiguration_link = manager_response.get("Oem").get(plugin.rf.vendor_dict_key).get("iRMCConfiguration").get("@odata.id")
+
+    iRMCConfiguration = None
+    if iRMCConfiguration_link is not None:
+        iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
+
+    firmware_informations = None
+    if iRMCConfiguration is not None:
+        firmware_informations = plugin.rf.get(iRMCConfiguration.get("FWUpdate").get("@odata.id"))
+
+    return firmware_informations
+
+def get_bmc_info_dell_fujitsu(redfish_url):
 
     global plugin
 
     manager_response = plugin.rf.get(redfish_url)
 
-    idrac_model = manager_response.get("Model")
-    idrac_fw_version = manager_response.get("FirmwareVersion")
+    bmc_model = manager_response.get("Model")
+    bmc_fw_version = manager_response.get("FirmwareVersion")
+    bmc_type = ""
 
-    status_text = f"iDRAC {idrac_model} ({idrac_fw_version})"
+    if plugin.rf.vendor == "Dell":
+        bmc_type = "iDRAC "
+
+    status_text = f"{bmc_type}{bmc_model} ({bmc_fw_version})"
 
     status = manager_response.get("Status").get("Health").upper()
 
     plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-    # iDRAC Network interfaces
+    # BMC Network interfaces
     manager_nic_response = None
     if manager_response.get("EthernetInterfaces"):
         manager_nic_response = plugin.rf.get(manager_response.get("EthernetInterfaces").get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string)
@@ -2457,17 +2655,58 @@ def get_bmc_info_dell(redfish_url):
                     status = "UNKNOWN"
 
                 speed = manager_nic.get("SpeedMbps")
-                duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
-                autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
+                duplex = manager_nic.get("FullDuplex")
+                autoneg = manager_nic.get("AutoNeg")
                 host_name = manager_nic.get("HostName")
                 nic_id = manager_nic.get("Id")
                 ip_address = manager_nic.get("IPv4Addresses")[0].get("Address")
+
+                if duplex is not None:
+                    duplex = "full" if duplex is True else "half"
+                if autoneg is not None:
+                    autoneg = "on" if autoneg is True else "off"
 
                 status_text = f"NIC {nic_id} '{host_name}' ({ip_address}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
 
                 plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-    plugin.add_output_data("OK", f"iDRAC {idrac_model} ({idrac_fw_version}) and nics are in 'OK' state.", summary = True)
+    # get running firmware informations from Fujitsu server
+    if plugin.rf.vendor == "Fujitsu":
+
+        # get configuration
+        iRMCConfiguration_link = manager_response.get("Oem").get(plugin.rf.vendor_dict_key).get("iRMCConfiguration").get("@odata.id")
+
+        iRMCConfiguration = None
+        if iRMCConfiguration_link is not None:
+            iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
+
+        license_informations = None
+        if iRMCConfiguration is not None:
+            license_informations = plugin.rf.get(iRMCConfiguration.get("Licenses").get("@odata.id"))
+
+        irmc_firmware_informations = get_bmc_firmware_fujitsu(redfish_url)
+        if irmc_firmware_informations is not None:
+            for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
+                fw_info = irmc_firmware_informations.get(bmc_fw_bank)
+                if fw_info is not None:
+                    plugin.add_output_data("OK", "Firmware: State: %s, Booter: %s, SDDR: %s (%s), Date: %s" % (
+                        fw_info.get("FirmwareRunningState"),
+                        fw_info.get("BooterVersion"),
+                        fw_info.get("SDRRVersion"),
+                        fw_info.get("SDRRId"),
+                        fw_info.get("FirmwareBuildDate")
+                        )
+                    )
+
+        if license_informations is not None and license_informations.get("Keys@odata.count") > 0:
+            licenses = list()
+            for bmc_license in license_informations.get("Keys"):
+                licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
+
+            if len(licenses) > 0:
+                plugin.add_output_data("OK", "Licenses: %s" % ", ".join(licenses))
+
+    plugin.add_output_data("OK", f"{bmc_type}{bmc_model} ({bmc_fw_version}) and nics are in 'OK' state.", summary = True)
 
 def get_bmc_info_huawei(redfish_url):
 
@@ -2495,7 +2734,7 @@ def get_bmc_info_huawei(redfish_url):
     ibmc_license_status = None
     ibmc_license_class = None
 
-    if len(ibmc_license_link) > 0:
+    if ibmc_license_link is not None and len(ibmc_license_link) > 0:
         ibmc_license_informations = plugin.rf.get(ibmc_license_link.get("@odata.id"))
 
         ibmc_license_status = ibmc_license_informations.get("InstalledStatus")
@@ -2592,6 +2831,11 @@ def get_basic_system_info():
 
             plugin.rf.vendor_data = VendorHuaweiData()
 
+        if vendor_string in ["ts_fujitsu"]:
+            plugin.rf.vendor = "Fujitsu"
+
+            plugin.rf.vendor_data = VendorFujitsuData()
+
     return
 
 def discover_system_properties():
@@ -2653,7 +2897,6 @@ if __name__ == "__main__":
             plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
 
         plugin.do_exit()
-
 
     if "power"      in args.requested_query: get_chassi_data("power")
     if "temp"       in args.requested_query: get_chassi_data("temp")

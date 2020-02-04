@@ -6,7 +6,7 @@ health status of systems which support Redfish.
 ## ToDo:
 * add inventory option
 * document code and add more debugging output
-* add support for Fujitsu servers
+* add support for SuperMicro servers
 
 ## Requirements
 * python >= 3.6
@@ -229,6 +229,9 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
+
+### Fujitsu
+* PRIMERGY RX2540 M5 (iRMC Version 2.50P)
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
