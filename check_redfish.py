@@ -619,14 +619,21 @@ class VendorHuaweiData():
     view_select = None
 
     # currently $expand is not supported
-    expand_string = "" #?$expand=."
+    expand_string = ""
 
 class VendorFujitsuData():
 
     view_supported = False
     view_select = None
 
-    expand_string = "" #"?$expand=*($levels=1)"
+    expand_string = ""
+
+class VendorGeneric():
+
+    view_supported = False
+    view_select = None
+
+    expand_string = ""
 
 def parse_command_line():
     """parse command line arguments
@@ -720,6 +727,9 @@ def get_chassi_data(data_type = None):
 
     if data_type is None or data_type not in [ "power", "temp", "fan" ]:
         raise Exception("Unknown data_type not set for get_chassi_data(): %s", type)
+
+    if plugin.rf.connection.system_properties is None:
+        discover_system_properties()
 
     chassis = plugin.rf.connection.system_properties.get("chassis")
 
@@ -1016,6 +1026,9 @@ def get_system_data(data_type):
         plugin.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
         return
 
+    if plugin.rf.connection.system_properties is None:
+        discover_system_properties()
+
     systems = plugin.rf.connection.system_properties.get("systems")
 
     if systems is None or len(systems) == 0:
@@ -1278,6 +1291,9 @@ def get_storage():
     global plugin
 
     plugin.set_current_command("Storage")
+
+    if plugin.rf.connection.system_properties is None:
+        discover_system_properties()
 
     systems = plugin.rf.connection.system_properties.get("systems")
 
@@ -1770,6 +1786,9 @@ def get_event_log(type):
         else:
             property_name = "managers"
 
+        if plugin.rf.connection.system_properties is None:
+            discover_system_properties()
+
         system_manager_ids = plugin.rf.connection.system_properties.get(property_name)
 
         if system_manager_ids is None or len(system_manager_ids) == 0:
@@ -2150,6 +2169,9 @@ def get_system_info():
 
     plugin.set_current_command("System Info")
 
+    if plugin.rf.connection.system_properties is None:
+        discover_system_properties()
+
     systems = plugin.rf.connection.system_properties.get("systems")
 
     if systems is None or len(systems) == 0:
@@ -2234,6 +2256,9 @@ def get_firmware_info():
     plugin.set_current_command("Firmware Info")
 
     if (plugin.rf.vendor == "HPE" and plugin.rf.vendor_data.ilo_version.lower() == "ilo 4") or plugin.rf.vendor == "Fujitsu":
+
+        if plugin.rf.connection.system_properties is None:
+            discover_system_properties()
 
         system_ids = plugin.rf.connection.system_properties.get("systems")
 
@@ -2394,6 +2419,10 @@ def get_firmware_info_fujitsu(system_id):
 def get_firmware_info_generic():
 
     global plugin
+
+    if plugin.rf.connection.root.get("UpdateService") is None:
+        plugin.add_output_data("UNKNOWN", "URL '/redfish/v1/UpdateService' unavailable. Unable to retrieve firmware information.", summary = not args.detailed)
+        return
 
     redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/" + "%s" % plugin.rf.vendor_data.expand_string
 
@@ -2767,10 +2796,12 @@ def get_basic_system_info():
     global plugin
 
     basic_infos = plugin.rf.connection.root
+    vendor_string = ""
 
     if basic_infos.get("Oem"):
 
-        vendor_string = list(basic_infos.get("Oem"))[0]
+        if len(basic_infos.get("Oem")) > 0:
+            vendor_string = list(basic_infos.get("Oem"))[0]
 
         plugin.rf.vendor_dict_key = vendor_string
 
@@ -2787,34 +2818,6 @@ def get_basic_system_info():
 
             if plugin.rf.vendor_data.ilo_version.lower() == "ilo 5":
                 plugin.rf.vendor_data.view_supported = True
-
-
-            #resource_directory_response = get_cached_data(handle, "/redfish/v1/ResourceDirectory/")
-
-            # try to shortcut a bit
-            """
-            resource_list = list()
-            for resource_instance in resource_directory_response.get("Instances"):
-                resource_list.append(resource_instance.get("@odata.id"))
-
-            pprint.pprint(resource_list)
-
-            r = re.compile(".*\/Systems\/\d\/Processors\/\d\/$")
-            pprint.pprint(list(filter(r.match, resource_list)))
-
-            r = re.compile(".*\/DiskDrives\/\d\/$")
-            pprint.pprint(list(filter(r.match, resource_list)))
-
-            r = re.compile(".*\/LogicalDrives\/\d\/$")
-            pprint.pprint(list(filter(r.match, resource_list)))
-
-            r = re.compile(".*\/StorageEnclosures\/\d\/$")
-            pprint.pprint(list(filter(r.match, resource_list)))
-
-            r = re.compile(".*\/EthernetInterfaces\/\d\/$")
-            pprint.pprint(list(filter(r.match, resource_list)))
-            #response.vendor_data.resource_directory =
-            """
 
         if vendor_string in ["Lenovo"]:
             plugin.rf.vendor = "Lenovo"
@@ -2835,6 +2838,14 @@ def get_basic_system_info():
             plugin.rf.vendor = "Fujitsu"
 
             plugin.rf.vendor_data = VendorFujitsuData()
+
+    if plugin.rf.vendor_data is None:
+        if vendor_string is None:
+            plugin.rf.vendor = "Generic"
+        else:
+            plugin.rf.vendor = vendor_string
+
+        plugin.rf.vendor_data = VendorGeneric()
 
     return
 
@@ -2888,15 +2899,6 @@ if __name__ == "__main__":
 
     # get basic informations
     get_basic_system_info()
-
-    if plugin.rf.vendor is None:
-
-        if plugin.rf.vendor_dict_key:
-            plugin.add_output_data("UNKNOWN", "Support for vendor '%s' is currently not implemented." % plugin.rf.vendor_dict_key)
-        else:
-            plugin.add_output_data("UNKNOWN", "Unable to determine systems vendor.")
-
-        plugin.do_exit()
 
     if "power"      in args.requested_query: get_chassi_data("power")
     if "temp"       in args.requested_query: get_chassi_data("temp")
