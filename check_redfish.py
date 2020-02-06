@@ -53,6 +53,7 @@ class RedfishConnection():
     vendor_dict_key = None
     vendor_data = None
     cli_args = None
+    port = None
 
     def __init__(self, cli_args = None):
 
@@ -63,6 +64,9 @@ class RedfishConnection():
             raise Exception("cli args host not set")
 
         self.cli_args = cli_args
+
+        if cli_args.port:
+            cli_args.port = ":%s" % cli_args.port
 
         self.sessionfilepath = self.get_session_file_name()
         self.restore_session_from_file()
@@ -269,7 +273,7 @@ class RedfishConnection():
 
         # initialize connection
         try:
-            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
+            self.connection = redfish.redfish_client(base_url="https://%s%s" % (self.cli_args.host, self.cli_args.port), max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
             self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
@@ -652,6 +656,8 @@ def parse_command_line():
     group = parser.add_argument_group(title="optional arguments")
     group.add_argument("-h", "--help", action='store_true',
                         help="show this help message and exit")
+    group.add_argument("-P", "--port",
+                        help="define the port of the redfish API" )
     group.add_argument("-w", "--warning", default="",
                         help="set warning value")
     group.add_argument("-c", "--critical", default="",
