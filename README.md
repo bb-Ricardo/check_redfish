@@ -7,6 +7,7 @@ health status of systems which support Redfish.
 * add inventory option
 * document code and add more debugging output
 * add support for SuperMicro servers
+* add tests with mockups
 
 ## Requirements
 * python >= 3.6
@@ -53,7 +54,8 @@ R.I.P. IPMI
 Version: 0.0.10 (2020-01-21)
 
 mandatory arguments:
-  -H HOST, --host HOST  define the host to request
+  -H HOST, --host HOST  define the host to request. To change the port just
+                        add ':portnumber' to this parameter.
 
 authentication arguments:
   -u USERNAME, --username USERNAME
@@ -103,9 +105,16 @@ multiple request commands can be combined.
 
 ### Lets start with an example
 ```/usr/lib64/nagios/plugins/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
-* request ILO: 10.0.0.23
+* request BMC: 10.0.0.23
 * use credentials from file: /etc/icinga2/ilo_credentials
 * query health of: storage, power
+
+### Alternative HTTPS port
+If you want to use a different Port then 443 then just add the port to the Host parameter.<br>
+Example for Port 8443:
+```
+-H 127.0.0.1:8443
+```
 
 ### Authentication
 Credentials can be provided in **3** ways and will be checked in following order:
@@ -131,9 +140,19 @@ export CHECK_REDFISH_PASSWORD=readonlysecret
 
 ### Sessions and session resumption
 To avoid delays due to login on every request and flooding the event log with
-login/logout messages a session resumption was implemented. Per default a session
-file will be crated in the *system default temp path*. These defaults can be changed
-with following options:
+login/logout messages a session resumption was implemented. If the session in the
+BMC is expired a new session and session file will be created.
+
+**IMPORTANT**<br>
+To actually benefit from this feature you need to set the user session timeout in
+the BMC to a higher value then your default check interval!
+
+If your default check interval is 5 minutes then the session timout in the BMC
+should be at least 6 minutes!
+
+#### Session file name and location
+Per default a session file will be crated in the *system/user default temp path*.
+These defaults can be changed with following options:
 
 Use ```--sessionfiledir```to define where the session files should be stored
 Use ```--sessionfile``` to specify the name of the session file for this particular system
@@ -207,6 +226,7 @@ issues with timeouts
 
 ## Supported Systems
 This plugin is currently tested with following systems
+
 ### Hewlett Packard Enterprise
 Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ProLiant BL460c Gen8

@@ -647,7 +647,7 @@ def parse_command_line():
 
     group = parser.add_argument_group(title="mandatory arguments")
     group.add_argument("-H", "--host",
-                        help="define the host to request" )
+                        help="define the host to request. To change the port just add ':portnumber' to this parameter." )
 
     group = parser.add_argument_group(title="authentication arguments")
     group.add_argument("-u", "--username", help="the login user name")
