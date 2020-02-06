@@ -626,7 +626,7 @@ class VendorFujitsuData():
     view_supported = False
     view_select = None
 
-    expand_string = ""
+    expand_string = "?$expand=Members"
 
 class VendorGeneric():
 
@@ -1041,7 +1041,10 @@ def get_system_data(data_type):
         if data_type == "mem":
             get_single_system_mem(system)
         if data_type == "nics":
-            get_single_system_nics(system)
+            if plugin.rf.vendor == "Fujitsu":
+                get_system_nics_fujitsu(system)
+            else:
+                get_single_system_nics(system)
 
     return
 
@@ -1225,13 +1228,88 @@ def get_single_system_mem(redfish_url):
 
     return
 
+def get_system_nics_fujitsu(redfish_url):
+
+    global plugin
+
+    plugin.set_current_command("NICs")
+
+    redfish_url = f"{redfish_url}/NetworkInterfaces"  + "%s" % plugin.rf.vendor_data.expand_string
+
+    nics_response = plugin.rf.get(redfish_url)
+
+    num_nic_ports = 0
+
+    if nics_response.get("Members") and len(nics_response.get("Members")) > 0:
+
+        for nic in nics_response.get("Members"):
+
+            nic_id = nic.get("Id")
+
+            # network functions
+            network_functions = plugin.rf.get("%s%s" % (nic.get("NetworkDeviceFunctions").get("@odata.id"), plugin.rf.vendor_data.expand_string))
+            # network ports
+            network_ports = plugin.rf.get("%s%s" % (nic.get("NetworkPorts").get("@odata.id"), plugin.rf.vendor_data.expand_string))
+
+            for network_function in network_functions.get("Members"):
+
+                # get port
+                network_port_link = network_function.get("Links").get("PhysicalPortAssignment").get("@odata.id")
+
+                network_port_data = None
+                for network_port in network_ports.get("Members"):
+                    if network_port.get("@odata.id") == network_port_link:
+                        network_port_data = network_port
+                        break
+
+                num_nic_ports += 1
+
+                nic_name = network_function.get("Name")
+                nic_dev_func_type = network_port_data.get("ActiveLinkTechnology")
+                nic_port_current_speed = network_port_data.get("CurrentLinkSpeedMbps")
+                nic_port_name = network_port_data.get("Name")
+                nic_port_link_status = network_port_data.get("LinkStatus")
+
+                nic_port_address = network_function.get("Ethernet")
+                if nic_port_address is not None:
+                    nic_port_address = nic_port_address.get("MACAddress")
+
+                # get health status
+                nic_health_status = network_port_data.get("Status")
+                if nic_health_status is not None:
+
+                    # ignore interface if state is not Enabled
+                    if nic_health_status.get("State") != "Enabled":
+                        continue
+
+                    nic_health_status = nic_health_status.get("Health")
+
+                    if nic_health_status is not None:
+                        nic_health_status = nic_health_status.upper()
+
+                nic_capable_speed = None
+                try:
+                    nic_capable_speed = network_port_data.get("SupportedLinkCapabilities")[0].get("CapableLinkSpeedMbps")[0]
+                except Exception:
+                    pass
+
+                status_text = f"NIC {nic_id} ({nic_name}) {nic_port_name} (Type: {nic_dev_func_type}, Speed: {nic_port_current_speed}/{nic_capable_speed}, MAC: {nic_port_address}) status: {nic_port_link_status}"
+                plugin.add_output_data("CRITICAL" if nic_health_status not in ["OK", "WARNING"] else nic_health_status, status_text)
+
+    if num_nic_ports == 0:
+        plugin.add_output_data("UNKNOWN", f"No network interface data returned for API URL '{redfish_url}'")
+
+    plugin.add_output_data("OK", f"All network interfaces ({num_nic_ports}) are in good condition", summary = True)
+
+    return
+
 def get_single_system_nics(redfish_url):
 
     global plugin
 
     plugin.set_current_command("NICs")
 
-    redfish_url = f"{redfish_url}/EthernetInterfaces/"
+    redfish_url = f"{redfish_url}/EthernetInterfaces/" + "%s" % plugin.rf.vendor_data.expand_string
 
     nics_response = plugin.rf.get_view(redfish_url)
     data_members = nics_response.get("EthernetInterfaces") or nics_response.get("Members")
@@ -2309,6 +2387,9 @@ def get_firmware_info_fujitsu(system_id):
     # list of dicts: keys: {name, version, location}
     firmware_entries = list()
 
+    if plugin.rf.connection.system_properties is None:
+            discover_system_properties()
+
     # get iRMC firmware
     manager_ids = plugin.rf.connection.system_properties.get("managers")
 
@@ -2356,6 +2437,34 @@ def get_firmware_info_fujitsu(system_id):
                     })
 
 
+    # get hard drive firmware
+    redfish_url = f"{system_id}/Storage" + "%s" % plugin.rf.vendor_data.expand_string
+
+    storage_response = plugin.rf.get(redfish_url)
+
+    for storage_member in storage_response.get("Members"):
+
+        controller_response = None
+        if storage_member.get("@odata.context"):
+            controller_response = storage_member
+        else:
+            controller_response = plugin.rf.get(storage_member.get("@odata.id"))
+
+        for controller_drive in controller_response.get("Drives"):
+            drive_response = plugin.rf.get(controller_drive.get("@odata.id"))
+
+            if drive_response.get("Name") is not None:
+                drive_name = drive_response.get("Name")
+                drive_firmware = drive_response.get("Revision")
+                drive_slot = drive_response.get("Oem").get(plugin.rf.vendor_dict_key).get("SlotNumber")
+                drive_storage_controller = storage_member.get("Id")
+
+                firmware_entries.append({
+                    "name": f"Drive {drive_name}",
+                    "version": f"{drive_firmware}",
+                    "location": f"{drive_storage_controller}:{drive_slot}"
+                })
+
     # get other firmware
     redfish_url = f"{system_id}/Oem/%s/FirmwareInventory/" % plugin.rf.vendor_dict_key
 
@@ -2398,14 +2507,16 @@ def get_firmware_info_fujitsu(system_id):
 
                 for component_entry in component_fw_data.get("Adapters"):
                     component_name = component_entry.get("ModuleName")
-                    component_vendor = component_entry.get("VendorName")
+                    component_pci_segment = component_entry.get("PciSegment")
                     component_bios_version = component_entry.get("BiosVersion")
                     component_fw_version = component_entry.get("FirmwareVersion")
+
+                    system_id_num = system_id.split("/")[-1]
 
                     firmware_entries.append({
                         "name": f"{component_name} controller",
                         "version": f"{component_fw_version} (BIOS: {component_bios_version})",
-                        "location": f"{component_vendor}"
+                        "location": f"{system_id_num}:{component_pci_segment}"
                     })
 
     if args.detailed is True:
