@@ -1678,16 +1678,12 @@ def get_storage_generic(system):
             else:
                 size = 0
 
-            raid_level = None
-            volume_name = None
+            raid_level = volume_data.get("VolumeType")
+            volume_name = volume_data.get("Description")
 
             if plugin.rf.vendor == "Huawei":
                 raid_level = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeRaidLevel")
                 volume_name = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("VolumeName")
-
-            if plugin.rf.vendor == "Dell":
-                raid_level = volume_data.get("VolumeType")
-                volume_name = volume_data.get("Description")
 
             if plugin.rf.vendor == "Fujitsu":
                 raid_level = volume_data.get("Oem").get(plugin.rf.vendor_dict_key).get("RaidLevel")
@@ -1809,11 +1805,13 @@ def get_storage_generic(system):
 
     if system_response.get("Oem") is not None and system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary") is not None:
 
-        for system_drive in system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary").get("Drives"):
-            drive_url = system_drive.get("Link").get("@odata.id")
-            if drive_url not in system_drives_list:
-                system_drives_list.append(drive_url)
-                get_drive(drive_url)
+        system_drives = system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary").get("Drives")
+        if system_drives is not None:
+            for system_drive in system_drives:
+                drive_url = system_drive.get("Link").get("@odata.id")
+                if drive_url not in system_drives_list:
+                    system_drives_list.append(drive_url)
+                    get_drive(drive_url)
 
     condensed_storage_status = condensed_status_from_list(storage_status_list)
     condensed_drive_status = condensed_status_from_list(drives_status_list)
