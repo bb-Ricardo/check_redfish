@@ -1,0 +1,134 @@
+{
+    "Command": {
+        "redfish_test": {
+            "arguments": {
+                "--authfile": {
+                    "description": "Autentication file content: \n                                                    username=<username>  \n                                                    password=<password>",
+                    "value": "$redfish_authfile$"
+                },
+                "--bmc": {
+                    "description": "request bmc infos and status",
+                    "set_if": "$redfish_bmc$"
+                },
+                "--critical": {
+                    "description": "Critical threshold for certain checks. See documentation",
+                    "value": "$redfish_critical$"
+                },
+                "--detailed": {
+                    "description": "always print detailed result instead of a condensed one line result",
+                    "set_if": "$redfish_detailed$"
+                },
+                "--fan": {
+                    "description": "request fan health",
+                    "set_if": "$redfish_fan$"
+                },
+                "--firmware": {
+                    "description": "request firmware informations",
+                    "set_if": "$redfish_firmware$"
+                },
+                "--host": {
+                    "description": "hostname or address of the interface to query",
+                    "required": true,
+                    "value": "$redfish_hostname$"
+                },
+                "--info": {
+                    "description": "request summary of system informations",
+                    "set_if": "$redfish_info$"
+                },
+                "--max": {
+                    "description": "maximum of returned event log entries",
+                    "value": "$redfish_max$"
+                },
+                "--mel": {
+                    "description": "request Management Processor Log status",
+                    "set_if": "$redfish_mel$"
+                },
+                "--memory": {
+                    "description": "request memory module health",
+                    "set_if": "$redfish_memory$"
+                },
+                "--nic": {
+                    "description": "request network interface health",
+                    "set_if": "$redfish_nic$"
+                },
+                "--password": {
+                    "description": "The login password",
+                    "value": "$redfish_password$"
+                },
+                "--power": {
+                    "description": "request power supply health",
+                    "set_if": "$redfish_power$"
+                },
+                "--proc": {
+                    "description": "request processor health",
+                    "set_if": "$redfish_proc$"
+                },
+                "--retries": {
+                    "description": "set number of maximum retries",
+                    "value": "$redfish_retries$"
+                },
+                "--sel": {
+                    "description": "request System Log status",
+                    "set_if": "$redfish_sel$"
+                },
+                "--sessionfile": {
+                    "description": "Name of the session file. make sure it is unique for every host",
+                    "value": "$redfish_sessionfile$"
+                },
+                "--sessionfiledir": {
+                    "description": "Directory where the session files should be stored",
+                    "value": "$redfish_sessionfiledir$"
+                },
+                "--storage": {
+                    "description": "request storage health",
+                    "set_if": "$redfish_storage$"
+                },
+                "--temp": {
+                    "description": "request temperature sensors health",
+                    "set_if": "$redfish_temp$"
+                },
+                "--timeout": {
+                    "description": "set number of request timeout per try\/retry",
+                    "value": "$redfish_timeout$"
+                },
+                "--username": {
+                    "description": "The login user name",
+                    "value": "$redfish_username$"
+                },
+                "--warning": {
+                    "description": "Warning threshold for certain checks. See documentation",
+                    "value": "$redfish_warning$"
+                }
+            },
+            "command": "check_redfish.py",
+            "disabled": false,
+            "fields": [
+                {
+                    "datafield_id": 231,
+                    "is_required": "y",
+                    "var_filter": null
+                }
+            ],
+            "imports": [],
+            "is_string": null,
+            "methods_execute": "PluginCheck",
+            "object_name": "redfish_test",
+            "object_type": "object",
+            "timeout": "300",
+            "vars": {},
+            "zone": null
+        }
+    },
+    "Datafield": {
+        "231": {
+            "category_id": null,
+            "varname": "redfish_hostname",
+            "caption": "redfish_hostname",
+            "description": "hostname or address of the interface to query",
+            "datatype": "Icinga\\Module\\Director\\DataType\\DataTypeString",
+            "format": null,
+            "originalId": "231",
+            "settings": {}
+        }
+    }
+}
