@@ -1866,38 +1866,35 @@ def get_event_log(type):
 
     plugin.set_current_command("%s Event Log" % type)
 
-    if plugin.rf.vendor == "Lenovo":
-        get_event_log_lenovo(type)
 
-    elif plugin.rf.vendor in [ "Huawei", "Fujitsu", "HPE", "Dell" ]:
 
-        if type == "System" and plugin.rf.vendor in [ "Huawei", "HPE" ]:
-            property_name = "systems"
-        else:
-            property_name = "managers"
-
-        if plugin.rf.connection.system_properties is None:
-            discover_system_properties()
-
-        system_manager_ids = plugin.rf.connection.system_properties.get(property_name)
-
-        if system_manager_ids is None or len(system_manager_ids) == 0:
-            plugin.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'", summary = not args.detailed)
-            return
-
-        for system_manager_id in system_manager_ids:
-
-            if plugin.rf.vendor == "HPE":
-                get_event_log_hpe(type, system_manager_id)
-
-            elif plugin.rf.vendor == "Huawei":
-                get_event_log_huawei(type, system_manager_id)
-
-            elif plugin.rf.vendor in [ "Dell", "Fujitsu" ]:
-                get_event_log_dell_fujitsu(type, system_manager_id)
-
+    if type == "System" and plugin.rf.vendor in [ "Huawei", "HPE" ]:
+        property_name = "systems"
     else:
-        plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor", summary = not args.detailed)
+        property_name = "managers"
+
+    if plugin.rf.connection.system_properties is None:
+        discover_system_properties()
+
+    system_manager_ids = plugin.rf.connection.system_properties.get(property_name)
+
+    if system_manager_ids is None or len(system_manager_ids) == 0:
+        plugin.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'", summary = not args.detailed)
+        return
+
+    for system_manager_id in system_manager_ids:
+
+        if plugin.rf.vendor == "HPE":
+            get_event_log_hpe(type, system_manager_id)
+
+        elif plugin.rf.vendor == "Huawei":
+            get_event_log_huawei(type, system_manager_id)
+
+        elif plugin.rf.vendor == "Lenovo":
+           get_event_log_lenovo(type, system_manager_id)
+
+        else:
+            get_event_log_generic(type, system_manager_id)
 
     return
 
@@ -1990,7 +1987,7 @@ def get_event_log_hpe(type, system_manager_id):
 
     return
 
-def get_event_log_lenovo(type):
+def get_event_log_lenovo(type, system_manager_id):
 
     global plugin
 
@@ -2005,7 +2002,7 @@ def get_event_log_lenovo(type):
 
     plugin.add_output_data("UNKNOWN", f"Request of {type} Event Log entries currently not implemented due to timeout issues.")
 
-def get_event_log_dell_fujitsu(type, system_manager_id):
+def get_event_log_generic(type, system_manager_id):
 
     global plugin
 
@@ -2014,22 +2011,49 @@ def get_event_log_dell_fujitsu(type, system_manager_id):
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
+    redfish_url = None
 
+    # define locations for known vendors
     if type == "System":
         if plugin.rf.vendor == "Dell":
             redfish_url = f"{system_manager_id}/Logs/Sel"
-        else:
+        elif plugin.rf.vendor == "Fujitsu":
             redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/" # /Entries/?$expand=.
     else:
         if plugin.rf.vendor == "Dell":
             redfish_url = f"{system_manager_id}/Logs/Lclog"
-        else:
-            redfish_url = f"/redfish/v1/Managers/iRMC/LogServices/InternalEventLog/Entries/" # ML/Entries/?$expand=.
+        elif plugin.rf.vendor == "Fujitsu":
+            redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/" # ML/Entries/?$expand=.
 
-        if args.warning:
-            date_warning = data_now - datetime.timedelta(days=int(args.warning))
-        if args.critical:
-            date_critical = data_now - datetime.timedelta(days=int(args.critical))
+    # try to discover log service
+    if redfish_url is None:
+        system_manager_data = plugin.rf.get(system_manager_id)
+
+        log_services = None
+        if system_manager_data.get("LogServices") is not None and system_manager_data.get("LogServices").get("@odata.id") is not None:
+            log_services = plugin.rf.get(system_manager_data.get("LogServices").get("@odata.id"))
+
+        if log_services is not None and len(log_services.get("Members")) > 0:
+
+            for log_service in log_services.get("Members"):
+
+                log_service_data = plugin.rf.get(log_service.get("@odata.id"))
+
+                # check if "Name" contains "System" or "Manager"
+                if log_service_data.get("Name") is not None and type.lower() in log_service_data.get("Name").lower():
+
+                    if log_service_data.get("Entries") is not None:
+                        redfish_url = log_service_data.get("Entries").get("@odata.id")
+                        break
+
+    if redfish_url is None:
+        plugin.add_output_data("UNKNOWN", f"No log services discoverd in {system_manager_id}/LogServices that match {type}")
+        return
+
+    if args.warning:
+        date_warning = data_now - datetime.timedelta(days=int(args.warning))
+    if args.critical:
+        date_critical = data_now - datetime.timedelta(days=int(args.critical))
 
     event_data = plugin.rf.get(redfish_url)
 
@@ -2044,7 +2068,7 @@ def get_event_log_dell_fujitsu(type, system_manager_id):
     num_entry = 0
     for event_entry_item in event_entries:
 
-        if event_entry_item.get("Severity"):
+        if event_entry_item.get("Id"):
             event_entry = event_entry_item
         else:
             event_entry = plugin.rf.get(event_entry_item.get("@odata.id"))
@@ -2070,45 +2094,39 @@ def get_event_log_dell_fujitsu(type, system_manager_id):
         if type == "System":
 
             # get log entry id to associate older log entries
-            if plugin.rf.vendor == "Dell":
-                assoc_id = event_entry.get("MessageId")
-            if plugin.rf.vendor == "Fujitsu":
-                assoc_id = event_entry.get("SensorNumber")
+            assoc_id = event_entry.get("SensorNumber")
 
             # found an old message that has been cleared
             if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
                 message += " (severity '%s' cleared)" % severity
-            else:
+            elif severity is not None:
                 if severity == "WARNING":
                     status = severity
                 elif severity != "OK":
                     status = "CRITICAL"
 
             # keep track of messages that clear an older message
-            # get entry code
-            if plugin.rf.vendor == "Dell":
-                if event_entry.get("EntryCode") is not None:
-                    if event_entry.get("EntryCode")[0].get("Member") == "Deassert" and assoc_id is not None:
-                        assoc_id_status[assoc_id] = "cleared"
+            if event_entry.get("SensorNumber") is not None and severity == "OK":
+                assoc_id_status[assoc_id] = "cleared"
 
-            if plugin.rf.vendor == "Fujitsu":
-                if event_entry.get("SensorNumber") is not None and severity == "OK":
-                    assoc_id_status[assoc_id] = "cleared"
-
-        else:
+        if (date_critical is not None or date_warning is not None) and severity is not None:
             # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
             # from:
             #   2019-11-01T15:03:32-05:00
             # to:
             #   2019-11-01T15:03:32-0500
 
-            entry_data = datetime.datetime.strptime(date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+            entry_date = None
+            try:
+                entry_date = datetime.datetime.strptime(date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+            except Exception:
+                pass
 
-            if date_critical is not None:
-              if entry_data > date_critical.astimezone(entry_data.tzinfo) and severity != "OK":
+            if entry_date is not None and date_critical is not None:
+              if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
                     status = "CRITICAL"
-            if date_warning is not None:
-                if entry_data > date_warning.astimezone(entry_data.tzinfo) and status != "CRITICAL" and severity != "OK":
+            if entry_date is not None and date_warning is not None:
+                if entry_date > date_warning.astimezone(entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
         plugin.add_log_output_data(status, "%s: %s" % (date, message))
@@ -2579,7 +2597,6 @@ def get_firmware_info_generic():
 def get_bmc_info():
 
     global plugin
-    known_manager = False
 
     plugin.set_current_command("BMC Info")
 
@@ -2591,23 +2608,16 @@ def get_bmc_info():
 
     for manager in managers:
         if plugin.rf.vendor == "HPE":
-            known_manager = True
             get_bmc_info_hpe(manager)
 
-        if plugin.rf.vendor == "Lenovo":
-            known_manager = True
+        elif plugin.rf.vendor == "Lenovo":
             get_bmc_info_lenovo(manager)
 
-        if plugin.rf.vendor in ["Dell", "Fujitsu"]:
-            known_manager = True
-            get_bmc_info_dell_fujitsu(manager)
-
-        if plugin.rf.vendor == "Huawei":
-            known_manager = True
+        elif plugin.rf.vendor == "Huawei":
             get_bmc_info_huawei(manager)
 
-    if known_manager == False:
-        plugin.add_output_data("UNKNOWN", "'bmc' command is currently not supported for this system.")
+        else:
+            get_bmc_info_generic(manager)
 
     return
 
@@ -2754,7 +2764,7 @@ def get_bmc_firmware_fujitsu(manager_url):
 
     return firmware_informations
 
-def get_bmc_info_dell_fujitsu(redfish_url):
+def get_bmc_info_generic(redfish_url):
 
     global plugin
 
@@ -2767,7 +2777,7 @@ def get_bmc_info_dell_fujitsu(redfish_url):
     if plugin.rf.vendor == "Dell":
         bmc_type = "iDRAC "
 
-    status_text = f"{bmc_type}{bmc_model} ({bmc_fw_version})"
+    status_text = f"{bmc_type}{bmc_model} (Firmware: {bmc_fw_version})"
 
     status = manager_response.get("Status").get("Health").upper()
 
@@ -2781,7 +2791,7 @@ def get_bmc_info_dell_fujitsu(redfish_url):
     if manager_nic_response is not None:
 
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
-            status_text = f"{status_text} but no informations about the iDRAC network interfaces found"
+            status_text = f"{status_text} but no informations about the BMC network interfaces found"
         else:
 
             for manager_nic_member in manager_nic_response.get("Members"):
@@ -2809,16 +2819,32 @@ def get_bmc_info_dell_fujitsu(redfish_url):
                 speed = manager_nic.get("SpeedMbps")
                 duplex = manager_nic.get("FullDuplex")
                 autoneg = manager_nic.get("AutoNeg")
-                host_name = manager_nic.get("HostName")
+                host_name = manager_nic.get("HostName") or "no hostname set"
                 nic_id = manager_nic.get("Id")
-                ip_address = manager_nic.get("IPv4Addresses")[0].get("Address")
+                ip_addresses = list()
+
+                # get IPv4 address
+                try:
+                    ip_addresses.append(manager_nic.get("IPv4Addresses")[0].get("Address"))
+                except Exception:
+                    pass
+
+                # get IPv6 address
+                try:
+                    ip_addresses.append(manager_nic.get("IPv6Addresses")[0].get("Address"))
+                except Exception:
+                    pass
+
+                ip_addresses_string = None
+                if len(ip_addresses) > 0:
+                    ip_addresses_string = "/".join(ip_addresses)
 
                 if duplex is not None:
                     duplex = "full" if duplex is True else "half"
                 if autoneg is not None:
                     autoneg = "on" if autoneg is True else "off"
 
-                status_text = f"NIC {nic_id} '{host_name}' ({ip_address}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
+                status_text = f"NIC {nic_id} '{host_name}' (IPs: {ip_addresses_string}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
 
                 plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
