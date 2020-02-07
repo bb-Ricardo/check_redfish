@@ -264,9 +264,6 @@ class RedfishConnection():
 
         self.get_credentials()
 
-        if self.username is None or self.password is None:
-            self.exit_on_error("Error: insufficient credentials provided")
-
         # initialize connection
         try:
             self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host, max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
@@ -280,14 +277,15 @@ class RedfishConnection():
         if not self.connection:
             raise Exception("Unable to establish connection.")
 
-        try:
-            self.connection.login(username=self.username, password=self.password, auth="session")
-        except redfish.rest.v1.RetriesExhaustedError:
-            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
-        except redfish.rest.v1.InvalidCredentialsError:
-            self.exit_on_error("Username or password invalid.", "CRITICAL")
-        except Exception as e:
-            self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
+        if self.username is not None or self.password is not None:
+            try:
+                self.connection.login(username=self.username, password=self.password, auth="session")
+            except redfish.rest.v1.RetriesExhaustedError:
+                self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host, "CRITICAL")
+            except redfish.rest.v1.InvalidCredentialsError:
+                self.exit_on_error("Username or password invalid.", "CRITICAL")
+            except Exception as e:
+                self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
 
         if self.connection is not None:
             self.connection.system_properties = None
@@ -309,6 +307,11 @@ class RedfishConnection():
             redfish_response = self._rf_get(redfish_path)
 
             # session invalid
+            if redfish_response.status == 401:
+                self.get_credentials()
+                if self.username is None or self.password is None:
+                    self.exit_on_error(f"Username and Password needed to connect to this BMC")
+
             if redfish_response.status >= 400 and self.session_was_restored is True:
 
                 # reset connection
@@ -317,14 +320,20 @@ class RedfishConnection():
                 # query again
                 redfish_response = self._rf_get(redfish_path)
 
-            if args.verbose:
-                pprint.pprint(redfish_response.dict)
+            # test if response is valid json and can be decoded
+            try:
+                redfish_response_json_data = redfish_response.dict
+            except Exception:
+                self.exit_on_error(f"Redfish response for '{redfish_path}' was empty!")
 
-            if redfish_response.dict.get("error"):
-                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
+            if args.verbose:
+                pprint.pprint(redfish_response_json_data)
+
+            if redfish_response_json_data.get("error"):
+                error = redfish_response_json_data.get("error").get("@Message.ExtendedInfo")
                 self.exit_on_error("got error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
 
-            self.__cached_data[redfish_path] = redfish_response.dict
+            self.__cached_data[redfish_path] = redfish_response_json_data
 
         return  self.__cached_data.get(redfish_path)
 
@@ -355,16 +364,24 @@ class RedfishConnection():
                 # query again
                 redfish_response = self._rf_post("/redfish/v1/Views/", self.vendor_data.view_select)
 
-            if args.verbose:
-                pprint.pprint(redfish_response.dict)
+            # test if response is valid json and can be decoded
+            redfish_response_json_data = None
+            try:
+                redfish_response_json_data = redfish_response.dict
+            except Exception:
+                pass
 
-            if redfish_response.dict.get("error"):
-                error = redfish_response.dict.get("error").get("@Message.ExtendedInfo")
-                self.exit_on_error("get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+            if redfish_response_json_data is not None:
+                if args.verbose:
+                    pprint.pprint(redfish_response_json_data)
 
-            self.vendor_data.view_response = redfish_response.dict
+                if redfish_response_json_data.get("error"):
+                    error = redfish_response_json_data.get("error").get("@Message.ExtendedInfo")
+                    self.exit_on_error("get error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
 
-            return self.vendor_data.view_response
+                self.vendor_data.view_response = redfish_response_json_data
+
+                return self.vendor_data.view_response
 
         if redfish_path is not None:
             return self.get(redfish_path)
@@ -819,12 +836,9 @@ def get_single_chassi_power(redfish_url):
         plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
-    if plugin.rf.vendor == "HPE":
-        redundancy_key = "PowerRedundancy"
-    else:
-        redundancy_key = "Redundancy"
-
-    power_redundancies = plugin.rf.get_view(redfish_url).get(redundancy_key)
+    power_redundancies = plugin.rf.get_view(redfish_url).get("PowerRedundancy")
+    if power_redundancies is None:
+        power_redundancies = plugin.rf.get_view(redfish_url).get("Redundancy")
 
     if power_redundancies:
         status_text = ""
