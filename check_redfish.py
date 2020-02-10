@@ -772,7 +772,9 @@ def get_single_chassi_power(redfish_url):
 
     redfish_url = f"{redfish_url}/Power"
 
-    power_supplies = plugin.rf.get_view(redfish_url).get("PowerSupplies")
+    power_data = plugin.rf.get_view(redfish_url)
+
+    power_supplies = power_data.get("PowerSupplies")
 
     default_text = ""
     ps_num = 0
@@ -836,12 +838,13 @@ def get_single_chassi_power(redfish_url):
         plugin.add_output_data("UNKNOWN", f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
-    power_redundancies = plugin.rf.get_view(redfish_url).get("PowerRedundancy")
+    power_redundancies = power_data.get("PowerRedundancy")
     if power_redundancies is None:
-        power_redundancies = plugin.rf.get_view(redfish_url).get("Redundancy")
+        power_redundancies = power_data.get("Redundancy")
 
     if power_redundancies:
-        status_text = ""
+        pr_status_summary_text = ""
+        pr_num = 0
         for power_redundancy in power_redundancies:
 
             pr_status = power_redundancy.get("Status")
@@ -851,14 +854,49 @@ def get_single_chassi_power(redfish_url):
                 state = pr_status.get("State")
 
                 if status is not None:
+                    pr_num += 1
                     status = status.upper()
 
-                    status_text = f"power redundancy status is: {state}"
+                    status_text = f"Power redundancy {pr_num} status is: {state}"
 
-                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text[0].upper() + status_text[1:])
+                    pr_status_summary_text += f" {status_text}"
 
-        if len(status_text) != 0:
-            default_text += f" and {status_text}"
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+        if len(pr_status_summary_text) != 0:
+            default_text += f" and{pr_status_summary_text}"
+
+    # get Voltages status
+    voltages = power_data.get("Voltages")
+
+    if voltages is not None:
+        voltages_num = 0
+        for voltage in voltages:
+
+            voltage_status = voltage.get("Status")
+
+            if voltage_status is not None:
+                status = voltage_status.get("Health")
+                state = voltage_status.get("State")
+                reading = voltage.get("ReadingVolts")
+                name = voltage.get("Name")
+
+                if status is not None:
+                    voltages_num += 1
+                    status = status.upper()
+
+                    status_text = f"Voltage {name} (status: {status}/{state}): {reading}V"
+
+                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
+                    if reading is not None and name is not None:
+                        try:
+                            plugin.add_perf_data(f"voltage_{name}", float(reading))
+                        except Exception:
+                            pass
+
+        if voltages_num > 0:
+            default_text += f" and {voltages_num} Voltages are OK"
 
     plugin.add_output_data("OK", default_text, summary = True)
 
@@ -922,7 +960,7 @@ def get_single_chassi_temp(redfish_url):
             warning_temp = warning_temp if warning_temp != "N/A" else None
             critical_temp = critical_temp if critical_temp != "N/A" else None
 
-            plugin.add_perf_data(f"Temp_{name}", int(current_temp), warning=warning_temp, critical=critical_temp)
+            plugin.add_perf_data(f"temp_{name}", int(current_temp), warning=warning_temp, critical=critical_temp)
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
@@ -947,11 +985,11 @@ def get_single_chassi_fan(redfish_url):
     if "Fans" in thermal_data:
         for fan in thermal_data.get("Fans"):
 
-            fan_num += 1
-
             state = fan.get("Status").get("State")
             if state == "Absent":
                 continue
+
+            fan_num += 1
 
             if fan.get("Status").get("Health") is None:
                 if state == "Enabled":
@@ -1001,12 +1039,9 @@ def get_single_chassi_fan(redfish_url):
         plugin.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
 
     # get FanRedundancy status
-    if plugin.rf.vendor == "HPE":
-        redundancy_key = "FanRedundancy"
-    else:
-        redundancy_key = "Redundancy"
-
-    fan_redundancies = plugin.rf.get_view(redfish_url).get(redundancy_key)
+    fan_redundancies = plugin.rf.get_view(redfish_url).get("FanRedundancy")
+    if fan_redundancies is None:
+        fan_redundancies = plugin.rf.get_view(redfish_url).get("Redundancy")
 
     if fan_redundancies:
         status_text = ""
