@@ -3,12 +3,6 @@
 This is a monitoring plugin to check components and
 health status of systems which support Redfish.
 
-## ToDo:
-* add inventory option
-* document code and add more debugging output
-* add support for SuperMicro servers
-* add tests with mockups
-
 ## Requirements
 * python >= 3.6
 * redfish >= 2.1.4
@@ -221,8 +215,9 @@ the plugin would be finished after 28 seconds.
 * On HPE systems the nic status is reported unreliable
 * On Lenovo systems the commands **--mel** and **--sel** are not implemented due to
 issues with timeouts
-* To monitor Huawei systems you currently need [redfish-library in current master](https://github.com/DMTF/python-redfish-library/tree/f969eea1025c296a5b9ce1ec5eff8d6fa0fe29f7)
 * On Huawei systems the command **--mel** is not implemented
+* For **--storage** components under "SimpleStorage" which report a Status.Health as **None**
+will be treated as **OK** if Status.State is set to **Enabled**
 
 ## Supported Systems
 This plugin is currently tested with following systems
@@ -244,8 +239,9 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ThinkSystem SR650 (BMC Version 2.12)
 
 ### Dell
-* PowerEdge R930 (iDRAC Version 2.70.70.70)
 * PowerEdge R630 (iDRAC Version 2.70.70.70)
+* PowerEdge R740 (iDRAC Version 3.32.32.32)
+* PowerEdge R930 (iDRAC Version 2.70.70.70)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)

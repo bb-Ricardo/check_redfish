@@ -324,7 +324,7 @@ class RedfishConnection():
             try:
                 redfish_response_json_data = redfish_response.dict
             except Exception:
-                self.exit_on_error(f"Redfish response for '{redfish_path}' was empty!")
+                redfish_response_json_data = dict({ "Members": list()})
 
             if args.verbose:
                 pprint.pprint(redfish_response_json_data)
@@ -1651,8 +1651,14 @@ def get_storage_generic(system):
         model = drive_response.get("Model")
         type = drive_response.get("MediaType")
         protocol = drive_response.get("Protocol")
-        status = drive_response.get("Status").get("Health").upper()
         size = drive_response.get("CapacityBytes")
+
+        status = drive_response.get("Status")
+
+        if status is not None:
+            status = status.get("Health")
+            if status is not None:
+                status = status.upper()
 
         drives_status_list.append(status)
 
@@ -1670,7 +1676,6 @@ def get_storage_generic(system):
         volumes_response = plugin.rf.get(volumes_link)
 
         if len(volumes_response.get("Members")) == 0:
-            plugin.add_output_data("OK", f"No volumes found for this controller")
             return
 
         for volume_member in volumes_response.get("Members"):
@@ -1707,6 +1712,34 @@ def get_storage_generic(system):
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
+    def get_enclosures(enclosure_link):
+
+        # skip chassis listed as enclosures
+        if enclosure_link in plugin.rf.connection.system_properties.get("chassis"):
+            return
+
+        enclosures_response = plugin.rf.get(enclosure_link)
+
+        if enclosures_response.get("Name") is None:
+            plugin.add_output_data("UNKNOWN", f"Unable to retrieve enclosure infos: {enclosure_link}")
+            return
+
+        name = enclosures_response.get("Name")
+        chassis_type = enclosures_response.get("ChassisType")
+        power_state = enclosures_response.get("PowerState")
+        status = enclosures_response.get("Status")
+
+        if status is not None:
+            status = status.get("Health")
+            if status is not None:
+                status = status.upper()
+
+        enclosure_status_list.append(status)
+
+        status_text = f"{chassis_type} {name} (Power: {power_state}) Status: {status}"
+
+        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+
     def condensed_status_from_list(status_list):
 
         status = None
@@ -1730,18 +1763,21 @@ def get_storage_generic(system):
 
     plugin.set_current_command("Storage")
 
-    if plugin.rf.vendor == "Huawei":
-        redfish_url = f"{system}/Storages" + "%s" % plugin.rf.vendor_data.expand_string
-    else:
-        redfish_url = f"{system}/Storage" + "%s" % plugin.rf.vendor_data.expand_string
+    system_response = plugin.rf.get(system)
 
-    storage_response = plugin.rf.get(redfish_url)
+    storage_response = None
+    try:
+        storage_response = plugin.rf.get(system_response.get("Storage").get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string)
+    except Exception:
+        pass
 
     system_drives_list = list()
     drives_status_list = list()
     storage_controller_names_list = list()
+    storage_controller_id_list = list()
     storage_status_list = list()
     volume_status_list = list()
+    enclosure_status_list = list()
 
     if storage_response is not None:
 
@@ -1751,9 +1787,6 @@ def get_storage_generic(system):
                 controller_response = storage_member
             else:
                 controller_response = plugin.rf.get(storage_member.get("@odata.id"))
-
-            if controller_response.get("Status") and len(controller_response.get("Status")) > 0 and controller_response.get("Status").get("Health") is None:
-                continue
 
             if controller_response.get("Id"):
 
@@ -1774,14 +1807,17 @@ def get_storage_generic(system):
                     if controller_status.get("State") and controller_status.get("State") == "Absent":
                         continue
 
-                    if controller_status.get("Health") is None:
+                    if "AHCI" in controller_response.get("Id"):
                         continue
 
-                    status = controller_status.get("Health").upper()
+                    status = controller_status.get("Health")
+                    if controller_status.get("Health") is not None:
+                        status = status.upper()
 
                     storage_status_list.append(status)
 
                     storage_controller_names_list.append(f"{name} {model}")
+                    storage_controller_id_list.append(controller_response.get("@odata.id"))
 
                     status_text = f"{name} {model} (FW: {fw_version}) status is: {status}"
 
@@ -1802,34 +1838,114 @@ def get_storage_generic(system):
 
                         plugin.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status, cap_status_text)
 
-                if len(controller_response.get("Drives")) == 0:
-                    plugin.add_output_data("OK", f"No drives found for this controller")
-                else:
-                    for controller_drive in controller_response.get("Drives"):
-                        system_drives_list.append(controller_drive.get("@odata.id"))
-                        get_drive(controller_drive.get("@odata.id"))
+                for controller_drive in controller_response.get("Drives"):
+                    system_drives_list.append(controller_drive.get("@odata.id"))
+                    get_drive(controller_drive.get("@odata.id"))
 
+                # get volumes
                 get_volumes(controller_response.get("Volumes").get("@odata.id"))
 
+                # get enclosures
+                if controller_response.get("Links") is not None and \
+                   controller_response.get("Links").get("Enclosures") is not None and \
+                   len(controller_response.get("Links").get("Enclosures")) > 0:
+                    for enclosure_link in controller_response.get("Links").get("Enclosures"):
+                        get_enclosures(enclosure_link.get("@odata.id"))
             else:
                 plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % controller_response.get("@odata.id"))
 
     # check for other drives in system
-    system_response = plugin.rf.get(system)
 
-    if system_response.get("Oem") is not None and system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary") is not None:
+    # check SimpleStorage
+    if system_response.get("SimpleStorage") is not None and system_response.get("SimpleStorage").get("@odata.id") is not None:
 
+        simple_storage_response = plugin.rf.get(system_response.get("SimpleStorage").get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string)
+
+        if simple_storage_response.get("Members") is not None and len(simple_storage_response.get("Members")) > 0:
+
+            for simple_storage_member in simple_storage_response.get("Members"):
+
+                if simple_storage_member.get("@odata.context"):
+                    simple_storage_controller_response = simple_storage_member
+                else:
+                    simple_storage_controller_response = plugin.rf.get(simple_storage_member.get("@odata.id"))
+
+                # this controller has already been checked
+                if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list:
+                    continue
+
+                if simple_storage_controller_response.get("Status") is not None and simple_storage_controller_response.get("Status").get("State") != "Enabled":
+                    continue
+
+                if simple_storage_controller_response.get("Devices") is not None and len(simple_storage_controller_response.get("Devices")) > 0:
+
+                    name = simple_storage_controller_response.get("Name")
+                    status = simple_storage_controller_response.get("Status")
+
+                    if status is not None:
+                        status = status.get("Health")
+
+                        if status is not None:
+                            storage_status_list.append(status)
+                            status = status.upper()
+
+                    storage_controller_names_list.append(f"{name}")
+
+                    status_text = f"{name} status: {status}"
+                    plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+
+                    for simple_storage_device in simple_storage_controller_response.get("Devices"):
+                        name = simple_storage_device.get("Name")
+                        manufacturer = simple_storage_device.get("Manufacturer")
+                        model = simple_storage_device.get("Model")
+                        capacity = simple_storage_device.get("CapacityBytes")
+                        status = simple_storage_device.get("Status")
+
+                        status_text = f"{manufacturer} {name} {model}"
+
+                        if capacity is not None:
+                            try:
+                                status_text += " (size: %0.2f GiB)" % (int(capacity) / 1000 ** 3)
+                            except Exception:
+                                pass
+
+                        if status is not None:
+
+                            # skip device if state is not "Enabled"
+                            if status.get("State") is not None and status.get("State") != "Enabled":
+                                continue
+
+                            status = status.get("Health")
+
+                            if status is not None:
+                                drives_status_list.append(status)
+                                status = status.upper()
+
+                        status_text += f" status: {status}"
+
+                        plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+
+                else:
+                    continue
+
+    # check additional drives
+    system_drives = None
+    try:
         system_drives = system_response.get("Oem").get(plugin.rf.vendor_dict_key).get("StorageViewsSummary").get("Drives")
-        if system_drives is not None:
-            for system_drive in system_drives:
-                drive_url = system_drive.get("Link").get("@odata.id")
-                if drive_url not in system_drives_list:
-                    system_drives_list.append(drive_url)
-                    get_drive(drive_url)
+    except Exception:
+        pass
+
+    if system_drives is not None:
+        for system_drive in system_drives:
+            drive_url = system_drive.get("Link").get("@odata.id")
+            if drive_url not in system_drives_list:
+                system_drives_list.append(drive_url)
+                get_drive(drive_url)
 
     condensed_storage_status = condensed_status_from_list(storage_status_list)
     condensed_drive_status = condensed_status_from_list(drives_status_list)
     condensed_volume_status = condensed_status_from_list(volume_status_list)
+    condensed_enclosure_status = condensed_status_from_list(enclosure_status_list)
 
     if len(storage_controller_names_list) == 0 and len(system_drives_list) == 0:
         plugin.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system", summary = not args.detailed)
@@ -1846,7 +1962,7 @@ def get_storage_generic(system):
 
             plugin.add_output_data(condensed_storage_status, storage_summary_status, summary = True)
         else:
-            condensed_summary_status = condensed_status_from_list([condensed_storage_status, condensed_drive_status, condensed_volume_status])
+            condensed_summary_status = condensed_status_from_list([condensed_storage_status, condensed_drive_status, condensed_volume_status, condensed_enclosure_status])
 
             if condensed_summary_status == "OK":
                 summary_status = "All storage controllers (%s), volumes and disk drives are in good condition" % (", ".join(storage_controller_names_list))
