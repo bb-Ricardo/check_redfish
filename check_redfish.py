@@ -2267,7 +2267,7 @@ def get_event_log_huawei(type, system_manager_id):
             if limit_of_returned_itmes is not None and len(collected_log_entries_list) >= limit_of_returned_itmes:
                 break
 
-            if event_data.get("Members@odata.nextLink") is not None:
+            if event_data.get("Members@odata.nextLink") is not None and len(collected_log_entries_list) != event_data.get("Members@odata.count"):
                 entry_url = event_data.get("Members@odata.nextLink")
             else:
                 break
