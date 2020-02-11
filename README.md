@@ -45,7 +45,7 @@ health status of systems which support Redfish.
 
 R.I.P. IPMI
 
-Version: 0.0.10 (2020-01-21)
+Version: 0.0.11 (2020-02-11)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
