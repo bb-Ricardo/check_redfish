@@ -1293,35 +1293,57 @@ def get_system_nics_fujitsu(redfish_url):
 
         for nic in nics_response.get("Members"):
 
-            nic_id = nic.get("Id")
+            if nic.get("Id") is not None:
+                nic_member = nic
+            else:
+                nic_member = plugin.rf.get(nic.get("@odata.id"))
+
+            nic_id = nic_member.get("Id")
 
             # network functions
-            network_functions = plugin.rf.get("%s%s" % (nic.get("NetworkDeviceFunctions").get("@odata.id"), plugin.rf.vendor_data.expand_string))
+            if nic_member.get("NetworkDeviceFunctions") is not None:
+                network_functions = plugin.rf.get("%s%s" % (nic_member.get("NetworkDeviceFunctions").get("@odata.id"), plugin.rf.vendor_data.expand_string))
+            else:
+                network_functions = plugin.rf.get("%s%s" % (nic_member.get("Links").get("NetworkAdapter").get("@odata.id"), plugin.rf.vendor_data.expand_string))
             # network ports
-            network_ports = plugin.rf.get("%s%s" % (nic.get("NetworkPorts").get("@odata.id"), plugin.rf.vendor_data.expand_string))
+            network_ports = plugin.rf.get("%s%s" % (nic_member.get("NetworkPorts").get("@odata.id"), plugin.rf.vendor_data.expand_string))
 
             for network_function in network_functions.get("Members"):
 
+                if network_function.get("Id") is not None:
+                    network_function_member = network_function
+                else:
+                    network_function_member = plugin.rf.get(network_function.get("@odata.id"))
+
                 # get port
-                network_port_link = network_function.get("Links").get("PhysicalPortAssignment").get("@odata.id")
+                network_port_link = network_function_member.get("PhysicalPortAssignment")
+                if network_port_link is None:
+                    network_port_link = network_function_member.get("Links").get("PhysicalPortAssignment")
 
                 network_port_data = None
                 for network_port in network_ports.get("Members"):
-                    if network_port.get("@odata.id") == network_port_link:
-                        network_port_data = network_port
+                    if network_port.get("@odata.id") == network_port_link.get("@odata.id"):
+
+                        if network_port.get("Id"):
+                            network_port_data = network_port
+                        else:
+                            network_port_data = plugin.rf.get(network_port.get("@odata.id"))
                         break
 
                 num_nic_ports += 1
 
-                nic_name = network_function.get("Name")
+                nic_name = network_function_member.get("Name")
                 nic_dev_func_type = network_port_data.get("ActiveLinkTechnology")
                 nic_port_current_speed = network_port_data.get("CurrentLinkSpeedMbps")
-                nic_port_name = network_port_data.get("Name")
                 nic_port_link_status = network_port_data.get("LinkStatus")
+                if network_port_data.get("PhysicalPortNumber"):
+                    nic_port_name = "Port " + network_port_data.get("PhysicalPortNumber")
+                else:
+                    nic_port_name = network_port_data.get("Name")
 
-                nic_port_address = network_function.get("Ethernet")
+                nic_port_address = network_function_member.get("Ethernet")
                 if nic_port_address is not None:
-                    nic_port_address = nic_port_address.get("MACAddress")
+                    nic_port_address = nic_port_address.get("PermanentMACAddress")
 
                 # get health status
                 nic_health_status = network_port_data.get("Status")
@@ -1335,6 +1357,11 @@ def get_system_nics_fujitsu(redfish_url):
 
                     if nic_health_status is not None:
                         nic_health_status = nic_health_status.upper()
+
+                try:
+                    nic_port_current_speed = network_port_data.get("SupportedLinkCapabilities")[0].get("LinkSpeedMbps")
+                except Exception:
+                    pass
 
                 nic_capable_speed = None
                 try:
