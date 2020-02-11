@@ -216,7 +216,7 @@ the plugin would be finished after 28 seconds.
 * On Lenovo systems the commands **--mel** and **--sel** are not implemented due to
 issues with timeouts
 * On Huawei systems the command **--mel** is not implemented
-* For **--storage** components under "SimpleStorage" which report a Status.Health as **None**
+* For **--storage** components which report a Status.Health as **None**
 will be treated as **OK** if Status.State is set to **Enabled**
 
 ## Supported Systems

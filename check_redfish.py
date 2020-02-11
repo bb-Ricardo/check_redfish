@@ -1725,13 +1725,13 @@ def get_storage_generic(system):
         drives_status_list.append(status)
 
         if size is not None and size > 0:
-            size = "%0.2fGB" % (size / ( 1000 ** 3))
+            size = "%0.2fGiB" % (size / ( 1000 ** 3))
         else:
-            size = "0GB"
+            size = "0GiB"
 
         status_text = f"Physical Drive {name} ({model} / {type} / {protocol}) {size} status: {status}"
 
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+        plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
 
     def get_volumes(volumes_link):
 
@@ -1772,7 +1772,7 @@ def get_storage_generic(system):
 
             status_text = "Logical Drive %s (%s) %.0fGiB (%s) Status: %s" % (name, volume_name, size, raid_level, status)
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
 
     def get_enclosures(enclosure_link):
 
@@ -1800,7 +1800,7 @@ def get_storage_generic(system):
 
         status_text = f"{chassis_type} {name} (Power: {power_state}) Status: {status}"
 
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+        plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
 
     def condensed_status_from_list(status_list):
 
@@ -1865,11 +1865,8 @@ def get_storage_generic(system):
                     if controller_oem_data is not None:
                         model = controller_oem_data.get("Type") if controller_oem_data.get("Type") else model
 
-                    # ignore absent and Health None controllers
+                    # ignore absent controllers
                     if controller_status.get("State") and controller_status.get("State") == "Absent":
-                        continue
-
-                    if "AHCI" in controller_response.get("Id"):
                         continue
 
                     status = controller_status.get("Health")
@@ -1883,7 +1880,7 @@ def get_storage_generic(system):
 
                     status_text = f"{name} {model} (FW: {fw_version}) status is: {status}"
 
-                    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                    plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
 
                     if controller_oem_data is not None and controller_oem_data.get("CapacitanceStatus") is not None:
                         cap_model = controller_oem_data.get("CapacitanceName")
@@ -1915,8 +1912,6 @@ def get_storage_generic(system):
                         get_enclosures(enclosure_link.get("@odata.id"))
             else:
                 plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % controller_response.get("@odata.id"))
-
-    # check for other drives in system
 
     # check SimpleStorage
     if system_response.get("SimpleStorage") is not None and system_response.get("SimpleStorage").get("@odata.id") is not None:
