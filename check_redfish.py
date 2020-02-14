@@ -312,7 +312,7 @@ class RedfishConnection():
                 if self.username is None or self.password is None:
                     self.exit_on_error(f"Username and Password needed to connect to this BMC")
 
-            if redfish_response.status >= 400 and self.session_was_restored is True:
+            if redfish_response.status != 404 and redfish_response.status >= 400 and self.session_was_restored is True:
 
                 # reset connection
                 self.init_connection(reset = True)
@@ -356,7 +356,7 @@ class RedfishConnection():
             redfish_response = self._rf_post("/redfish/v1/Views/", self.vendor_data.view_select)
 
             # session invalid
-            if redfish_response.status >= 400 and self.session_was_restored is True:
+            if redfish_response.status != 404 and redfish_response.status >= 400 and self.session_was_restored is True:
 
                 # reset connection
                 self.init_connection(reset = True)
@@ -645,6 +645,13 @@ class VendorFujitsuData():
 
     expand_string = "?$expand=Members"
 
+class VendorCiscoData():
+
+    view_supported = False
+    view_select = None
+
+    expand_string = ""
+
 class VendorGeneric():
 
     view_supported = False
@@ -784,7 +791,7 @@ def get_single_chassi_power(redfish_url):
 
             ps_num += 1
 
-            status = ps.get("Status").get("Health").upper() # HP, Lenovo
+            status = ps.get("Status").get("Health") # HP, Lenovo
             ps_op_status = ps.get("Status").get("State") # HP, Lenovo
             model = ps.get("Model") # HP
             part_number = ps.get("PartNumber") # Lenovo
@@ -815,6 +822,9 @@ def get_single_chassi_power(redfish_url):
 
             if model is None:
                 model = "Unknown model"
+
+            if status is not None:
+                status = status.upper()
 
             # align check output with temp and fan command
             if ps_hp_status is not None and ps_hp_status == "Unknown":
@@ -944,23 +954,23 @@ def get_single_chassi_temp(redfish_url):
             if warning_temp is None or str(warning_temp) == "0":
                 warning_temp = "N/A"
 
-            if warning_temp != "N/A" and current_temp >= warning_temp:
+            if warning_temp != "N/A" and float(current_temp) >= float(warning_temp):
                 status = "WARNING"
 
             if critical_temp is None or str(critical_temp) == "0":
                 critical_temp = "N/A"
 
-            if critical_temp != "N/A" and current_temp >= critical_temp:
+            if critical_temp != "N/A" and float(current_temp) >= float(critical_temp):
                 status = "CRITICAL"
 
             status_text = f"Temp sensor {name} status is: {status} ({current_temp} °C) (max: {critical_temp} °C)"
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-            warning_temp = warning_temp if warning_temp != "N/A" else None
-            critical_temp = critical_temp if critical_temp != "N/A" else None
+            warning_temp = float(warning_temp) if warning_temp != "N/A" else None
+            critical_temp = float(critical_temp) if critical_temp != "N/A" else None
 
-            plugin.add_perf_data(f"temp_{name}", int(current_temp), warning=warning_temp, critical=critical_temp)
+            plugin.add_perf_data(f"temp_{name}", float(current_temp), warning=warning_temp, critical=critical_temp)
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
@@ -1111,7 +1121,9 @@ def get_single_system_procs(redfish_url):
 
         # DELL is HealthRollUp not HealthRollup
         # Fujitsu is just Health an not HealthRollup
-        health = proc_health.get("HealthRollup") or proc_health.get("HealthRollUp") or proc_health.get("Health")
+        health = None
+        if proc_health is not None:
+            health = proc_health.get("HealthRollup") or proc_health.get("HealthRollUp") or proc_health.get("Health")
 
         if health == "OK" and args.detailed == False:
             plugin.add_output_data("OK", "All processors (%d) are in good condition" % systems_response.get("ProcessorSummary").get("Count"), summary = True)
@@ -1126,6 +1138,7 @@ def get_single_system_procs(redfish_url):
 
     if processors_response.get("Members") or processors_response.get(system_response_proc_key):
 
+        num_procs = 0
         for proc in processors_response.get("Members") or processors_response.get(system_response_proc_key):
 
             if proc.get("@odata.context"):
@@ -1140,6 +1153,8 @@ def get_single_system_procs(redfish_url):
                 if proc_status.get("State") and proc_status.get("State") == "Absent":
                     continue
 
+                num_procs += 1
+
                 socket = proc_response.get("Socket")
                 model =  proc_response.get("Model").strip()
 
@@ -1151,6 +1166,9 @@ def get_single_system_procs(redfish_url):
 
             else:
                 plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
+
+        if args.detailed == False:
+            plugin.add_output_data("OK", "All processors (%d) are in good condition" % num_procs, summary = True)
     else:
         plugin.add_output_data("UNKNOWN", f"No processor data returned for API URL '{redfish_url}'")
 
@@ -1167,6 +1185,7 @@ def get_single_system_mem(redfish_url):
     if systems_response.get("MemorySummary"):
 
         health = None
+        need_details = False
 
         memory_health = systems_response.get("MemorySummary").get("Status")
 
@@ -1175,9 +1194,9 @@ def get_single_system_mem(redfish_url):
             # Fujitsu is just Health an not HealthRollup
             health = memory_health.get("HealthRollup") or memory_health.get("HealthRollUp") or memory_health.get("Health")
         except AttributeError:
-            args.detailed = True
+            need_details = True
 
-        if health == "OK" and args.detailed == False:
+        if health == "OK" and args.detailed == False and need_details == False:
 
             total_mem = systems_response.get("MemorySummary").get("TotalSystemMemoryGiB")
 
@@ -1204,7 +1223,8 @@ def get_single_system_mem(redfish_url):
 
     memory_response = plugin.rf.get_view(redfish_url)
 
-    found_memory_data = False
+    num_dimms = 0
+    size_sum = 0
 
     if memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
@@ -1223,6 +1243,7 @@ def get_single_system_mem(redfish_url):
                 if size is None:
                     size = 0
                 else:
+                    size = int(size)
                     #size = MiB_to_GB(size)
                     # DELL
                     if plugin.rf.vendor == "Dell":
@@ -1237,6 +1258,7 @@ def get_single_system_mem(redfish_url):
                     name = "UnknownNameLocation"
 
                 # get status
+                status = None
                 if plugin.rf.vendor == "HPE" and mem_module_response.get("Oem") and mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus"):
                     status = mem_module_response.get("Oem").get(plugin.rf.vendor_dict_key).get("DIMMStatus")
 
@@ -1248,11 +1270,14 @@ def get_single_system_mem(redfish_url):
 
                     module_status = mem_module_response.get("Status")
 
-                    if module_status.get("State") and module_status.get("State") == "Absent":
-                        status = module_status.get("State")
-                    else:
-                        status = module_status.get("Health")
+                    if isinstance(module_status, dict):
+                        if module_status.get("State") and module_status.get("State") == "Absent":
+                            status = module_status.get("State")
+                        else:
+                            status = module_status.get("Health")
 
+                    elif isinstance(module_status, str):
+                        status = module_status
                 else:
                     plugin.add_output_data("UNKNOWN", f"Error retrieving memory module status: {mem_module_response}")
                     continue
@@ -1260,11 +1285,11 @@ def get_single_system_mem(redfish_url):
                 if status in [ "Absent", "NotPresent"]:
                     continue
 
-                found_memory_data = True
-
+                num_dimms += 1
+                size_sum += size
                 status_text = f"Memory module {name} ({size}GB) status is: {status}"
 
-                if status == "GoodInUse":
+                if status in [ "GoodInUse", "Operable"]:
                     status = "OK"
 
                 plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
@@ -1272,8 +1297,10 @@ def get_single_system_mem(redfish_url):
             else:
                 plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
 
-    if found_memory_data == False:
+    if num_dimms == 0:
         plugin.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
+    else:
+        plugin.add_output_data("OK", f"All {num_dimms} memory modules (Total {size_sum}GB) are in good condition", summary = True)
 
     return
 
@@ -1850,7 +1877,11 @@ def get_storage_generic(system):
             else:
                 controller_response = plugin.rf.get(storage_member.get("@odata.id"))
 
-            if controller_response.get("Id"):
+            if controller_response.get("StorageControllers"):
+
+                # if StorageControllers is just a dict then wrap it in a list (like most vendors do it)
+                if isinstance(controller_response.get("StorageControllers"), dict):
+                    controller_response["StorageControllers"] = [ controller_response.get("StorageControllers") ]
 
                 for storage_controller in controller_response.get("StorageControllers"):
                     name = storage_controller.get("Name")
@@ -1908,8 +1939,12 @@ def get_storage_generic(system):
                 if controller_response.get("Links") is not None and \
                    controller_response.get("Links").get("Enclosures") is not None and \
                    len(controller_response.get("Links").get("Enclosures")) > 0:
+
                     for enclosure_link in controller_response.get("Links").get("Enclosures"):
-                        get_enclosures(enclosure_link.get("@odata.id"))
+                        if isinstance(enclosure_link, str):
+                            get_enclosures(enclosure_link)
+                        else:
+                            get_enclosures(enclosure_link.get("@odata.id"))
             else:
                 plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % controller_response.get("@odata.id"))
 
@@ -2041,7 +2076,7 @@ def get_event_log(type):
 
 
 
-    if type == "System" and plugin.rf.vendor in [ "Huawei", "HPE" ]:
+    if type == "System" and plugin.rf.vendor in [ "Huawei", "HPE", "Cisco" ]:
         property_name = "systems"
     else:
         property_name = "managers"
@@ -2191,12 +2226,16 @@ def get_event_log_generic(type, system_manager_id):
         if plugin.rf.vendor == "Dell":
             redfish_url = f"{system_manager_id}/Logs/Sel"
         elif plugin.rf.vendor == "Fujitsu":
-            redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/" # /Entries/?$expand=.
+            redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/"
+        elif plugin.rf.vendor == "Cisco":
+            redfish_url = f"{system_manager_id}/LogServices/SEL/Entries/"
     else:
         if plugin.rf.vendor == "Dell":
             redfish_url = f"{system_manager_id}/Logs/Lclog"
         elif plugin.rf.vendor == "Fujitsu":
-            redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/" # ML/Entries/?$expand=.
+            redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/"
+        elif plugin.rf.vendor == "Cisco":
+            redfish_url = f"{system_manager_id}/LogServices/CIMC/Entries/"
 
     # try to discover log service
     if redfish_url is None:
@@ -2248,11 +2287,18 @@ def get_event_log_generic(type, system_manager_id):
 
         message = event_entry.get("Message")
 
+        if message is not None:
+            message = message.strip().strip("\n").strip()
+
         num_entry += 1
 
         severity = event_entry.get("Severity")
         if severity is not None:
             severity = severity.upper()
+
+        # CISCO WHY?
+        if severity in  ["NORMAL", "INFORMATIONAL"]:
+            severity = "OK"
 
         date = event_entry.get("Created")
 
@@ -2738,9 +2784,15 @@ def get_firmware_info_generic():
         plugin.add_output_data("UNKNOWN", "URL '/redfish/v1/UpdateService' unavailable. Unable to retrieve firmware information.", summary = not args.detailed)
         return
 
-    redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/" + "%s" % plugin.rf.vendor_data.expand_string
+    if plugin.rf.vendor == "Cisco":
+        redfish_url = "/redfish/v1/UpdateService/" + "%s" % plugin.rf.vendor_data.expand_string
+    else:
+        redfish_url = "/redfish/v1/UpdateService/FirmwareInventory/" + "%s" % plugin.rf.vendor_data.expand_string
 
     firmware_response = plugin.rf.get(redfish_url)
+
+    if plugin.rf.vendor == "Cisco" and firmware_response.get("FirmwareInventory") is not None:
+        firmware_response["Members"] = firmware_response.get("FirmwareInventory")
 
     if args.detailed is False:
         plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Members")), summary = True)
@@ -2755,6 +2807,9 @@ def get_firmware_info_generic():
 
         component_name = firmware_entry.get("Name")
         component_version = firmware_entry.get("Version")
+        if component_version is not None:
+            component_version = component_version.strip().replace("\n","")
+
         component_id = None
 
         if plugin.rf.vendor == "HPE":
@@ -2976,7 +3031,10 @@ def get_bmc_info_generic(redfish_url):
 
                 nic_status = manager_nic.get("Status")
 
-                if nic_status is None or nic_status.get("State") is None:
+                if nic_status is None:
+                    nic_status = { "Health": "OK", "State": "Enabled" }
+
+                if nic_status.get("State") is None:
                     continue
 
                 if nic_status.get("State") == "Disabled":
@@ -2997,14 +3055,19 @@ def get_bmc_info_generic(redfish_url):
                 ip_addresses = list()
 
                 # get IPv4 address
+                if manager_nic.get("IPv4Addresses") is not None and isinstance(manager_nic.get("IPv4Addresses"), dict):
+                    manager_nic["IPv4Addresses"] = [ manager_nic.get("IPv4Addresses") ]
                 try:
                     ip_addresses.append(manager_nic.get("IPv4Addresses")[0].get("Address"))
                 except Exception:
                     pass
 
                 # get IPv6 address
+                if manager_nic.get("IPv6Addresses") is not None and isinstance(manager_nic.get("IPv6Addresses"), dict):
+                    manager_nic["IPv6Addresses"] = [ manager_nic.get("IPv6Addresses") ]
                 try:
-                    ip_addresses.append(manager_nic.get("IPv6Addresses")[0].get("Address"))
+                    if manager_nic.get("IPv6Addresses")[0].get("Address") != "::":
+                        ip_addresses.append(manager_nic.get("IPv6Addresses")[0].get("Address"))
                 except Exception:
                     pass
 
@@ -3160,6 +3223,11 @@ def get_basic_system_info():
             plugin.rf.vendor = "Fujitsu"
 
             plugin.rf.vendor_data = VendorFujitsuData()
+
+    if "CIMC" in str(plugin.rf.connection.system_properties.get("managers")):
+        plugin.rf.vendor = "Cisco"
+
+        plugin.rf.vendor_data = VendorCiscoData()
 
     if plugin.rf.vendor_data is None:
         if vendor_string is None:
