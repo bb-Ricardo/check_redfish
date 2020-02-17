@@ -44,9 +44,17 @@ default_conn_timeout = 7
 # inventory definition
 inventory_version_string = "0.1"
 drive_attributes = [ "id", "name", "serial", "type", "speed", "status", "bay"]
-processor_attributes = [ "id", "name", "serial"]
+processor_attributes = [ "id", "name", "serial", "model", "socket", "health_status", "operation_status",
+                         "cores", "threads", "current_speed", "max_speed", "manufacturer",
+                         "instruction_set", "architecture"]
+memory_attributes = [ "id", "name", "serial", "socket", "slot", "channel", "health_status", "operation_status",
+                      "speed", "part_number", "manufacturer", "type", "size_in_mb", "base_type" ]
 ps_attributes = [ "id", "name", "last_power_output", "part_number", "model", "health_status", "operation_status",
                   "bay", "model", "vendor", "serial", "firmware", "type", "capacity_in_watt", "input_voltage" ]
+temp_fan_common_attributes = [ "id", "name", "physical_context", "health_status", "operation_status", "reading",
+                   "min_reading", "max_reading", "lower_threshold_non_critical", "lower_threshold_critical",
+                   "lower_threshold_fatal", "upper_threshold_non_critical", "upper_threshold_critical",
+                   "upper_threshold_fatal", "reading_unit", "location"]
 
 class RedfishConnection():
 
@@ -580,8 +588,8 @@ class InventoryItem(object):
     init_done = False
 
     def __init__(self, **kwargs):
+        self.valid_attributes.append("related_items")
         for attribute in self.valid_attributes:
-            #super().__setattr__(attribute, None)
             setattr(self, attribute, None)
 
         self.init_done = True
@@ -594,6 +602,25 @@ class InventoryItem(object):
         del output["init_done"]
 
         return output
+
+    def add_relation(self, **kwargs):
+
+        valid_related_items = [ "chassi", "system", "manager", "logical_volume", "physical_volume",
+                                "storage_controller", "power_supply" ]
+
+        for key, value in kwargs.items():
+            if key not in valid_related_items:
+                raise AttributeError("'%s' object has no valid relation attribute '%s'" % (self.__class__.__name__, key))
+
+            if self.related_items is None:
+                self.related_items = { key: [ value ] }
+            else:
+                if self.related_items.get(key) is None:
+                    self.related_items[key] = list(value)
+                else:
+                    current_values = self.related_items.get(key)
+                    current_values.append(value)
+                    self.related_items[key] = current_values
 
     def __setattr__(self, key, value):
         if self.init_done is True and key not in self.valid_attributes:
@@ -611,12 +638,12 @@ class InventoryItem(object):
                 return True
 
             if is_int(value):
-                value = int(value)
+                value = int(float(value))
 
             elif is_float(value):
                 value = float(value)
 
-            if value.upper in status_types.keys():
+            elif value.upper() in status_types.keys():
                 value = value.upper()
 
         super().__setattr__(key, value)
@@ -627,21 +654,33 @@ class Drive(InventoryItem):
 class Processor(InventoryItem):
     valid_attributes = processor_attributes
 
+class Memory(InventoryItem):
+    valid_attributes = memory_attributes
+
 class PowerSupply(InventoryItem):
     valid_attributes = ps_attributes
+
+class Temperature(InventoryItem):
+    valid_attributes = temp_fan_common_attributes
+
+class Fan(InventoryItem):
+    valid_attributes = temp_fan_common_attributes
 
 class Inventory(object):
     """
 
     """
     base_structure = dict()
-
     inventory_start = None
+    data_retrieval_issues = list()
 
     valid_classes = {
         "drives": Drive,
+        "fans": Fan,
+        "memories": Memory,
+        "power_supplies": PowerSupply,
         "processors": Processor,
-        "power_supplies": PowerSupply
+        "temperatures": Temperature
     }
 
     def __init__(self):
@@ -664,6 +703,16 @@ class Inventory(object):
             raise AttributeError("'%s' object not allowed to add to a '%s' class item." %
                                  (object.__class__.__name__, InventoryItem.__name__))
 
+    def add_issue(self, component = None, issue = None):
+
+        if issue is None:
+            return
+
+        if component not in self.valid_classes.keys():
+            component = "undefined"
+
+        self.data_retrieval_issues.append(f"{component}: {issue}")
+
     def to_json(self):
         inventory_content = self.base_structure
 
@@ -671,7 +720,8 @@ class Inventory(object):
         inventory_content["meta"] = {
             "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
             "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
-            "format_version": inventory_version_string
+            "format_version": inventory_version_string,
+            "data_retrieval_issues": self.data_retrieval_issues
         }
 
         output = { "inventory": inventory_content }
@@ -1023,6 +1073,8 @@ def get_single_chassi_power(redfish_url):
 
     plugin.set_current_command("Power")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Power"
 
     power_data = plugin.rf.get_view(redfish_url)
@@ -1065,7 +1117,8 @@ def get_single_chassi_power(redfish_url):
             if bay is None:
                 bay = ps_num
 
-            plugin.inventory.add(PowerSupply(
+
+            ps_inventory = PowerSupply(
                 model = model,
                 bay = bay,
                 health_status = health,
@@ -1080,7 +1133,11 @@ def get_single_chassi_power(redfish_url):
                 part_number = ps.get("SparePartNumber") or ps.get("PartNumber"),
                 id = ps.get("MemberId"),
                 name = ps.get("Name")
-            ))
+            )
+
+            ps_inventory.add_relation(chassi = chassi_id)
+
+            plugin.inventory.add(ps_inventory)
 
             printed_status = health
             printed_model = ""
@@ -1120,6 +1177,7 @@ def get_single_chassi_power(redfish_url):
         for power_redundancy in power_redundancies:
 
             pr_status = power_redundancy.get("Status")
+
 
             if pr_status is not None:
                 status = pr_status.get("Health")
@@ -1195,42 +1253,73 @@ def get_single_chassi_temp(redfish_url):
             status = status_data.get("Health")
             state = status_data.get("State")
 
+            temp_inventory = Temperature(
+                name = temp.get("Name"),
+                id = temp.get("MemberId"),
+                health_status = status,
+                operation_status = state,
+                physical_context = temp.get("PhysicalContext"),
+                min_reading = temp.get("MinReadingRangeTemp"),
+                max_reading = temp.get("MaxReadingRangeTemp"),
+                lower_threshold_non_critical = temp.get("LowerThresholdNonCritical"),
+                lower_threshold_critical = temp.get("LowerThresholdCritical"),
+                lower_threshold_fatal = temp.get("LowerThresholdFatal"),
+                upper_threshold_non_critical = temp.get("UpperThresholdNonCritical"),
+                upper_threshold_critical = temp.get("UpperThresholdCritical"),
+                upper_threshold_fatal = temp.get("UpperThresholdFatal"),
+            )
+
+            temp_inventory.reading_unit = "Celsius"
+            if temp.get("ReadingCelsius") is not None:
+                temp_inventory.reading = temp.get("ReadingCelsius")
+            elif temp.get("ReadingFahrenheit") is not None:
+                temp_inventory.reading = temp.get("ReadingFahrenheit")
+                temp_inventory.reading_unit = "Fahrenheit"
+            else:
+                temp_inventory.reading = 0
+
+            if temp.get("RelatedItem"):
+                for item in temp.get("RelatedItem"):
+                    if isinstance(item, dict):
+                        item_link = item.get("@odata.id")
+                    else:
+                        item_link = item
+
+                    temp_inventory.add_relation(chassi = item_link)
+
+            plugin.inventory.add(temp_inventory)
+
             if state in [ "Absent", "Disabled", "UnavailableOffline" ]:
                 continue
 
             if status is None:
                 status = "OK" if state == "Enabled" else state
 
-            name = temp.get("Name").strip()
-            current_temp = temp.get("ReadingCelsius")
-            critical_temp = temp.get("UpperThresholdCritical")
-            warning_temp = temp.get("UpperThresholdNonCritical")
+            current_temp = temp_inventory.reading
+            critical_temp = temp_inventory.upper_threshold_critical
+            warning_temp = temp_inventory.upper_threshold_non_critical
 
             temp_num += 1
 
-            if current_temp is None:
-                current_temp = 0
+            if str(warning_temp) in [ "0", "N/A"]:
+                warning_temp = None
 
-            if warning_temp is None or str(warning_temp) == "0":
-                warning_temp = "N/A"
-
-            if warning_temp != "N/A" and float(current_temp) >= float(warning_temp):
+            if warning_temp is not None and float(current_temp) >= float(warning_temp):
                 status = "WARNING"
 
-            if critical_temp is None or str(critical_temp) == "0":
-                critical_temp = "N/A"
+            if str(critical_temp) in [ "0", "N/A"]:
+                critical_temp = None
 
-            if critical_temp != "N/A" and float(current_temp) >= float(critical_temp):
+            if critical_temp is not None and float(current_temp) >= float(critical_temp):
                 status = "CRITICAL"
 
-            status_text = f"Temp sensor {name} status is: {status} ({current_temp} °C) (max: {critical_temp} °C)"
+            critical_temp_text = "N/A" if critical_temp is None else "%.1f" % critical_temp
+
+            status_text = f"Temp sensor {temp_inventory.name} status is: {status} (%.1f °C) (max: {critical_temp_text} °C)" % current_temp
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-            warning_temp = float(warning_temp) if warning_temp != "N/A" else None
-            critical_temp = float(critical_temp) if critical_temp != "N/A" else None
-
-            plugin.add_perf_data(f"temp_{name}", float(current_temp), warning=warning_temp, critical=critical_temp)
+            plugin.add_perf_data(f"temp_{temp_inventory.name}", float(current_temp), warning=warning_temp, critical=critical_temp)
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
@@ -1257,51 +1346,75 @@ def get_single_chassi_fan(redfish_url):
 
             status_data = get_status_data(grab(fan,"Status"))
 
-            status = status_data.get("Health")
-            state = status_data.get("State")
+            fan_inventory = Fan(
+                id = fan.get("MemberId"),
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                physical_context = fan.get("PhysicalContext"),
+                min_reading = fan.get("MinReadingRange"),
+                max_reading = fan.get("MaxReadingRange"),
+                lower_threshold_non_critical = fan.get("LowerThresholdNonCritical"),
+                lower_threshold_critical = fan.get("LowerThresholdCritical"),
+                lower_threshold_fatal = fan.get("LowerThresholdFatal"),
+                upper_threshold_non_critical = fan.get("UpperThresholdNonCritical"),
+                upper_threshold_critical = fan.get("UpperThresholdCritical"),
+                upper_threshold_fatal = fan.get("UpperThresholdFatal"),
+            )
 
-            if state == "Absent":
-                continue
+            fan_inventory.name = fan.get("FanName") or fan.get("Name")
 
-            if status is None:
-                status = "OK" if state == "Enabled" else state
+            fan_inventory.location = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info")
 
-            fan_num += 1
+            text_speed = ""
+            text_units = ""
+            fan_status = fan_inventory.health_status
 
-            name = fan.get("FanName") or fan.get("Name")
+            if fan.get("RelatedItem"):
+                for item in fan.get("RelatedItem"):
+                    if isinstance(item, dict):
+                        item_link = item.get("@odata.id")
+                    else:
+                        item_link = item
 
-            if fan.get("Oem") is not None:
+                    fan_inventory.add_relation(chassi = item_link)
 
-                if plugin.rf.vendor == "Lenovo":
-                    name = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info")
-
-            speed_status = ""
+            perf_units = ""
 
             # DELL, Fujitsu, Huawei
             if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
-                speed = fan.get("ReadingRPM") or fan.get("Reading")
-                speed_units = ""
+                fan_inventory.reading = fan.get("ReadingRPM") or fan.get("Reading")
+                fan_inventory.reading_unit = "RPM"
 
-                speed_status = f" ({speed} RPM)"
+                text_units = " RPM"
 
             # HP, Lenovo
             else:
-                speed = fan.get("Reading")
-                speed_units = fan.get("ReadingUnits")
+                fan_inventory.reading = fan.get("Reading")
+                fan_inventory.reading_unit = fan.get("ReadingUnits")
 
-                if speed_units:
-                    speed_units = speed_units.replace("Percent", "%")
-                else:
-                    speed_units = ""
+                if fan_inventory.reading_unit == "Percent":
 
-                speed_status = f" ({speed}{speed_units})"
+                    text_units = "%"
+                    perf_units = "%"
 
-            status_text = f"Fan '{name}'{speed_status} status is: {status}"
+            text_speed = f" ({fan_inventory.reading}{text_units})"
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin.inventory.add(fan_inventory)
 
-            if speed:
-                plugin.add_perf_data(f"Fan_{name}", int(speed), perf_uom=speed_units, warning=args.warning, critical=args.critical)
+            if fan_inventory.operation_status == "Absent":
+                continue
+
+            if fan_inventory.health_status is None:
+                fan_status = "OK" if fan_inventory.operation_status == "Enabled" else fan_inventory.operation_status
+
+            fan_num += 1
+
+            status_text = f"Fan '{fan_inventory.name}'{text_speed} status is: {fan_status}"
+
+            plugin.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status, status_text)
+
+            if fan_inventory.reading is not None:
+                plugin.add_perf_data(f"Fan_{fan_inventory.name}", int(fan_inventory.reading), perf_uom=perf_units, warning=args.warning, critical=args.critical)
 
         default_text = f"All fans ({fan_num}) are in good condition"
     else:
@@ -1383,13 +1496,15 @@ def get_single_system_procs(redfish_url):
         if proc_count is not None:
             proc_count_text = f"({proc_count}) "
 
-        if health == "OK" and args.detailed == False:
+        if health == "OK" and args.detailed == False and args.inventory == False:
             plugin.add_output_data("OK", f"All processors {proc_count_text}are in good condition", summary = True)
             return
 
     system_response_proc_key = "Processors"
     if systems_response.get(system_response_proc_key) is None:
-        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'")
+        issue_text = f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'"
+        plugin.inventory.add_issue("processors", issue_text)
+        plugin.add_output_data("UNKNOWN", issue_text)
         return
 
     processors_link = grab(systems_response, f"{system_response_proc_key}/@odata.id", separator="/")
@@ -1408,21 +1523,38 @@ def get_single_system_procs(redfish_url):
 
             if proc_response.get("Id"):
 
-                proc_status = get_status_data(proc_response.get("Status"))
+                status_data = get_status_data(proc_response.get("Status"))
 
-                if proc_status.get("State") == "Absent":
+                current_speed = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.CurrentClockSpeedMHz") or \
+                                grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.RatedSpeedMHz")
+
+                proc_inventory = Processor(
+                    name = proc_response.get("Name"),
+                    id = proc_response.get("Id"),
+                    model = proc_response.get("Model"),
+                    socket = proc_response.get("Socket"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    cores = proc_response.get("TotalCores"),
+                    threads = proc_response.get("TotalThreads"),
+                    current_speed = current_speed,
+                    max_speed = proc_response.get("MaxSpeedMHz"),
+                    manufacturer = proc_response.get("Manufacturer"),
+                    instruction_set = proc_response.get("InstructionSet"),
+                    architecture = proc_response.get("ProcessorArchitecture"),
+                    serial = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.SerialNumber")
+                )
+
+                plugin.inventory.add(proc_inventory)
+
+                if proc_inventory.operation_status == "Absent":
                     continue
 
                 num_procs += 1
 
-                socket = proc_response.get("Socket")
-                model =  proc_response.get("Model").strip()
+                status_text = f"Processor {proc_inventory.socket} ({proc_inventory.model}) status is: {proc_inventory.health_status}"
 
-                status = proc_status.get("Health")
-
-                status_text = f"Processor {socket} ({model}) status is: {status}"
-
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.add_output_data("CRITICAL" if proc_inventory.health_status not in ["OK", "WARNING"] else proc_inventory.health_status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
@@ -1453,7 +1585,7 @@ def get_single_system_mem(redfish_url):
         # Fujitsu is just Health an not HealthRollup
         health = memory_status.get("HealthRollup") or memory_status.get("Health")
 
-        if health == "OK" and args.detailed == False:
+        if health == "OK" and args.detailed == False and args.inventory == False:
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
 
@@ -1471,7 +1603,9 @@ def get_single_system_mem(redfish_url):
         memory_path_dict = systems_response
 
     if memory_path_dict.get(system_response_memory_key) is None:
-        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'")
+        issue_text = f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'"
+        plugin.inventory.add_issue("memories", issue_text)
+        plugin.add_output_data("UNKNOWN", issue_text)
         return
 
     redfish_url = memory_path_dict.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
@@ -1493,48 +1627,65 @@ def get_single_system_mem(redfish_url):
             if mem_module_response.get("Id"):
 
                 # get size
-                size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB") or 0
+                module_size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB") or 0
 
-                size = int(size)
-                #size = MiB_to_GB(size)
+                module_size = int(module_size)
+
                 # DELL
                 if plugin.rf.vendor == "Dell":
-                    size = round(size * 1024 ** 2 / 1000 ** 2) / 1024
-                else:
-                    size = size / 1024
+                    module_size = round(module_size * 1024 ** 2 / 1000 ** 2)
 
                 # get name
-                name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
+                module_name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
 
-                if name is None:
-                    name = "UnknownNameLocation"
+                if module_name is None:
+                    module_name = "UnknownNameLocation"
 
                 # get status
-                module_status = get_status_data(mem_module_response.get("Status"))
-                status = module_status.get("Health")
-                state = module_status.get("State")
+                status_data = get_status_data(mem_module_response.get("Status"))
 
                 if plugin.rf.vendor == "HPE" and grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus"):
-                    status = grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus")
+                    status_data["State"] = grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus")
 
                 elif mem_module_response.get("DIMMStatus"):
 
-                    status = mem_module_response.get("DIMMStatus")
+                    status_data["State"] = mem_module_response.get("DIMMStatus")
 
-                if status in [ "Absent", "NotPresent"] or state in [ "Absent", "NotPresent"]:
+                mem_inventory = Memory(
+                    name = module_name,
+                    id = mem_module_response.get("Id"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    size_in_mb = module_size,
+                    manufacturer = mem_module_response.get("Manufacturer"),
+                    serial = mem_module_response.get("SerialNumber"),
+                    socket = grab(mem_module_response, "MemoryLocation.Socket"),
+                    slot = grab(mem_module_response, "MemoryLocation.Slot"),
+                    channel = grab(mem_module_response, "MemoryLocation.Channel"),
+                    speed = mem_module_response.get("OperatingSpeedMhz"),
+                    part_number = mem_module_response.get("PartNumber"),
+                    type = mem_module_response.get("MemoryType"),
+                    base_type = mem_module_response.get("BaseModuleType"),
+                )
+
+                plugin.inventory.add(mem_inventory)
+
+                if mem_inventory.operation_status in [ "Absent", "NotPresent"]:
                     continue
 
-                if status is None and state is not None:
-                    status = state
-
                 num_dimms += 1
-                size_sum += size
-                status_text = f"Memory module {name} ({size}GB) status is: {status}"
+                size_sum += module_size
 
-                if status in [ "GoodInUse", "Operable"]:
-                    status = "OK"
+                if mem_inventory.operation_status in [ "GoodInUse", "Operable"]:
+                    plugin_status = "OK"
+                    status_text = mem_inventory.operation_status
+                else:
+                    plugin_status = mem_inventory.health_status
+                    status_text = plugin_status
 
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                status_text = f"Memory module {mem_inventory.name} (%.1fGB) status is: {status_text}" % ( mem_inventory.size_in_mb / 1024)
+
+                plugin.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
@@ -1542,7 +1693,7 @@ def get_single_system_mem(redfish_url):
     if num_dimms == 0:
         plugin.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
     else:
-        plugin.add_output_data("OK", f"All {num_dimms} memory modules (Total {size_sum}GB) are in good condition", summary = True)
+        plugin.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (size_sum / 1024), summary = True)
 
     return
 
