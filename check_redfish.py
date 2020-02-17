@@ -1733,7 +1733,8 @@ def get_storage_generic(system):
 
         status = get_status_data(drive_response.get("Status")).get("Health")
 
-        drives_status_list.append(status)
+        if status is not None:
+            drives_status_list.append(status)
 
         if size is not None and size > 0:
             size = "%0.2fGiB" % (size / ( 1000 ** 3))
@@ -1761,7 +1762,8 @@ def get_storage_generic(system):
             name = volume_data.get("Name")
             status = get_status_data(volume_data.get("Status")).get("Health")
 
-            volume_status_list.append(status)
+            if status is not None:
+                volume_status_list.append(status)
 
             size = volume_data.get("CapacityBytes") or 0
             size = int(size) / ( 1000 ** 3)
@@ -1800,7 +1802,8 @@ def get_storage_generic(system):
         power_state = enclosures_response.get("PowerState")
         status = get_status_data(enclosures_response.get("Status")).get("Health")
 
-        enclosure_status_list.append(status)
+        if status is not None:
+            enclosure_status_list.append(status)
 
         status_text = f"{chassis_type} {name} (Power: {power_state}) Status: {status}"
 
@@ -1877,7 +1880,8 @@ def get_storage_generic(system):
 
                     status = controller_status.get("Health")
 
-                    storage_status_list.append(status)
+                    if status is not None:
+                        storage_status_list.append(status)
 
                     storage_controller_names_list.append(f"{name} {model}")
                     storage_controller_id_list.append(controller_response.get("@odata.id"))
