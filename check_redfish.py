@@ -919,8 +919,8 @@ def get_single_chassi_power(redfish_url):
 
             status = status_data.get("Health")
             operatinal_status = status_data.get("State")
-            model = ps.get("Model")
             part_number = ps.get("PartNumber")
+            model = ps.get("Model") or part_number
             last_power_output = ps.get("LastPowerOutputWatts")
             bay = None
 
@@ -940,18 +940,25 @@ def get_single_chassi_power(redfish_url):
                 elif plugin.rf.vendor == "Huawei":
                     last_power_output = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerInputWatts")
 
-            if model is None:
-                model = "Unknown model" if part_number is None else part_number
-
             if bay is None:
                 bay = ps_num
 
-            if operatinal_status is not None and operatinal_status == "Absent":
-                status_text = "Power supply %s status is: %s" % (str(bay), operatinal_status)
-                status = "OK"
-                ps_absent += 1
-            else:
-                status_text = "Power supply %s (%s) status is: %s" % (str(bay), model.strip(), status)
+            status_text = "Power supply {bay} {model}status is: {status}"
+            printed_status = status
+            printed_model = ""
+
+            if status is None:
+                printed_status = operatinal_status
+                if operatinal_status == "Absent":
+                    status = "OK"
+                    ps_absent += 1
+                if operatinal_status == "Enabled":
+                    status = "OK"
+
+            if model is not None:
+                printed_model = "(%s) " % model.strip()
+
+            status_text = status_text.format(bay=str(bay), model=printed_model, status=printed_status)
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
