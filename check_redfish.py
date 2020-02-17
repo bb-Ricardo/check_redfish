@@ -41,6 +41,13 @@ plugin = None
 default_conn_max_retries = 3
 default_conn_timeout = 7
 
+# inventory definition
+inventory_version_string = "0.1"
+drive_attributes = [ "id", "name", "serial", "type", "speed", "status", "bay"]
+processor_attributes = [ "id", "name", "serial"]
+ps_attributes = [ "id", "name", "last_power_output", "part_number", "model", "health_status", "operation_status",
+                  "bay", "model", "vendor", "serial", "firmware", "type", "capacity_in_watt", "input_voltage" ]
+
 class RedfishConnection():
 
     sessionfilepath = None
@@ -391,6 +398,7 @@ class RedfishConnection():
 class PluginData():
 
     rf = None
+    inventory = None
 
     __perf_data = list()
     __output_data = dict()
@@ -557,9 +565,119 @@ class PluginData():
 
     def do_exit(self):
 
-        print(self.return_output_data())
+        if args.inventory is True and self.inventory is not None:
+            print(self.inventory.to_json())
+        else:
+            print(self.return_output_data())
 
         exit(self.get_return_status(True))
+
+class InventoryItem(object):
+    """
+
+    """
+    valid_attributes = None
+    init_done = False
+
+    def __init__(self, **kwargs):
+        for attribute in self.valid_attributes:
+            #super().__setattr__(attribute, None)
+            setattr(self, attribute, None)
+
+        self.init_done = True
+
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+
+    def to_dict(self):
+        output = self.__dict__
+        del output["init_done"]
+
+        return output
+
+    def __setattr__(self, key, value):
+        if self.init_done is True and key not in self.valid_attributes:
+            raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, key))
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            def is_int(v):
+                return v=='0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
+
+            def is_float(v):
+                try:     i = float(v)
+                except:  return False
+                return True
+
+            if is_int(value):
+                value = int(value)
+
+            elif is_float(value):
+                value = float(value)
+
+            if value.upper in status_types.keys():
+                value = value.upper()
+
+        super().__setattr__(key, value)
+
+class Drive(InventoryItem):
+    valid_attributes = drive_attributes
+
+class Processor(InventoryItem):
+    valid_attributes = processor_attributes
+
+class PowerSupply(InventoryItem):
+    valid_attributes = ps_attributes
+
+class Inventory(object):
+    """
+
+    """
+    base_structure = dict()
+
+    inventory_start = None
+
+    valid_classes = {
+        "drives": Drive,
+        "processors": Processor,
+        "power_supplies": PowerSupply
+    }
+
+    def __init__(self):
+        for attribute_name, _ in self.valid_classes.items():
+            self.base_structure[attribute_name] = list()
+
+        # set metadata
+        self.inventory_start = datetime.datetime.utcnow()
+
+    def add(self, object):
+
+        added_successfully = False
+
+        for attribute_name, class_definition in self.valid_classes.items():
+            if isinstance(object, class_definition):
+                self.base_structure[attribute_name].append(object.to_dict())
+                added_successfully = True
+
+        if added_successfully is False:
+            raise AttributeError("'%s' object not allowed to add to a '%s' class item." %
+                                 (object.__class__.__name__, InventoryItem.__name__))
+
+    def to_json(self):
+        inventory_content = self.base_structure
+
+        # add metadata
+        inventory_content["meta"] = {
+            "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
+            "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
+            "format_version": inventory_version_string
+        }
+
+        output = { "inventory": inventory_content }
+
+        return json.dumps(output, default=lambda o: o.__dict__,
+                          sort_keys=True, indent=4)
 
 class VendorHPEData():
 
@@ -821,9 +939,11 @@ def parse_command_line():
                         help="set number of maximum retries (default: %d)" % default_conn_max_retries)
     group.add_argument("-t", "--timeout",  type=int, default=default_conn_timeout,
                         help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
+    group.add_argument("-i", "--inventory",  action='store_true',
+                        help="return inventory in json format instead of regular plugin output")
 
     # require at least one argument
-    group = parser.add_argument_group(title="query status/health informations (at least one is required)")
+    group = parser.add_argument_group(title="query status/health information (at least one is required)")
     group.add_argument("--storage", dest="requested_query", action='append_const', const="storage",
                         help="request storage health")
     group.add_argument("--proc", dest="requested_query", action='append_const', const="proc",
@@ -848,6 +968,8 @@ def parse_command_line():
                         help="request System Log status")
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
                         help="request Management Processor Log status")
+    group.add_argument("--all", dest="requested_query", action='append_const', const="all",
+                        help="request all of the above information at once.")
 
     result = parser.parse_args()
 
@@ -917,7 +1039,7 @@ def get_single_chassi_power(redfish_url):
 
             status_data = get_status_data(grab(ps,"Status"))
 
-            status = status_data.get("Health")
+            health = status_data.get("Health")
             operatinal_status = status_data.get("State")
             part_number = ps.get("PartNumber")
             model = ps.get("Model") or part_number
@@ -932,7 +1054,7 @@ def get_single_chassi_power(redfish_url):
                     bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.BayNumber")
                     ps_hp_status = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerSupplyStatus.State")
                     if ps_hp_status is not None and ps_hp_status == "Unknown":
-                        status = "CRITICAL"
+                        health = "CRITICAL"
 
                 elif plugin.rf.vendor == "Lenovo":
                     bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.Location.Info")
@@ -943,24 +1065,41 @@ def get_single_chassi_power(redfish_url):
             if bay is None:
                 bay = ps_num
 
-            status_text = "Power supply {bay} {model}status is: {status}"
-            printed_status = status
+            plugin.inventory.add(PowerSupply(
+                model = model,
+                bay = bay,
+                health_status = health,
+                operation_status = operatinal_status,
+                last_power_output = last_power_output,
+                serial = ps.get("SerialNumber"),
+                type = ps.get("PowerSupplyType"),
+                capacity_in_watt = ps.get("PowerCapacityWatts"),
+                firmware = ps.get("FirmwareVersion"),
+                vendor = ps.get("Manufacturer"),
+                input_voltage = ps.get("LineInputVoltage"),
+                part_number = ps.get("SparePartNumber") or ps.get("PartNumber"),
+                id = ps.get("MemberId"),
+                name = ps.get("Name")
+            ))
+
+            printed_status = health
             printed_model = ""
 
-            if status is None:
+            if health is None:
                 printed_status = operatinal_status
                 if operatinal_status == "Absent":
-                    status = "OK"
+                    health = "OK"
                     ps_absent += 1
                 if operatinal_status == "Enabled":
-                    status = "OK"
+                    health = "OK"
 
             if model is not None:
                 printed_model = "(%s) " % model.strip()
 
-            status_text = status_text.format(bay=str(bay), model=printed_model, status=printed_status)
+            status_text = "Power supply {bay} {model}status is: {status}".format(
+                bay=str(bay), model=printed_model, status=printed_status)
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health, status_text)
 
             if last_power_output is not None:
                 plugin.add_perf_data(f"ps_{bay}", int(last_power_output))
@@ -3245,24 +3384,27 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args)
 
+    # initialize inventory
+    plugin.inventory = Inventory()
+
     # try to get systems, managers and chassis IDs
     discover_system_properties()
 
     # get basic informations
     get_basic_system_info()
 
-    if "power"      in args.requested_query: get_chassi_data("power")
-    if "temp"       in args.requested_query: get_chassi_data("temp")
-    if "fan"        in args.requested_query: get_chassi_data("fan")
-    if "proc"       in args.requested_query: get_system_data("procs")
-    if "memory"     in args.requested_query: get_system_data("mem")
-    if "nic"        in args.requested_query: get_system_data("nics")
-    if "storage"    in args.requested_query: get_storage()
-    if "bmc"        in args.requested_query: get_bmc_info()
-    if "info"       in args.requested_query: get_system_info()
-    if "firmware"   in args.requested_query: get_firmware_info()
-    if "mel"        in args.requested_query: get_event_log("Manager")
-    if "sel"        in args.requested_query: get_event_log("System")
+    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data("power")
+    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data("temp")
+    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data("fan")
+    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data("procs")
+    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data("mem")
+    if any(x in args.requested_query for x in ['nic', 'all']):      get_system_data("nics")
+    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage()
+    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
+    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info()
+    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info()
+    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
+    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log("System")
 
     plugin.do_exit()
 
