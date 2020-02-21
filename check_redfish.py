@@ -72,9 +72,11 @@ nic_attributes = [ "id", "name", "current_speed", "capable_speed", "health_statu
                    "full_duplex", "autoneg", "ipv4_addresses", "ipv6_addresses", "mac_address", "link_type", "port_name",
                    "system_ids"]
 system_attributes = [ "id", "name", "serial", "model", "manufacturer", "chassi_ids", "bios_version", "host_name", "power_state",
-                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type" ]
+                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led" ]
 firmware_attributes = [ "id", "name", "version", "location", "updateable", "health_status", "operation_status" ]
-
+manager_attributes = []
+chassi_attributes = [ "id", "name", "model", "type", "manufacturer", "system_ids", "health_status", "operation_status",
+                      "indicator_led", "serial", "sku" ]
 
 class RedfishConnection():
 
@@ -593,10 +595,12 @@ class PluginData():
 
     def do_exit(self):
 
+        # return inventory and exit with 0
         if args.inventory is True and self.inventory is not None:
             print(self.inventory.to_json())
-        else:
-            print(self.return_output_data())
+            exit(0)
+
+        print(self.return_output_data())
 
         exit(self.get_return_status(True))
 
@@ -672,7 +676,7 @@ class InventoryItem(object):
                 return True
 
             # skip formating of certain attributes
-            if value is not None and key not in [ "id", "name", "firmware", "serial" ]:
+            if value is not None and key not in [ "id", "name", "firmware", "serial", "version" ]:
                 if is_int(value):
                     value = int(float(value))
 
@@ -742,6 +746,14 @@ class System(InventoryItem):
 class Firmware(InventoryItem):
     inventory_item_name = "firmware"
     valid_attributes = firmware_attributes
+
+class Manager(InventoryItem):
+    inventory_item_name = "managers"
+    valid_attributes = manager_attributes
+
+class Chassi(InventoryItem):
+    inventory_item_name = "chassis"
+    valid_attributes = chassi_attributes
 
 class Inventory(object):
     """
@@ -3350,6 +3362,12 @@ def get_system_info():
     for system in systems:
         get_single_system_info(system)
 
+    # add chassi inventory here too
+    if args.inventory is True:
+
+        for chassi in plugin.rf.connection.system_properties.get("chassis"):
+            get_single_chassi_info(chassi)
+
     return
 
 def get_single_system_info(redfish_url):
@@ -3388,6 +3406,7 @@ def get_single_system_info(redfish_url):
         power_state = system_response.get("PowerState"),
         bios_version = system_response.get("BiosVersion"),
         host_name = system_response.get("HostName"),
+        indicator_led = system_response.get("IndicatorLED"),
         cpu_num = grab(system_response, "ProcessorSummary.Count"),
         part_number = system_response.get("PartNumber"),
         mem_size = mem_size,
@@ -3428,6 +3447,38 @@ def get_single_system_info(redfish_url):
 
     return
 
+def get_single_chassi_info(redfish_url):
+
+    global plugin
+
+    chassi_response = plugin.rf.get(redfish_url)
+
+    # get model data
+    model = chassi_response.get("Model")
+
+    # get status data
+    status_data = get_status_data(chassi_response.get("Status"))
+
+    chassi_inventory = Chassi(
+        id = chassi_response.get("Id"),
+        name = chassi_response.get("Name"),
+        manufacturer = chassi_response.get("Manufacturer"),
+        serial = chassi_response.get("SerialNumber"),
+        health_status = status_data.get("Health"),
+        operation_status = status_data.get("State"),
+        sku = chassi_response.get("SKU"),
+        indicator_led = chassi_response.get("IndicatorLED"),
+        model = model,
+        type = chassi_response.get("ChassisType")
+    )
+
+    if args.verbose:
+        chassi_inventory.source_data = chassi_response
+
+    plugin.inventory.add(chassi_inventory)
+
+    return
+
 def get_firmware_info():
 
     global plugin
@@ -3455,6 +3506,7 @@ def get_firmware_info():
     else:
         get_firmware_info_generic()
 
+    # return gathered firmware information
     firmware_health_summary = "OK"
     for firmware_inventory in plugin.inventory.get(Firmware):
 
@@ -3473,7 +3525,9 @@ def get_firmware_info():
 
         name = firmware_inventory.name
         id = ""
-        if firmware_inventory.name != firmware_inventory.id:
+        if plugin.rf.vendor != "HPE" and firmware_inventory.id is not None and \
+                firmware_inventory.name != firmware_inventory.id:
+
             id = f" ({firmware_inventory.id})"
 
         location = ""
@@ -3498,10 +3552,13 @@ def get_firmware_info_hpe_ilo4(system_id):
 
     for key, firmware_entry in firmware_response.get("Current").items():
 
+        fw_id = 0
         for firmware_entry_object in firmware_entry:
 
+            fw_id += 1
+
             firmware_inventory = Firmware(
-                id = firmware_entry_object.get("Id"),
+                id = fw_id,
                 name = firmware_entry_object.get("Name"),
                 version = firmware_entry_object.get("VersionString"),
                 location = firmware_entry_object.get("Location")
@@ -3511,10 +3568,6 @@ def get_firmware_info_hpe_ilo4(system_id):
                 firmware_inventory.source_data = firmware_entry_object
 
             plugin.inventory.add(firmware_inventory)
-
-           # plugin.add_output_data("OK", f"{firmware_inventory.name} ({firmware_inventory.location}): {firmware_inventory.version}")
-
-#    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Current")), summary = True)
 
     return
 
@@ -3542,7 +3595,8 @@ def get_firmware_info_fujitsu(system_id):
                 fw_info = irmc_firmware_informations.get(bmc_fw_bank)
                 if fw_info is not None:
                     firmware_entries.append(
-                        { "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
+                        { "id": bmc_fw_bank,
+                          "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
                           "version": "%s, Booter %s, SDDR: %s/%s (%s)," % (
                             fw_info.get("FirmwareVersion"),
                             fw_info.get("BooterVersion"),
@@ -3571,6 +3625,7 @@ def get_firmware_info_fujitsu(system_id):
                     ps_fw_version = ps_data.get("FirmwareVersion")
 
                     firmware_entries.append({
+                        "id": f"{ps_location}",
                         "name": f"Power Supply {ps_manufacturer} {ps_model}",
                         "version": f"{ps_fw_version}",
                         "location": f"{ps_location}"
@@ -3597,9 +3652,10 @@ def get_firmware_info_fujitsu(system_id):
                 drive_name = drive_response.get("Name")
                 drive_firmware = drive_response.get("Revision")
                 drive_slot = grab(drive_response, f"Oem.{plugin.rf.vendor_dict_key}.SlotNumber")
-                drive_storage_controller = storage_member.get("Id")
+                drive_storage_controller = controller_response.get("Id")
 
                 firmware_entries.append({
+                    "id": f"Drive:{drive_storage_controller}:{drive_slot}",
                     "name": f"Drive {drive_name}",
                     "version": f"{drive_firmware}",
                     "location": f"{drive_storage_controller}:{drive_slot}"
@@ -3608,11 +3664,14 @@ def get_firmware_info_fujitsu(system_id):
     # get other firmware
     redfish_url = f"{system_id}/Oem/%s/FirmwareInventory/" % plugin.rf.vendor_dict_key
 
+    system_id_num = system_id.rstrip("/").split("/")[-1]
+
     firmware_response = plugin.rf.get(redfish_url)
 
     # get BIOS
     if firmware_response.get("SystemBIOS"):
         firmware_entries.append({
+            "id": f"System:{system_id_num}",
             "name": "SystemBIOS",
             "version": "%s" % firmware_response.get("SystemBIOS"),
             "location": "System Board"
@@ -3625,11 +3684,16 @@ def get_firmware_info_fujitsu(system_id):
             continue
 
         if isinstance(value, dict) and value.get("@odata.id") is not None:
+            component_type = value.get("@odata.id").rstrip("/").split("/")[-1]
             component_fw_data = plugin.rf.get(value.get("@odata.id"))
 
             if component_fw_data.get("Ports") is not None and len(component_fw_data.get("Ports")) > 0:
 
+                component_id = 0
                 for component_entry in component_fw_data.get("Ports"):
+
+                    component_id += 1
+
                     component_name = component_entry.get("AdapterName")
                     component_location = component_entry.get("ModuleName")
                     component_bios_version = component_entry.get("BiosVersion")
@@ -3638,6 +3702,7 @@ def get_firmware_info_fujitsu(system_id):
                     component_port = component_entry.get("PortId")
 
                     firmware_entries.append({
+                        "id": f"{component_type}_Port_{component_id}",
                         "name": f"{component_name}",
                         "version": f"{component_fw_version} (BIOS: {component_bios_version})",
                         "location": f"{component_location} {component_slot}/{component_port}"
@@ -3645,36 +3710,32 @@ def get_firmware_info_fujitsu(system_id):
 
             if component_fw_data.get("Adapters") is not None and len(component_fw_data.get("Adapters")) > 0:
 
+                component_id = 0
                 for component_entry in component_fw_data.get("Adapters"):
+
+                    component_id += 1
+
                     component_name = component_entry.get("ModuleName")
                     component_pci_segment = component_entry.get("PciSegment")
                     component_bios_version = component_entry.get("BiosVersion")
                     component_fw_version = component_entry.get("FirmwareVersion")
 
-                    system_id_num = system_id.split("/")[-1]
-
                     firmware_entries.append({
+                        "id": f"{component_type}_Adapter_{component_id}",
                         "name": f"{component_name} controller",
                         "version": f"{component_fw_version} (BIOS: {component_bios_version})",
                         "location": f"{system_id_num}:{component_pci_segment}"
                     })
 
+    # add firmware entry to inventory
     for fw_entry in firmware_entries:
 
-        firmware_inventory = Firmware(
-            name = fw_entry.get("name"),
-            version = fw_entry.get("version"),
-            location = fw_entry.get("location")
-        )
+        firmware_inventory = Firmware(**fw_entry)
 
         if args.verbose:
             firmware_inventory.source_data = fw_entry
 
         plugin.inventory.add(firmware_inventory)
-
-           # plugin.add_output_data("OK", "%s (%s): %s" % (fw_entry.get("name"), fw_entry.get("location"), fw_entry.get("version")))
-
-#    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_entries), summary = True)
 
     return
 
