@@ -43,7 +43,7 @@ default_conn_max_retries = 3
 default_conn_timeout = 7
 
 # inventory definition
-inventory_version_string = "0.1"
+inventory_layout_version_string = "0.1"
 physical_drive_attributes = [ "id", "name", "serial", "type", "speed_in_rpm", "health_status", "operation_status", "bay",
                               "size_in_byte", "firmware", "model", "power_on_hours", "interface_type", "interface_speed",
                               "encrypted", "manufacturer", "temperature", "location", "storage_port", "system_ids",
@@ -70,11 +70,12 @@ temp_fan_common_attributes = [ "id", "name", "physical_context", "health_status"
                    "upper_threshold_fatal", "reading_unit", "location", "chassi_ids"]
 nic_attributes = [ "id", "name", "current_speed", "capable_speed", "health_status", "operation_status", "link_status",
                    "full_duplex", "autoneg", "ipv4_addresses", "ipv6_addresses", "mac_address", "link_type", "port_name",
-                   "system_ids"]
+                   "system_ids", "hostname", "manager_ids"]
 system_attributes = [ "id", "name", "serial", "model", "manufacturer", "chassi_ids", "bios_version", "host_name", "power_state",
                       "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led" ]
 firmware_attributes = [ "id", "name", "version", "location", "updateable", "health_status", "operation_status" ]
-manager_attributes = []
+manager_attributes = [ "id", "name", "firmware", "model", "type", "system_ids", "chassi_ids", "licenses", "health_status",
+                       "operation_status" ]
 chassi_attributes = [ "id", "name", "model", "type", "manufacturer", "system_ids", "health_status", "operation_status",
                       "indicator_led", "serial", "sku" ]
 
@@ -610,29 +611,22 @@ class InventoryItem(object):
     """
     valid_attributes = None
     inventory_item_name = None
-    init_done = False
 
     def __init__(self, **kwargs):
+
         if args.verbose:
             self.valid_attributes.append("source_data")
+
         for attribute in self.valid_attributes:
             value = None
             # references with ids are always lists
-            if attribute.endswith("_ids"):
+            if attribute.endswith("_ids") or attribute in ["licenses", "ipv4_addresses", "ipv6_addresses"]:
                 value = list()
 
-            setattr(self, attribute, value)
-
-        self.init_done = True
+            super().__setattr__(attribute, value)
 
         for k,v in kwargs.items():
             setattr(self, k, v)
-
-    def to_dict(self):
-        output = self.__dict__
-        del output["init_done"]
-
-        return output
 
     def update(self, data_key, data_value, append=False):
 
@@ -649,7 +643,9 @@ class InventoryItem(object):
         setattr(self, data_key, data_value)
 
     def __setattr__(self, key, value):
-        if self.init_done is False or key == "source_data":
+
+        # add source data without any formatting
+        if key == "source_data":
             super().__setattr__(key, value)
             return
 
@@ -830,7 +826,7 @@ class Inventory(object):
         inventory_content["meta"] = {
             "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
             "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
-            "format_version": inventory_version_string,
+            "inventory_layout_version": inventory_layout_version_string,
             "data_retrieval_issues": self.data_retrieval_issues,
             "host_that_collected_inventory": os.uname()[1],
             "script_version": __version__
@@ -3453,9 +3449,6 @@ def get_single_chassi_info(redfish_url):
 
     chassi_response = plugin.rf.get(redfish_url)
 
-    # get model data
-    model = chassi_response.get("Model")
-
     # get status data
     status_data = get_status_data(chassi_response.get("Status"))
 
@@ -3468,7 +3461,7 @@ def get_single_chassi_info(redfish_url):
         operation_status = status_data.get("State"),
         sku = chassi_response.get("SKU"),
         indicator_led = chassi_response.get("IndicatorLED"),
-        model = model,
+        model = chassi_response.get("Model"),
         type = chassi_response.get("ChassisType")
     )
 
@@ -3571,7 +3564,7 @@ def get_firmware_info_hpe_ilo4(system_id):
 
     return
 
-def get_firmware_info_fujitsu(system_id):
+def get_firmware_info_fujitsu(system_id, bmc_only=False):
 
     # there is room for improvement
 
@@ -3588,7 +3581,19 @@ def get_firmware_info_fujitsu(system_id):
 
     if manager_ids is not None and len(manager_ids) > 0:
 
-        irmc_firmware_informations = get_bmc_firmware_fujitsu(manager_ids[0])
+        manager_response = plugin.rf.get(manager_ids[0])
+
+        # get configuration
+        iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
+
+        iRMCConfiguration = None
+        if iRMCConfiguration_link is not None:
+            iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
+
+        irmc_firmware_informations = None
+        firmware_information_link = grab(iRMCConfiguration, f"FWUpdate/@odata.id", separator="/")
+        if firmware_information_link is not None:
+            irmc_firmware_informations = plugin.rf.get(firmware_information_link)
 
         if irmc_firmware_informations is not None:
             for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
@@ -3597,7 +3602,7 @@ def get_firmware_info_fujitsu(system_id):
                     firmware_entries.append(
                         { "id": bmc_fw_bank,
                           "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
-                          "version": "%s, Booter %s, SDDR: %s/%s (%s)," % (
+                          "version": "%s, Booter %s, SDDR: %s/%s (%s)" % (
                             fw_info.get("FirmwareVersion"),
                             fw_info.get("BooterVersion"),
                             fw_info.get("SDRRVersion"),
@@ -3607,6 +3612,12 @@ def get_firmware_info_fujitsu(system_id):
                           "location": "System Board"
                         }
                     )
+
+        # special case:
+        #   Firmware information was requested from bmc check.
+        #   So we just return the bmc firmware list
+        if bmc_only is True:
+         return firmware_entries
 
     # get power supply firmware
     chassie_ids = plugin.rf.connection.system_properties.get("chassis")
@@ -3821,13 +3832,10 @@ def get_bmc_info():
         return
 
     for manager in managers:
-        if plugin.rf.vendor == "HPE":
-            get_bmc_info_hpe(manager)
 
-        elif plugin.rf.vendor == "Lenovo":
-            get_bmc_info_lenovo(manager)
-
-        elif plugin.rf.vendor == "Huawei":
+        # ToDo:
+        #   add Huawei also to generic BMC function
+        if plugin.rf.vendor == "Huawei":
             get_bmc_info_huawei(manager)
 
         else:
@@ -3835,172 +3843,87 @@ def get_bmc_info():
 
     return
 
-def get_bmc_info_hpe(redfish_url):
+def get_bmc_info_generic(redfish_url):
 
     global plugin
 
-    view_response = plugin.rf.get_view(f"{redfish_url}/" + plugin.rf.vendor_data.expand_string)
+    """
+    Possible Infos to add
+    * NTP Status
+    * NTP servers configured
+    * BMC accounts
+    * BIOS settings (maybe, varies a lot between vendors)
+    """
 
+    view_response = plugin.rf.get_view(f"{redfish_url}{plugin.rf.vendor_data.expand_string}")
+
+    # HPE iLO 5 view
     if view_response.get("ILO"):
         manager_response = view_response.get("ILO")[0]
     else:
         manager_response = view_response
 
-    # get general informations
-    ilo_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
-
-    # firmware
-    ilo_firmware = grab(ilo_data, "Firmware.Current")
-    ilo_fw_date = ilo_firmware.get("Date")
-    ilo_fw_version = ilo_firmware.get("VersionString")
-
-    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_fw_date})")
-
-    # license
-    ilo_license_string = grab(ilo_data, "License.LicenseString")
-    ilo_license_key = grab(ilo_data, "License.LicenseKey")
-
-    plugin.add_output_data("OK", f"Licenses: {ilo_license_string} ({ilo_license_key})")
-
-    # iLO Self Test
-    for self_test in ilo_data.get("iLOSelfTestResults"):
-
-        status = self_test.get("Status")
-
-        if status is None or status == "Informational":
-            continue
-
-        status = status.upper()
-
-        name = self_test.get("SelfTestName")
-        notes = self_test.get("Notes")
-
-        if notes is not None and len(notes) != 0:
-            notes = notes.strip()
-            status_text = f"SelfTest {name} ({notes}) status: {status}"
-        else:
-            status_text = f"SelfTest {name} status: {status}"
-
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
-
-    # iLO Network interfaces
-    redfish_url = f"{redfish_url}/EthernetInterfaces/" + plugin.rf.vendor_data.expand_string
-
-    if view_response.get("ILOInterfaces") is None:
-        manager_nic_response = plugin.rf.get(redfish_url)
-
-        if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
-            plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
-            return
-
-    for manager_nic_member in view_response.get("ILOInterfaces") or manager_nic_response.get("Members"):
-
-        if manager_nic_member.get("@odata.context"):
-            manager_nic = manager_nic_member
-        else:
-            manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
-
-        nic_status = get_status_data(manager_nic.get("Status"))
-
-        if nic_status.get("State") in ["Disabled", None]:
-            continue
-
-        # workaround for older ILO versions
-        if nic_status.get("Health")is not None:
-            status = nic_status.get("Health")
-        elif nic_status.get("State") == "Enabled":
-            status = "OK"
-        else:
-            status = "UNKNOWN"
-
-        speed = manager_nic.get("SpeedMbps")
-        duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
-        autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
-        host_name = manager_nic.get("HostName")
-        nic_id = manager_nic.get("Id")
-
-        status_text = f"iLO NIC {nic_id} '{host_name}' (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
-
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
-
-    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_license_string} license) all self tests and nics are in 'OK' state.", summary = True)
-
-    return
-
-def get_bmc_info_lenovo(redfish_url):
-
-    global plugin
-
-    manager_response = plugin.rf.get(redfish_url)
-
-    imm_model = manager_response.get("Model")
-    imm_fw_version = manager_response.get("FirmwareVersion")
-
-    status_text = f"{imm_model} ({imm_fw_version})"
-
-    redfish_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
-
-    chassi_response = None
-    if redfish_url is not None:
-        chassi_response = plugin.rf.get(redfish_url)
-
-    located_data = grab(chassi_response, f"Oem.{plugin.rf.vendor_dict_key}.LocatedIn")
-
-    if located_data is not None:
-        descriptive_name = located_data.get("DescriptiveName")
-        rack = located_data.get("Rack")
-
-        status_text += f" system name: {descriptive_name} ({rack})"
-
-    plugin.add_output_data("OK", status_text, summary = not args.detailed)
-
-def get_bmc_firmware_fujitsu(manager_url):
-
-    manager_response = plugin.rf.get(manager_url)
-
-    # get configuration
-    iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
-
-    iRMCConfiguration = None
-    if iRMCConfiguration_link is not None:
-        iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
-
-    firmware_information = None
-    firmware_information_link = grab(iRMCConfiguration, f"FWUpdate/@odata.id", separator="/")
-    if firmware_information_link is not None:
-        firmware_information = plugin.rf.get(firmware_information_link)
-
-    return firmware_information
-
-def get_bmc_info_generic(redfish_url):
-
-    global plugin
-
-    manager_response = plugin.rf.get(redfish_url)
-
+    # get model
     bmc_model = manager_response.get("Model")
     bmc_fw_version = manager_response.get("FirmwareVersion")
 
-    bmc_type = "iDRAC " if plugin.rf.vendor == "Dell" else ""
+    if plugin.rf.vendor == "HPE":
+        bmc_model = " ".join(bmc_fw_version.split(" ")[0:2])
 
-    status_text = f"{bmc_type}{bmc_model} (Firmware: {bmc_fw_version})"
+    if plugin.rf.vendor == "Dell":
+        if bmc_model == "13G Monolithic":
+            bmc_model = "iDRAC 8"
+        if bmc_model == "14G Monolithic":
+            bmc_model = "iDRAC 9"
 
-    manager_status = get_status_data(manager_response.get("Status"))
-    status = manager_status.get("Health")
+    status_text = f"{bmc_model} (Firmware: {bmc_fw_version})"
 
-    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+    # get status data
+    status_data = get_status_data(manager_response.get("Status"))
+    manager_inventory = Manager(
+        id = manager_response.get("Id"),
+        type = manager_response.get("ManagerType"),
+        name = manager_response.get("Name"),
+        health_status = status_data.get("Health"),
+        operation_status = status_data.get("State"),
+        model = bmc_model,
+        firmware = bmc_fw_version
+    )
+
+    if args.verbose:
+        manager_inventory.source_data = manager_response
+
+    plugin.inventory.add(manager_inventory)
+
+    # workaround for older ILO versions
+    if manager_inventory.health_status is not None:
+        bmc_status = manager_inventory.health_status
+    elif manager_inventory.operation_status == "Enabled":
+        bmc_status = "OK"
+    else:
+        bmc_status = "UNKNOWN"
+
+    plugin.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text)
 
     # BMC Network interfaces
     manager_nic_response = None
-    manager_nics_link = grab(manager_response, "EthernetInterfaces/@odata.id", separator="/")
-    if manager_nics_link is not None:
-        manager_nic_response = plugin.rf.get(f"{manager_nics_link}{plugin.rf.vendor_data.expand_string}")
+
+    if plugin.rf.vendor == "HPE" and view_response.get("ILOInterfaces") is not None:
+        manager_nic_response = { "Members": view_response.get("ILOInterfaces") }
+    else:
+        manager_nics_link = grab(manager_response, "EthernetInterfaces/@odata.id", separator="/")
+        if manager_nics_link is not None:
+            manager_nic_response = plugin.rf.get(f"{manager_nics_link}{plugin.rf.vendor_data.expand_string}")
 
     if manager_nic_response is not None:
 
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+
             status_text = f"{status_text} but no informations about the BMC network interfaces found"
         else:
+
+            #if args.detailed is False:
+            status_text = f"{status_text} and all nics are in 'OK' state."
 
             for manager_nic_member in manager_nic_response.get("Members"):
 
@@ -4009,56 +3932,134 @@ def get_bmc_info_generic(redfish_url):
                 else:
                     manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
 
-                nic_status = manager_nic.get("Status")
+                status_data = get_status_data(manager_nic.get("Status"))
 
-                if nic_status is None:
-                    nic_status = { "Health": "OK", "State": "Enabled" }
+                def get_ip_adresses(type):
 
-                if nic_status.get("State") in ["Disabled", None]:
+                    list_of_addresses = list()
+
+                    ip_addresses = grab(manager_nic, type)
+
+                    # Cisco
+                    if isinstance(ip_addresses, dict):
+                        if ip_addresses.get("Address") is not None:
+                            list_of_addresses.append(ip_addresses.get("Address"))
+
+                    if isinstance(ip_addresses, list):
+                        for ip_address in ip_addresses:
+                            if ip_address.get("Address") is not None:
+                                list_of_addresses.append(ip_address.get("Address"))
+
+                    list_of_addresses = list(set(list_of_addresses))
+
+                    return [address for address in list_of_addresses if address not in ['::', '0.0.0.0']]
+
+                # get and sanitize MAC address
+                mac_address = manager_nic.get("PermanentMACAddress")
+                if mac_address is not None:
+                    mac_address = mac_address.upper()
+
+                if plugin.rf.vendor == "Dell":
+                    id = manager_nic.get("Id")
+                else:
+                    id = "{}:{}".format(manager_inventory.id,manager_nic.get("Id"))
+
+                network_inventory = NIC(
+                    id = id,
+                    name = manager_nic.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    current_speed = manager_nic.get("SpeedMbps"),
+                    autoneg = manager_nic.get("AutoNeg"),
+                    full_duplex = manager_nic.get("FullDuplex"),
+                    hostname = manager_nic.get("HostName"),
+                    mac_address = mac_address,
+                    manager_ids = manager_inventory.id,
+                    ipv4_addresses = get_ip_adresses("IPv4Addresses"),
+                    ipv6_addresses = get_ip_adresses("IPv6Addresses"),
+                    link_type = "Ethernet",
+                    link_status = manager_nic.get("LinkStatus")
+                )
+
+                if args.verbose:
+                    network_inventory.source_data = manager_nic
+
+                plugin.inventory.add(network_inventory)
+
+                if plugin.rf.vendor == "Cisco" and manager_nic.get("InterfaceEnabled") is True:
+                    network_inventory.operation_status = "Enabled"
+
+                nic_status = None
+                if network_inventory.health_status:
+                    nic_status = network_inventory.health_status
+                elif network_inventory.operation_status == "Enabled":
+                    nic_status = "OK"
+                else:
+                    nic_status = "UNKNOWN"
+
+                if network_inventory.operation_status in ["Disabled", None]:
                     continue
 
-                if nic_status.get("Health"):
-                    status = nic_status.get("Health")
-                elif nic_status.get("State") == "Enabled":
-                    status = "OK"
-                else:
-                    status = "UNKNOWN"
-
-                speed = manager_nic.get("SpeedMbps")
-                duplex = manager_nic.get("FullDuplex")
-                autoneg = manager_nic.get("AutoNeg")
-                host_name = manager_nic.get("HostName") or "no hostname set"
-                nic_id = manager_nic.get("Id")
-                ip_addresses = list()
-
-                # get IPv4 address
-                ipv4_address = grab(manager_nic, "IPv4Addresses.Address") or grab(manager_nic, "IPv4Addresses.0.Address")
-                if ipv4_address is not None:
-                    ip_addresses.append(ipv4_address)
-
-                # get IPv6 address
-                ipv6_address  = grab(manager_nic, "IPv6Addresses.Address") or grab(manager_nic, "IPv6Addresses.0.Address")
-                if ipv6_address is not None and ipv6_address != "::":
-                    ip_addresses.append(ipv6_address)
+                host_name = network_inventory.hostname or "no hostname set"
 
                 ip_addresses_string = None
+                ip_addresses = [*network_inventory.ipv4_addresses, *network_inventory.ipv6_addresses]
                 if len(ip_addresses) > 0:
                     ip_addresses_string = "/".join(ip_addresses)
 
-                if duplex is not None:
-                    duplex = "full" if duplex is True else "half"
-                if autoneg is not None:
-                    autoneg = "on" if autoneg is True else "off"
+                duplex = autoneg = None
+                if network_inventory.full_duplex is not None:
+                    duplex = "full" if network_inventory.full_duplex is True else "half"
+                if network_inventory.autoneg is not None:
+                    autoneg = "on" if network_inventory.autoneg is True else "off"
 
-                status_text = f"NIC {nic_id} '{host_name}' (IPs: {ip_addresses_string}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
+                nic_status_text  = f"NIC {network_inventory.id} '{host_name}' (IPs: {ip_addresses_string}) "
+                nic_status_text += f"(speed: {network_inventory.current_speed}, autoneg: {autoneg}, duplex: {duplex}) status: {nic_status}"
 
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.add_output_data("CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status, nic_status_text)
 
-    # get running firmware informations from Fujitsu server
-    if plugin.rf.vendor == "Fujitsu":
+    # get license information
+    # get vendor informations
+    vendor_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
+
+    bmc_licenses = list()
+    if plugin.rf.vendor == "HPE":
+
+        ilo_license_string = grab(vendor_data, "License.LicenseString")
+        ilo_license_key = grab(vendor_data, "License.LicenseKey")
+
+        bmc_licenses.append(f"{ilo_license_string} ({ilo_license_key})")
+
+    elif plugin.rf.vendor == "Lenovo":
+
+        fod_link = grab(vendor_data, "FoD/@odata.id", separator="/")
+
+        if fod_link is not None:
+            fod_data = plugin.rf.get(f"{fod_link}/Keys{plugin.rf.vendor_data.expand_string}")
+
+            if fod_data.get("Members") is None or len(fod_data.get("Members")) > 0:
+
+                for fod_member in fod_data.get("Members"):
+                    if manager_nic_member.get("@odata.context"):
+                        licenses_data = fod_member
+                    else:
+                        licenses_data = plugin.rf.get(fod_member.get("@odata.id"))
+
+                    lic_status = licenses_data.get("Status") # valid
+                    lic_expire_date = licenses_data.get("Expires") # NO CONSTRAINTS
+                    lic_description = licenses_data.get("Description")
+
+                    license_string = f"{lic_description}"
+                    if lic_expire_date != "NO CONSTRAINTS":
+                        license_string += " (expires: {lic_expire_date}"
+
+                    license_string += f" Status: {lic_status}"
+                    bmc_licenses.append(license_string)
+
+    elif plugin.rf.vendor == "Fujitsu":
 
         # get configuration
-        iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
+        iRMCConfiguration_link = grab(vendor_data, f"iRMCConfiguration/@odata.id", separator="/")
 
         iRMCConfiguration = None
         if iRMCConfiguration_link is not None:
@@ -4069,29 +4070,66 @@ def get_bmc_info_generic(redfish_url):
         if license_informations_link is not None:
             license_informations = plugin.rf.get(license_informations_link)
 
-        irmc_firmware_informations = get_bmc_firmware_fujitsu(redfish_url)
-        if irmc_firmware_informations is not None:
-            for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
-                fw_info = irmc_firmware_informations.get(bmc_fw_bank)
-                if fw_info is not None:
-                    plugin.add_output_data("OK", "Firmware: State: %s, Booter: %s, SDDR: %s (%s), Date: %s" % (
-                        fw_info.get("FirmwareRunningState"),
-                        fw_info.get("BooterVersion"),
-                        fw_info.get("SDRRVersion"),
-                        fw_info.get("SDRRId"),
-                        fw_info.get("FirmwareBuildDate")
-                        )
-                    )
-
         if license_informations is not None and license_informations.get("Keys@odata.count") > 0:
-            licenses = list()
             for bmc_license in license_informations.get("Keys"):
-                licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
+                bmc_licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
 
-            if len(licenses) > 0:
-                plugin.add_output_data("OK", "Licenses: %s" % ", ".join(licenses))
+    manager_inventory.licenses = bmc_licenses
 
-    plugin.add_output_data("OK", f"{bmc_type}{bmc_model} ({bmc_fw_version}) and nics are in 'OK' state.", summary = True)
+    for bmc_license in bmc_licenses:
+        plugin.add_output_data("OK", f"License: {bmc_license}")
+
+    # HP ILO specific stuff
+    if plugin.rf.vendor == "HPE":
+
+        # iLO Self Test
+        for self_test in vendor_data.get("iLOSelfTestResults"):
+
+            self_test_status = self_test.get("Status")
+
+            if self_test_status in ["Informational", None]:
+                continue
+
+            self_test_status = self_test_status.upper()
+
+            self_test_name = self_test.get("SelfTestName")
+            self_test_notes = self_test.get("Notes")
+
+            if self_test_notes is not None and len(self_test_notes) != 0:
+                self_test_notes = self_test_notes.strip()
+                self_test_status_text = f"SelfTest {self_test_name} ({self_test_notes}) status: {self_test_status}"
+            else:
+                self_test_status_text = f"SelfTest {self_test_name} status: {self_test_status}"
+
+            plugin.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status, self_test_status_text)
+
+    # Lenovo specific stuff
+    if plugin.rf.vendor == "Lenovo":
+        redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
+
+        chassi_response = None
+        if redfish_chassi_url is not None:
+            chassi_response = plugin.rf.get(redfish_chassi_url)
+
+        located_data = grab(chassi_response, f"Oem.{plugin.rf.vendor_dict_key}.LocatedIn")
+
+        if located_data is not None:
+            descriptive_name = located_data.get("DescriptiveName")
+            rack = located_data.get("Rack")
+
+            system_name_string = f"System name: {descriptive_name} ({rack})"
+            if args.detailed:
+                plugin.add_output_data("OK", system_name_string)
+            else:
+                status_text += f" {system_name_string}"
+
+    # get running firmware informations from Fujitsu server
+    if plugin.rf.vendor == "Fujitsu":
+
+        for bmc_firmware in get_firmware_info_fujitsu(redfish_url,True):
+            plugin.add_output_data("OK", "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")))
+
+    plugin.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text, summary = True)
 
 def get_bmc_info_huawei(redfish_url):
 
