@@ -837,10 +837,13 @@ class Inventory(object):
             raise AttributeError("'%s' object not allowed to add to a '%s' class item." %
                                  (object.__class__.__name__, InventoryItem.__name__))
 
-        self.base_structure[object.inventory_item_name].append(object)
-
-        # TODO:
         # check if ID is already used and add issue
+        for inv_item in self.base_structure[object.inventory_item_name]:
+            if inv_item.id == object.id:
+                #raise AttributeError(f"Object id '{object.id}' already used")
+                print("Object id '{object.id}' already used", file=sys.stderr)
+
+        self.base_structure[object.inventory_item_name].append(object)
 
     def update(self, class_name, component_id, data_key, data_value, append=False):
 
@@ -848,6 +851,7 @@ class Inventory(object):
             raise AttributeError("'%s' object must be a sub class of '%s'." %
                                  (class_name.__name__, InventoryItem.__name__))
 
+        # find inventory item to update
         for inventory_item in self.base_structure[class_name.inventory_item_name]:
             if inventory_item.id == component_id:
 
@@ -1297,6 +1301,8 @@ def get_single_chassi_power(redfish_url):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
 
             ps_inventory = PowerSupply(
+                id = grab(ps, "MemberId") or ps_num,
+                name = ps.get("Name"),
                 model = model,
                 bay = bay,
                 health_status = health,
@@ -1309,8 +1315,6 @@ def get_single_chassi_power(redfish_url):
                 vendor = ps.get("Manufacturer"),
                 input_voltage = ps.get("LineInputVoltage"),
                 part_number = ps.get("SparePartNumber") or ps.get("PartNumber"),
-                id = grab(ps, "MemberId"),
-                name = ps.get("Name"),
                 chassi_ids = chassi_id
             )
 
@@ -1435,20 +1439,26 @@ def get_single_chassi_temp(redfish_url):
             status = status_data.get("Health")
             state = status_data.get("State")
 
+            name = temp.get("Name")
+            id = grab(temp, "MemberId")
+
+            if id is None:
+                id = name
+
             temp_inventory = Temperature(
-                name = temp.get("Name"),
-                id = temp.get("MemberId"),
+                name = name,
+                id = id,
                 health_status = status,
                 operation_status = state,
                 physical_context = temp.get("PhysicalContext"),
                 min_reading = temp.get("MinReadingRangeTemp"),
                 max_reading = temp.get("MaxReadingRangeTemp"),
-                lower_threshold_non_critical = temp.get("LowerThresholdNonCritical"),
-                lower_threshold_critical = temp.get("LowerThresholdCritical"),
-                lower_threshold_fatal = temp.get("LowerThresholdFatal"),
-                upper_threshold_non_critical = temp.get("UpperThresholdNonCritical"),
-                upper_threshold_critical = temp.get("UpperThresholdCritical"),
-                upper_threshold_fatal = temp.get("UpperThresholdFatal"),
+                lower_threshold_non_critical = None if temp.get("LowerThresholdNonCritical") == "N/A" else temp.get("LowerThresholdNonCritical"),
+                lower_threshold_critical = None if temp.get("LowerThresholdCritical") == "N/A" else temp.get("LowerThresholdCritical"),
+                lower_threshold_fatal = None if temp.get("LowerThresholdFatal") == "N/A" else temp.get("LowerThresholdFatal"),
+                upper_threshold_non_critical = None if temp.get("UpperThresholdNonCritical") == "N/A" else temp.get("UpperThresholdNonCritical"),
+                upper_threshold_critical = None if temp.get("UpperThresholdCritical") == "N/A" else temp.get("UpperThresholdCritical"),
+                upper_threshold_fatal = None if temp.get("UpperThresholdFatal") == "N/A" else temp.get("UpperThresholdFatal"),
                 chassi_ids = chassi_id
             )
 
@@ -1529,12 +1539,24 @@ def get_single_chassi_fan(redfish_url):
 
             status_data = get_status_data(grab(fan,"Status"))
 
+            id = grab(fan, "MemberId")
+            name = fan.get("FanName") or fan.get("Name")
+
+            if id is None:
+                id = name
+
+            physical_context = fan.get("PhysicalContext")
+
+            oem_data = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}")
+            if physical_contextis None:
+                physical_context = grab(oem_data, "Location") or grab(oem_data, "Position")
+
             fan_inventory = Fan(
-                id = fan.get("MemberId"),
-                name = fan.get("FanName") or fan.get("Name"),
+                id = id,
+                name = name,
                 health_status = status_data.get("Health"),
                 operation_status = status_data.get("State"),
-                physical_context = fan.get("PhysicalContext"),
+                physical_context = physical_context,
                 min_reading = fan.get("MinReadingRange"),
                 max_reading = fan.get("MaxReadingRange"),
                 lower_threshold_non_critical = fan.get("LowerThresholdNonCritical"),
@@ -3608,9 +3630,9 @@ def get_firmware_info_hpe_ilo4(system_id):
 
     firmware_response = plugin.rf.get(redfish_url)
 
+    fw_id = 0
     for key, firmware_entry in firmware_response.get("Current").items():
 
-        fw_id = 0
         for firmware_entry_object in firmware_entry:
 
             fw_id += 1
@@ -3846,6 +3868,9 @@ def get_firmware_info_generic():
 
         if component_id == component_name and firmware_entry.get("SoftwareId") is not None:
             component_name = firmware_entry.get("SoftwareId")
+
+        if component_id == None:
+            component_id = component_name
 
         # get firmware version
         component_version = firmware_entry.get("Version")
