@@ -3833,13 +3833,7 @@ def get_bmc_info():
 
     for manager in managers:
 
-        # ToDo:
-        #   add Huawei also to generic BMC function
-        if plugin.rf.vendor == "Huawei":
-            get_bmc_info_huawei(manager)
-
-        else:
-            get_bmc_info_generic(manager)
+        get_bmc_info_generic(manager)
 
     return
 
@@ -3989,6 +3983,10 @@ def get_bmc_info_generic(redfish_url):
                 if plugin.rf.vendor == "Cisco" and manager_nic.get("InterfaceEnabled") is True:
                     network_inventory.operation_status = "Enabled"
 
+                # Huawei is completely missing any status information
+                if plugin.rf.vendor == "Huawei" and network_inventory.operation_status is None:
+                    network_inventory.operation_status = "Enabled"
+
                 nic_status = None
                 if network_inventory.health_status:
                     nic_status = network_inventory.health_status
@@ -4074,6 +4072,15 @@ def get_bmc_info_generic(redfish_url):
             for bmc_license in license_informations.get("Keys"):
                 bmc_licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
 
+    elif plugin.rf.vendor == "Huawei":
+
+        ibmc_license_link = vendor_data.get("LicenseService")
+
+        if ibmc_license_link is not None and len(ibmc_license_link) > 0:
+            ibmc_lic = plugin.rf.get(ibmc_license_link.get("@odata.id"))
+
+            bmc_licenses.append("%s (%s)" % ( ibmc_lic.get("InstalledStatus"), ibmc_lic.get("LicenseClass")))
+
     manager_inventory.licenses = bmc_licenses
 
     for bmc_license in bmc_licenses:
@@ -4129,62 +4136,22 @@ def get_bmc_info_generic(redfish_url):
         for bmc_firmware in get_firmware_info_fujitsu(redfish_url,True):
             plugin.add_output_data("OK", "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")))
 
+    # get Huawei Server location data
+    if plugin.rf.vendor == "Huawei":
+
+        ibmc_location = vendor_data.get("DeviceLocation")
+        if ibmc_location is not None and len(ibmc_location) > 0:
+
+            location_string = f"Location: {ibmc_location}"
+            if args.detailed:
+                plugin.add_output_data("OK", location_string)
+            else:
+                status_text += f" {location_string}"
+
+
     plugin.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text, summary = True)
 
-def get_bmc_info_huawei(redfish_url):
-
-    global plugin
-
-    manager_response = plugin.rf.get(f"{redfish_url}/{plugin.rf.vendor_data.expand_string}")
-
-    ibmc_model = manager_response.get("Model")
-    ibmc_fw_version = manager_response.get("FirmwareVersion")
-
-    # get general informations
-    vendor_ibmc_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
-
-    if vendor_ibmc_data is None:
-        plugin.add_output_data("UNKNOWN", "No iBMC data found.")
-        return
-
-    ibmc_uptime = vendor_ibmc_data.get("BMCUpTime")
-    ibmc_ipv4 = vendor_ibmc_data.get("DeviceIPv4")
-    ibmc_ipv6 = vendor_ibmc_data.get("DeviceIPv6")
-    ibmc_hostname = vendor_ibmc_data.get("HostName")
-    ibmc_domainname = vendor_ibmc_data.get("DomainName")
-    ibmc_location = vendor_ibmc_data.get("DeviceLocation")
-
-    ibmc_license_link = vendor_ibmc_data.get("LicenseService")
-    ibmc_license_status = None
-    ibmc_license_class = None
-
-    if ibmc_license_link is not None and len(ibmc_license_link) > 0:
-        ibmc_license_informations = plugin.rf.get(ibmc_license_link.get("@odata.id"))
-
-        ibmc_license_status = ibmc_license_informations.get("InstalledStatus")
-        ibmc_license_class = ibmc_license_informations.get("LicenseClass")
-
-    status_text = f"{ibmc_model} ({ibmc_fw_version})"
-
-    if ibmc_hostname is not None:
-        status_text += f" {ibmc_hostname}"
-        if ibmc_domainname is not None and len(ibmc_domainname) > 0:
-            status_text += f".{ibmc_domainname}"
-
-    if ibmc_ipv4 and len(ibmc_ipv4) > 0:
-        status_text += f" IPv4: {ibmc_ipv4}"
-    if ibmc_ipv6 and len(ibmc_ipv6) > 0:
-        status_text += f" IPv6: {ibmc_ipv6}"
-
-    if ibmc_location and len(ibmc_location) > 0:
-        status_text += f" Location: {ibmc_location}"
-
-    if ibmc_license_status and ibmc_license_class:
-        status_text += f" License: {ibmc_license_class} (status: {ibmc_license_status})"
-
-    status = get_status_data(manager_response.get("Status")).get("Health")
-
-    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text, summary = not args.detailed)
+    return
 
 def get_basic_system_info():
 
