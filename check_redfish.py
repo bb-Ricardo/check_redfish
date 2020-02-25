@@ -57,9 +57,9 @@ storage_controller_attributes = ["id", "name", "serial", "model", "location", "f
 storage_enclosure_attributes = ["id", "name", "serial", "model", "location", "firmware", "health_status", "operation_status",
                                 "num_bays", "storage_controller_ids", "physical_drive_ids", "storage_port", "system_ids",
                                 "manufacturer"]
-processor_attributes = [ "id", "name", "serial", "model", "socket", "health_status", "operation_status",
-                         "cores", "threads", "current_speed", "max_speed", "manufacturer",
-                         "instruction_set", "architecture", "system_ids"]
+processor_attributes = [ "id", "name", "serial", "model", "socket", "health_status", "operation_status", "cores",
+                         "threads", "current_speed", "max_speed", "manufacturer", "instruction_set", "architecture",
+                         "system_ids", "L1_cache_kib", "L2_cache_kib", "L3_cache_kib"]
 memory_attributes = [ "id", "name", "serial", "socket", "slot", "channel", "health_status", "operation_status",
                       "speed", "part_number", "manufacturer", "type", "size_in_mb", "base_type", "system_ids"]
 ps_attributes = [ "id", "name", "last_power_output", "part_number", "model", "health_status", "operation_status",
@@ -1548,7 +1548,7 @@ def get_single_chassi_fan(redfish_url):
             physical_context = fan.get("PhysicalContext")
 
             oem_data = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}")
-            if physical_contextis None:
+            if physical_context is None:
                 physical_context = grab(oem_data, "Location") or grab(oem_data, "Position")
 
             fan_inventory = Fan(
@@ -1727,13 +1727,55 @@ def get_single_system_procs(redfish_url):
 
                 status_data = get_status_data(proc_response.get("Status"))
 
-                current_speed = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.CurrentClockSpeedMHz") or \
-                                grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.RatedSpeedMHz")
+                model = proc_response.get("Model")
+
+                vendor_data = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}")
+
+                # get current/regular speed
+                current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or \
+                                grab(vendor_data, "RatedSpeedMHz") or \
+                                grab(vendor_data, "FrequencyMHz")
+
+                # try to extract speed from model if current_speed is None
+                # Intel XEON CPUs
+                if current_speed is None and model is not None and "GHz" in model:
+                    model_speed = model.split("@")[-1].strip().replace("GHz","")
+                    try:
+                        current_speed = int(float(model_speed) * 1000)
+                    except:
+                        pass
+
+                # get cache information
+                L1_cache_kib = grab(vendor_data, "L1CacheKiB")
+                L2_cache_kib = grab(vendor_data, "L2CacheKiB")
+                L3_cache_kib = grab(vendor_data, "L3CacheKiB")
+
+                                    # HPE                         # Lenovo
+                vendor_cache_data = grab(vendor_data, "Cache") or grab(vendor_data, "CacheInfo")
+
+                if vendor_cache_data is not None:
+
+                    for cpu_cache in vendor_cache_data:
+
+                                      # HPE                               # Lenovo
+                        cache_size =  cpu_cache.get("InstalledSizeKB") or cpu_cache.get("InstalledSizeKByte")
+                        cache_level = cpu_cache.get("Name")            or cpu_cache.get("CacheLevel")
+
+                        if cache_size is None or cache_level is None:
+                            continue
+
+                        if "L1" in cache_level:
+                            L1_cache_kib = cache_size * 1000 / 1024
+                        if "L2" in cache_level:
+                            L2_cache_kib = cache_size * 1000 / 1024
+                        if "L3" in cache_level:
+                            L3_cache_kib = cache_size * 1000 / 1024
+
 
                 proc_inventory = Processor(
                     name = proc_response.get("Name"),
                     id = proc_response.get("Id"),
-                    model = proc_response.get("Model"),
+                    model = model,
                     socket = proc_response.get("Socket"),
                     health_status = status_data.get("Health"),
                     operation_status = status_data.get("State"),
@@ -1745,7 +1787,10 @@ def get_single_system_procs(redfish_url):
                     instruction_set = proc_response.get("InstructionSet"),
                     architecture = proc_response.get("ProcessorArchitecture"),
                     serial = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.SerialNumber"),
-                    system_ids = systems_response.get("Id")
+                    system_ids = systems_response.get("Id"),
+                    L1_cache_kib = L1_cache_kib,
+                    L2_cache_kib = L2_cache_kib,
+                    L3_cache_kib = L3_cache_kib
                 )
 
                 if args.verbose:
