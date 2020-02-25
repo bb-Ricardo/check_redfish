@@ -70,14 +70,15 @@ temp_fan_common_attributes = [ "id", "name", "physical_context", "health_status"
                    "upper_threshold_fatal", "reading_unit", "location", "chassi_ids"]
 nic_attributes = [ "id", "name", "current_speed", "capable_speed", "health_status", "operation_status", "link_status",
                    "full_duplex", "autoneg", "ipv4_addresses", "ipv6_addresses", "mac_address", "link_type", "port_name",
-                   "system_ids", "hostname", "manager_ids"]
+                   "system_ids", "hostname", "manager_ids", "chassi_ids"]
 system_attributes = [ "id", "name", "serial", "model", "manufacturer", "chassi_ids", "bios_version", "host_name", "power_state",
-                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led" ]
+                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led",
+                      "manager_ids"]
 firmware_attributes = [ "id", "name", "version", "location", "updateable", "health_status", "operation_status" ]
 manager_attributes = [ "id", "name", "firmware", "model", "type", "system_ids", "chassi_ids", "licenses", "health_status",
                        "operation_status" ]
 chassi_attributes = [ "id", "name", "model", "type", "manufacturer", "system_ids", "health_status", "operation_status",
-                      "indicator_led", "serial", "sku" ]
+                      "indicator_led", "serial", "sku", "manager_ids" ]
 
 class RedfishConnection():
 
@@ -634,13 +635,72 @@ class InventoryItem(object):
         current_data_value = getattr(self, data_key)
 
         if isinstance(current_data_value, list) and append is True:
-            if isinstance(data_value, (str, int, float)) and data_value not in current_data_value:
-                current_data_value.append(data_value)
+            if isinstance(data_value, (str, int, float)):
+                if data_value not in current_data_value:
+                    current_data_value.append(data_value)
             else:
                 current_data_value.extend(data_value)
             data_value = current_data_value
 
         setattr(self, data_key, data_value)
+
+    def add_relation(self, system_properties, relations_data):
+
+        # set inventory attributes for system properties
+        relations = {
+            "chassis": "chassi_ids",
+            "systems": "system_ids",
+            "managers": "manager_ids"
+        }
+
+        # recursive function to extract all values from nested data structure
+        def get_links_recursive(data_structure):
+
+            resource_list = list()
+
+            if isinstance(data_structure, str):
+                resource_list.append(data_structure.rstrip("/"))
+            elif isinstance(data_structure, list):
+                for item in data_structure:
+                    resource_list.extend(get_links_recursive(item))
+            elif isinstance(data_structure, dict):
+                for key, value in data_structure.items():
+                    if key == "@odata.id":
+                        resource_list.append(value.rstrip("/"))
+                    else:
+                        resource_list.extend(get_links_recursive(value))
+
+            return resource_list
+
+        if not isinstance(system_properties, dict):
+            return
+
+        if relations_data is None:
+            return
+
+        # get all values from data structure
+        relation_links = get_links_recursive(relations_data)
+
+        # iterate over managers, systems and chassis to check if
+        # this inventory item has a relation to it
+        for property, property_links in system_properties.items():
+
+            for property_link in property_links:
+                if property_link.rstrip("/") in relation_links:
+                    relations_property_attribute = relations.get(property)
+
+                    # add relation if item has attribute
+                    if relations_property_attribute is not None and hasattr(self, relations_property_attribute):
+
+                        id = property_link.rstrip("/").split("/")[-1]
+                        # check if object id is an int
+                        try:
+                            id = int(id)
+                        except:
+                            pass
+
+                        # update attribute
+                        self.update(relations_property_attribute, id, True)
 
     def __setattr__(self, key, value):
 
@@ -1358,6 +1418,8 @@ def get_single_chassi_temp(redfish_url):
 
     plugin.set_current_command("Temp")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
@@ -1387,6 +1449,7 @@ def get_single_chassi_temp(redfish_url):
                 upper_threshold_non_critical = temp.get("UpperThresholdNonCritical"),
                 upper_threshold_critical = temp.get("UpperThresholdCritical"),
                 upper_threshold_fatal = temp.get("UpperThresholdFatal"),
+                chassi_ids = chassi_id
             )
 
             if args.verbose:
@@ -1401,17 +1464,9 @@ def get_single_chassi_temp(redfish_url):
             else:
                 temp_inventory.reading = 0
 
-            """
-            TODO: fix chassi IDS
-            if temp.get("RelatedItem"):
-                for item in temp.get("RelatedItem"):
-                    if isinstance(item, dict):
-                        item_link = item.get("@odata.id")
-                    else:
-                        item_link = item
-
-                    temp_inventory.add_relation(chassi = item_link)
-            """
+            # add relations
+            temp_inventory.add_relation(plugin.rf.connection.system_properties, temp.get("Links"))
+            temp_inventory.add_relation(plugin.rf.connection.system_properties, temp.get("RelatedItem"))
 
             plugin.inventory.add(temp_inventory)
 
@@ -1461,6 +1516,8 @@ def get_single_chassi_fan(redfish_url):
 
     plugin.set_current_command("Fan")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
@@ -1486,7 +1543,8 @@ def get_single_chassi_fan(redfish_url):
                 upper_threshold_non_critical = fan.get("UpperThresholdNonCritical"),
                 upper_threshold_critical = fan.get("UpperThresholdCritical"),
                 upper_threshold_fatal = fan.get("UpperThresholdFatal"),
-                location = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info")
+                location = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info"),
+                chassi_ids = chassi_id
             )
 
             if args.verbose:
@@ -1496,17 +1554,9 @@ def get_single_chassi_fan(redfish_url):
             text_units = ""
             fan_status = fan_inventory.health_status
 
-            """
-            TODO: fix chassi IDS
-            if fan.get("RelatedItem"):
-                for item in fan.get("RelatedItem"):
-                    if isinstance(item, dict):
-                        item_link = item.get("@odata.id")
-                    else:
-                        item_link = item
-
-                    fan_inventory.add_relation(chassi = item_link)
-            """
+            # add relations
+            fan_inventory.add_relation(plugin.rf.connection.system_properties, fan.get("Links"))
+            fan_inventory.add_relation(plugin.rf.connection.system_properties, fan.get("RelatedItem"))
 
             perf_units = ""
 
@@ -1942,12 +1992,11 @@ def get_system_nics_fujitsu(redfish_url):
                 if args.verbose:
                     nic_inventory.source_data = { "nic_functions": network_function_member, "nic_port": network_port_data }
 
-                """
-                ToDo: set chassi ids
-                if network_function_member.get("Links"):
-                    for item in network_function_member.get("Links"):
-                        nic_inventory.add_relation(chassi = item)
-                """
+                # add relations
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_function_member.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_function_member.get("RelatedItem"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_port_data.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_port_data.get("RelatedItem"))
 
                 plugin.inventory.add(nic_inventory)
 
@@ -2017,12 +2066,9 @@ def get_single_system_nics(redfish_url):
                 if args.verbose:
                     nic_inventory.source_data = nic_response
 
-                """
-                ToDo: fix chassie ids
-                if nic_response.get("Links"):
-                    for item in nic_response.get("Links"):
-                        nic_inventory.add_relation(chassi = item)
-                """
+                # add relations
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, nic_response.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, nic_response.get("RelatedItem"))
 
                 plugin.inventory.add(nic_inventory)
 
@@ -3426,6 +3472,9 @@ def get_single_system_info(redfish_url):
     if args.verbose:
         system_inventory.source_data = system_response
 
+    # add relations
+    system_inventory.add_relation(plugin.rf.connection.system_properties, system_response.get("Links"))
+
     plugin.inventory.add(system_inventory)
 
     host_name = "NOT SET"
@@ -3480,6 +3529,9 @@ def get_single_chassi_info(redfish_url):
 
     if args.verbose:
         chassi_inventory.source_data = chassi_response
+
+    # add relations
+    chassi_inventory.add_relation(plugin.rf.connection.system_properties, chassi_response.get("Links"))
 
     plugin.inventory.add(chassi_inventory)
 
@@ -3900,6 +3952,9 @@ def get_bmc_info_generic(redfish_url):
     if args.verbose:
         manager_inventory.source_data = manager_response
 
+    # add relations
+    manager_inventory.add_relation(plugin.rf.connection.system_properties, manager_response.get("Links"))
+
     plugin.inventory.add(manager_inventory)
 
     # workaround for older ILO versions
@@ -3982,6 +4037,8 @@ def get_bmc_info_generic(redfish_url):
                     hostname = manager_nic.get("HostName"),
                     mac_address = mac_address,
                     manager_ids = manager_inventory.id,
+                    system_ids = manager_inventory.system_ids,
+                    chassi_ids = manager_inventory.chassi_ids,
                     ipv4_addresses = get_ip_adresses("IPv4Addresses"),
                     ipv6_addresses = get_ip_adresses("IPv6Addresses"),
                     link_type = "Ethernet",
