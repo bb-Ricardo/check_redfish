@@ -1186,6 +1186,10 @@ def get_single_chassi_power(redfish_url):
 
     power_supplies = power_data.get("PowerSupplies")
 
+    fujitsu_power_sensors = None
+    if plugin.rf.vendor == "Fujitsu":
+        fujitsu_power_sensors = grab(power_data, f"Oem.{plugin.rf.vendor_dict_key}.ChassisPowerSensors")
+
     default_text = ""
     ps_num = 0
     ps_absent = 0
@@ -1201,27 +1205,36 @@ def get_single_chassi_power(redfish_url):
             part_number = ps.get("PartNumber")
             model = ps.get("Model") or part_number
             last_power_output = ps.get("LastPowerOutputWatts")
+            capacity_in_watt = ps.get("PowerCapacityWatts")
             bay = None
 
-            oem_data = ps.get("Oem")
+            oem_data = grab(ps, f"Oem.{plugin.rf.vendor_dict_key}")
 
             if oem_data is not None:
 
                 if plugin.rf.vendor == "HPE":
-                    bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.BayNumber")
-                    ps_hp_status = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerSupplyStatus.State")
+                    bay = grab(oem_data, "BayNumber")
+                    ps_hp_status = grab(oem_data, "PowerSupplyStatus.State")
                     if ps_hp_status is not None and ps_hp_status == "Unknown":
                         health = "CRITICAL"
 
                 elif plugin.rf.vendor == "Lenovo":
-                    bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.Location.Info")
+                    bay = grab(oem_data, "Location.Info")
 
                 elif plugin.rf.vendor == "Huawei":
-                    last_power_output = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerInputWatts")
+                    last_power_output = grab(oem_data, f"PowerOutputWatts")
 
             if bay is None:
                 bay = ps_num
 
+            if capacity_in_watt is None:
+                capacity_in_watt = grab(ps, "InputRanges.0.OutputWattage")
+
+            # special Fujitsu case
+            if fujitsu_power_sensors is not None and last_power_output is None:
+                for fujitsu_power_sensor in fujitsu_power_sensors:
+                    if fujitsu_power_sensor.get("Designation") == ps.get("Name"):
+                        last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
 
             ps_inventory = PowerSupply(
                 model = model,
@@ -1231,12 +1244,12 @@ def get_single_chassi_power(redfish_url):
                 last_power_output = last_power_output,
                 serial = ps.get("SerialNumber"),
                 type = ps.get("PowerSupplyType"),
-                capacity_in_watt = ps.get("PowerCapacityWatts"),
+                capacity_in_watt = capacity_in_watt,
                 firmware = ps.get("FirmwareVersion"),
                 vendor = ps.get("Manufacturer"),
                 input_voltage = ps.get("LineInputVoltage"),
                 part_number = ps.get("SparePartNumber") or ps.get("PartNumber"),
-                id = ps.get("MemberId"),
+                id = grab(ps, "MemberId"),
                 name = ps.get("Name"),
                 chassi_ids = chassi_id
             )
