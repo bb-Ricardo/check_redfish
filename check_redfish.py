@@ -1,8 +1,9 @@
 #!/usr/bin/env python3.6
 
 self_description = \
-"""This is a monitoring plugin to check components and
+"""This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 """
@@ -1152,7 +1153,8 @@ def parse_command_line():
     group.add_argument("-c", "--critical", default="",
                         help="set critical value")
     group.add_argument("-v", "--verbose",  action='store_true',
-                        help="this will add all requests and responses to output")
+                        help="this will add all https requests and responses to output, "
+                        "also adds inventory source data to all inventory objects")
     group.add_argument("-d", "--detailed",  action='store_true',
                         help="always print detailed result")
     group.add_argument("-m", "--max",  type=int,
@@ -1161,8 +1163,6 @@ def parse_command_line():
                         help="set number of maximum retries (default: %d)" % default_conn_max_retries)
     group.add_argument("-t", "--timeout",  type=int, default=default_conn_timeout,
                         help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
-    group.add_argument("-i", "--inventory",  action='store_true',
-                        help="return inventory in json format instead of regular plugin output")
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health information (at least one is required)")
@@ -1192,6 +1192,11 @@ def parse_command_line():
                         help="request Management Processor Log status")
     group.add_argument("--all", dest="requested_query", action='append_const', const="all",
                         help="request all of the above information at once.")
+
+    # inventory
+    group = parser.add_argument_group(title="query inventory information (no health check)")
+    group.add_argument("-i", "--inventory",  action='store_true',
+                        help="return inventory in json format instead of regular plugin output")
 
     result = parser.parse_args()
 
