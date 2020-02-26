@@ -1,8 +1,9 @@
 #!/usr/bin/env python3.6
 
 self_description = \
-"""This is a monitoring plugin to check components and
+"""This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 """
@@ -16,6 +17,7 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import pprint
 import json
 import datetime
+import sys
 
 # import 3rd party modules
 import redfish
@@ -40,6 +42,44 @@ plugin = None
 # defaults
 default_conn_max_retries = 3
 default_conn_timeout = 7
+
+# inventory definition
+inventory_layout_version_string = "0.1"
+physical_drive_attributes = [ "id", "name", "serial", "type", "speed_in_rpm", "health_status", "operation_status", "bay",
+                              "size_in_byte", "firmware", "model", "power_on_hours", "interface_type", "interface_speed",
+                              "encrypted", "manufacturer", "temperature", "location", "storage_port", "system_ids",
+                              "storage_controller_ids", "storage_enclosure_ids", "logical_drive_ids", "failure_predicted",
+                              "predicted_media_life_left_percent", "part_number"]
+logical_drive_attributes = ["id", "name", "type", "health_status", "operation_status", "size_in_byte", "raid_type",
+                            "encrypted", "storage_controller_ids", "physical_drive_ids", "system_ids"]
+storage_controller_attributes = ["id", "name", "serial", "model", "location", "firmware", "health_status", "operation_status",
+                                 "backup_power_present", "cache_size_in_mb", "system_ids", "manufacturer",
+                                 "storage_enclosure_ids", "logical_drive_ids", "physical_drive_ids"]
+storage_enclosure_attributes = ["id", "name", "serial", "model", "location", "firmware", "health_status", "operation_status",
+                                "num_bays", "storage_controller_ids", "physical_drive_ids", "storage_port", "system_ids",
+                                "manufacturer"]
+processor_attributes = [ "id", "name", "serial", "model", "socket", "health_status", "operation_status", "cores",
+                         "threads", "current_speed", "max_speed", "manufacturer", "instruction_set", "architecture",
+                         "system_ids", "L1_cache_kib", "L2_cache_kib", "L3_cache_kib"]
+memory_attributes = [ "id", "name", "serial", "socket", "slot", "channel", "health_status", "operation_status",
+                      "speed", "part_number", "manufacturer", "type", "size_in_mb", "base_type", "system_ids"]
+ps_attributes = [ "id", "name", "last_power_output", "part_number", "model", "health_status", "operation_status",
+                  "bay", "model", "vendor", "serial", "firmware", "type", "capacity_in_watt", "input_voltage", "chassi_ids" ]
+temp_fan_common_attributes = [ "id", "name", "physical_context", "health_status", "operation_status", "reading",
+                   "min_reading", "max_reading", "lower_threshold_non_critical", "lower_threshold_critical",
+                   "lower_threshold_fatal", "upper_threshold_non_critical", "upper_threshold_critical",
+                   "upper_threshold_fatal", "reading_unit", "location", "chassi_ids"]
+nic_attributes = [ "id", "name", "current_speed", "capable_speed", "health_status", "operation_status", "link_status",
+                   "full_duplex", "autoneg", "ipv4_addresses", "ipv6_addresses", "mac_address", "link_type", "port_name",
+                   "system_ids", "hostname", "manager_ids", "chassi_ids"]
+system_attributes = [ "id", "name", "serial", "model", "manufacturer", "chassi_ids", "bios_version", "host_name", "power_state",
+                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led",
+                      "manager_ids"]
+firmware_attributes = [ "id", "name", "version", "location", "updateable", "health_status", "operation_status" ]
+manager_attributes = [ "id", "name", "firmware", "model", "type", "system_ids", "chassi_ids", "licenses", "health_status",
+                       "operation_status" ]
+chassi_attributes = [ "id", "name", "model", "type", "manufacturer", "system_ids", "health_status", "operation_status",
+                      "indicator_led", "serial", "sku", "manager_ids" ]
 
 class RedfishConnection():
 
@@ -327,7 +367,7 @@ class RedfishConnection():
                 redfish_response_json_data = dict({ "Members": list()})
 
             if args.verbose:
-                pprint.pprint(redfish_response_json_data)
+                pprint.pprint(redfish_response_json_data, stream=sys.stderr)
 
             if redfish_response_json_data.get("error"):
                 error = redfish_response_json_data.get("error").get("@Message.ExtendedInfo")
@@ -391,6 +431,7 @@ class RedfishConnection():
 class PluginData():
 
     rf = None
+    inventory = None
 
     __perf_data = list()
     __output_data = dict()
@@ -557,9 +598,310 @@ class PluginData():
 
     def do_exit(self):
 
+        # return inventory and exit with 0
+        if args.inventory is True and self.inventory is not None:
+            print(self.inventory.to_json())
+            exit(0)
+
         print(self.return_output_data())
 
         exit(self.get_return_status(True))
+
+class InventoryItem(object):
+    """
+
+    """
+    valid_attributes = None
+    inventory_item_name = None
+
+    def __init__(self, **kwargs):
+
+        if args.verbose:
+            self.valid_attributes.append("source_data")
+
+        for attribute in self.valid_attributes:
+            value = None
+            # references with ids are always lists
+            if attribute.endswith("_ids") or attribute in ["licenses", "ipv4_addresses", "ipv6_addresses"]:
+                value = list()
+
+            super().__setattr__(attribute, value)
+
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+
+    def update(self, data_key, data_value, append=False):
+
+        #
+        current_data_value = getattr(self, data_key)
+
+        if isinstance(current_data_value, list) and append is True:
+            if isinstance(data_value, (str, int, float)):
+                if data_value not in current_data_value:
+                    current_data_value.append(data_value)
+            else:
+                current_data_value.extend(data_value)
+            data_value = current_data_value
+
+        setattr(self, data_key, data_value)
+
+    def add_relation(self, system_properties, relations_data):
+
+        # set inventory attributes for system properties
+        relations = {
+            "chassis": "chassi_ids",
+            "systems": "system_ids",
+            "managers": "manager_ids"
+        }
+
+        # recursive function to extract all values from nested data structure
+        def get_links_recursive(data_structure):
+
+            resource_list = list()
+
+            if isinstance(data_structure, str):
+                resource_list.append(data_structure.rstrip("/"))
+            elif isinstance(data_structure, list):
+                for item in data_structure:
+                    resource_list.extend(get_links_recursive(item))
+            elif isinstance(data_structure, dict):
+                for key, value in data_structure.items():
+                    if key == "@odata.id":
+                        resource_list.append(value.rstrip("/"))
+                    else:
+                        resource_list.extend(get_links_recursive(value))
+
+            return resource_list
+
+        if not isinstance(system_properties, dict):
+            return
+
+        if relations_data is None:
+            return
+
+        # get all values from data structure
+        relation_links = get_links_recursive(relations_data)
+
+        # iterate over managers, systems and chassis to check if
+        # this inventory item has a relation to it
+        for property, property_links in system_properties.items():
+
+            for property_link in property_links:
+                if property_link.rstrip("/") in relation_links:
+                    relations_property_attribute = relations.get(property)
+
+                    # add relation if item has attribute
+                    if relations_property_attribute is not None and hasattr(self, relations_property_attribute):
+
+                        id = property_link.rstrip("/").split("/")[-1]
+                        # check if object id is an int
+                        try:
+                            id = int(id)
+                        except:
+                            pass
+
+                        # update attribute
+                        self.update(relations_property_attribute, id, True)
+
+    def __setattr__(self, key, value):
+
+        # add source data without any formatting
+        if key == "source_data":
+            super().__setattr__(key, value)
+            return
+
+        if key not in self.valid_attributes:
+            raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, key))
+
+        current_value = getattr(self, key)
+
+        if value is None and current_value is None:
+            return
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if len(value) == 0:
+                value = None
+
+            def is_int(v):
+                return v=='0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
+
+            def is_float(v):
+                try:     i = float(v)
+                except:  return False
+                return True
+
+            # skip formating of certain attributes
+            if value is not None and key not in [ "id", "name", "firmware", "serial", "version" ]:
+                if is_int(value):
+                    value = int(float(value))
+
+                elif is_float(value):
+                    value = float(value)
+
+                elif value.upper() in status_types.keys():
+                    value = value.upper()
+
+        if isinstance(current_value, list):
+            if value is None:
+                value = list()
+            elif isinstance(value, (str, int, float)):
+                value = [ value ]
+            elif not isinstance(value, list):
+                value = [ f"{value}" ]
+        else:
+            if isinstance(value, (list, dict, set, tuple)):
+                value = f"{value}"
+
+        super().__setattr__(key, value)
+
+class PhysicalDrive(InventoryItem):
+    inventory_item_name = "physical_drives"
+    valid_attributes = physical_drive_attributes
+
+class LogicalDrive(InventoryItem):
+    inventory_item_name = "logical_drives"
+    valid_attributes = logical_drive_attributes
+
+class StorageController(InventoryItem):
+    inventory_item_name = "storage_controllers"
+    valid_attributes = storage_controller_attributes
+
+class StorageEnclosure(InventoryItem):
+    inventory_item_name = "storage_enclosures"
+    valid_attributes = storage_enclosure_attributes
+
+class Processor(InventoryItem):
+    inventory_item_name = "processors"
+    valid_attributes = processor_attributes
+
+class Memory(InventoryItem):
+    inventory_item_name = "memories"
+    valid_attributes = memory_attributes
+
+class PowerSupply(InventoryItem):
+    inventory_item_name = "power_supplies"
+    valid_attributes = ps_attributes
+
+class Temperature(InventoryItem):
+    inventory_item_name = "temperatures"
+    valid_attributes = temp_fan_common_attributes
+
+class Fan(InventoryItem):
+    inventory_item_name = "fans"
+    valid_attributes = temp_fan_common_attributes
+
+class NIC(InventoryItem):
+    inventory_item_name = "nics"
+    valid_attributes = nic_attributes
+
+class System(InventoryItem):
+    inventory_item_name = "systems"
+    valid_attributes = system_attributes
+
+class Firmware(InventoryItem):
+    inventory_item_name = "firmware"
+    valid_attributes = firmware_attributes
+
+class Manager(InventoryItem):
+    inventory_item_name = "managers"
+    valid_attributes = manager_attributes
+
+class Chassi(InventoryItem):
+    inventory_item_name = "chassis"
+    valid_attributes = chassi_attributes
+
+class Inventory(object):
+    """
+
+    """
+    base_structure = dict()
+    inventory_start = None
+    data_retrieval_issues = list()
+
+
+    def __init__(self):
+        for inventory_sub_class in InventoryItem.__subclasses__():
+            if inventory_sub_class.inventory_item_name is None:
+                raise AttributeError("The 'inventory_item_name' attribute for class '%s' is undefined." %
+                                 inventory_sub_class.__name__)
+
+            self.base_structure[inventory_sub_class.inventory_item_name] = list()
+
+        # set metadata
+        self.inventory_start = datetime.datetime.utcnow()
+
+    def add(self, object):
+
+        if not isinstance(object, InventoryItem):
+            raise AttributeError("'%s' object not allowed to add to a '%s' class item." %
+                                 (object.__class__.__name__, InventoryItem.__name__))
+
+        # check if ID is already used and add issue
+        for inv_item in self.base_structure[object.inventory_item_name]:
+            if inv_item.id == object.id:
+                #raise AttributeError(f"Object id '{object.id}' already used")
+                print("Object id '{object.id}' already used", file=sys.stderr)
+
+        self.base_structure[object.inventory_item_name].append(object)
+
+    def update(self, class_name, component_id, data_key, data_value, append=False):
+
+        if not class_name in InventoryItem.__subclasses__():
+            raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                 (class_name.__name__, InventoryItem.__name__))
+
+        # find inventory item to update
+        for inventory_item in self.base_structure[class_name.inventory_item_name]:
+            if inventory_item.id == component_id:
+
+                inventory_item.update(data_key, data_value, append)
+
+    def append(self, class_name, component_id, data_key, data_value):
+
+        self.update(class_name, component_id, data_key, data_value, True)
+
+    def add_issue(self, class_name, issue = None):
+
+        if issue is None:
+            return
+
+        if not class_name in InventoryItem.__subclasses__():
+            raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                 (class_name.__name__, InventoryItem.__name__))
+
+        self.data_retrieval_issues.append(f"{class_name.inventory_item_name}: {issue}")
+
+    def get(self, class_name):
+
+        if not class_name in InventoryItem.__subclasses__():
+            raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                 (class_name.__name__, InventoryItem.__name__))
+
+        if self.base_structure[class_name.inventory_item_name] is None:
+            return list()
+
+        return self.base_structure[class_name.inventory_item_name]
+
+    def to_json(self):
+        inventory_content = self.base_structure
+
+        # add metadata
+        inventory_content["meta"] = {
+            "WARNING": "THIS is a alpha version of this implementation and possible changes might occur without notice",
+            "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
+            "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
+            "inventory_layout_version": inventory_layout_version_string,
+            "data_retrieval_issues": self.data_retrieval_issues,
+            "host_that_collected_inventory": os.uname()[1],
+            "script_version": __version__
+        }
+
+        output = { "inventory": inventory_content }
+
+        return json.dumps(output, default=lambda o: o.__dict__,
+                          sort_keys=True, indent=4)
 
 class VendorHPEData():
 
@@ -812,7 +1154,8 @@ def parse_command_line():
     group.add_argument("-c", "--critical", default="",
                         help="set critical value")
     group.add_argument("-v", "--verbose",  action='store_true',
-                        help="this will add all requests and responses to output")
+                        help="this will add all https requests and responses to output, "
+                        "also adds inventory source data to all inventory objects")
     group.add_argument("-d", "--detailed",  action='store_true',
                         help="always print detailed result")
     group.add_argument("-m", "--max",  type=int,
@@ -823,7 +1166,7 @@ def parse_command_line():
                         help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
 
     # require at least one argument
-    group = parser.add_argument_group(title="query status/health informations (at least one is required)")
+    group = parser.add_argument_group(title="query status/health information (at least one is required)")
     group.add_argument("--storage", dest="requested_query", action='append_const', const="storage",
                         help="request storage health")
     group.add_argument("--proc", dest="requested_query", action='append_const', const="proc",
@@ -848,6 +1191,13 @@ def parse_command_line():
                         help="request System Log status")
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
                         help="request Management Processor Log status")
+    group.add_argument("--all", dest="requested_query", action='append_const', const="all",
+                        help="request all of the above information at once.")
+
+    # inventory
+    group = parser.add_argument_group(title="query inventory information (no health check)")
+    group.add_argument("-i", "--inventory",  action='store_true',
+                        help="return inventory in json format instead of regular plugin output")
 
     result = parser.parse_args()
 
@@ -865,9 +1215,6 @@ def parse_command_line():
         parser.error("no remote host defined")
 
     return result
-
-def MiB_to_GB(value):
-    return int(value) * 1024 ** 2 / 1000 ** 3
 
 def get_chassi_data(data_type = None):
 
@@ -901,11 +1248,17 @@ def get_single_chassi_power(redfish_url):
 
     plugin.set_current_command("Power")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Power"
 
     power_data = plugin.rf.get_view(redfish_url)
 
     power_supplies = power_data.get("PowerSupplies")
+
+    fujitsu_power_sensors = None
+    if plugin.rf.vendor == "Fujitsu":
+        fujitsu_power_sensors = grab(power_data, f"Oem.{plugin.rf.vendor_dict_key}.ChassisPowerSensors")
 
     default_text = ""
     ps_num = 0
@@ -917,50 +1270,83 @@ def get_single_chassi_power(redfish_url):
 
             status_data = get_status_data(grab(ps,"Status"))
 
-            status = status_data.get("Health")
+            health = status_data.get("Health")
             operatinal_status = status_data.get("State")
             part_number = ps.get("PartNumber")
             model = ps.get("Model") or part_number
             last_power_output = ps.get("LastPowerOutputWatts")
+            capacity_in_watt = ps.get("PowerCapacityWatts")
             bay = None
 
-            oem_data = ps.get("Oem")
+            oem_data = grab(ps, f"Oem.{plugin.rf.vendor_dict_key}")
 
             if oem_data is not None:
 
                 if plugin.rf.vendor == "HPE":
-                    bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.BayNumber")
-                    ps_hp_status = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerSupplyStatus.State")
+                    bay = grab(oem_data, "BayNumber")
+                    ps_hp_status = grab(oem_data, "PowerSupplyStatus.State")
                     if ps_hp_status is not None and ps_hp_status == "Unknown":
-                        status = "CRITICAL"
+                        health = "CRITICAL"
 
                 elif plugin.rf.vendor == "Lenovo":
-                    bay = grab(oem_data, f"{plugin.rf.vendor_dict_key}.Location.Info")
+                    bay = grab(oem_data, "Location.Info")
 
                 elif plugin.rf.vendor == "Huawei":
-                    last_power_output = grab(oem_data, f"{plugin.rf.vendor_dict_key}.PowerInputWatts")
+                    last_power_output = grab(oem_data, f"PowerOutputWatts")
 
             if bay is None:
                 bay = ps_num
 
-            status_text = "Power supply {bay} {model}status is: {status}"
-            printed_status = status
+            if capacity_in_watt is None:
+                capacity_in_watt = grab(ps, "InputRanges.0.OutputWattage")
+
+            # special Fujitsu case
+            if fujitsu_power_sensors is not None and last_power_output is None:
+                for fujitsu_power_sensor in fujitsu_power_sensors:
+                    if fujitsu_power_sensor.get("Designation") == ps.get("Name"):
+                        last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
+
+            ps_inventory = PowerSupply(
+                id = grab(ps, "MemberId") or ps_num,
+                name = ps.get("Name"),
+                model = model,
+                bay = bay,
+                health_status = health,
+                operation_status = operatinal_status,
+                last_power_output = last_power_output,
+                serial = ps.get("SerialNumber"),
+                type = ps.get("PowerSupplyType"),
+                capacity_in_watt = capacity_in_watt,
+                firmware = ps.get("FirmwareVersion"),
+                vendor = ps.get("Manufacturer"),
+                input_voltage = ps.get("LineInputVoltage"),
+                part_number = ps.get("SparePartNumber") or ps.get("PartNumber"),
+                chassi_ids = chassi_id
+            )
+
+            if args.verbose:
+                ps_inventory.source_data = ps
+
+            plugin.inventory.add(ps_inventory)
+
+            printed_status = health
             printed_model = ""
 
-            if status is None:
+            if health is None:
                 printed_status = operatinal_status
                 if operatinal_status == "Absent":
-                    status = "OK"
+                    health = "OK"
                     ps_absent += 1
                 if operatinal_status == "Enabled":
-                    status = "OK"
+                    health = "OK"
 
             if model is not None:
                 printed_model = "(%s) " % model.strip()
 
-            status_text = status_text.format(bay=str(bay), model=printed_model, status=printed_status)
+            status_text = "Power supply {bay} {model}status is: {status}".format(
+                bay=str(bay), model=printed_model, status=printed_status)
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health, status_text)
 
             if last_power_output is not None:
                 plugin.add_perf_data(f"ps_{bay}", int(last_power_output))
@@ -981,6 +1367,7 @@ def get_single_chassi_power(redfish_url):
         for power_redundancy in power_redundancies:
 
             pr_status = power_redundancy.get("Status")
+
 
             if pr_status is not None:
                 status = pr_status.get("Health")
@@ -1041,6 +1428,8 @@ def get_single_chassi_temp(redfish_url):
 
     plugin.set_current_command("Temp")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
@@ -1056,42 +1445,78 @@ def get_single_chassi_temp(redfish_url):
             status = status_data.get("Health")
             state = status_data.get("State")
 
+            name = temp.get("Name")
+            id = grab(temp, "MemberId")
+
+            if id is None:
+                id = name
+
+            temp_inventory = Temperature(
+                name = name,
+                id = id,
+                health_status = status,
+                operation_status = state,
+                physical_context = temp.get("PhysicalContext"),
+                min_reading = temp.get("MinReadingRangeTemp"),
+                max_reading = temp.get("MaxReadingRangeTemp"),
+                lower_threshold_non_critical = None if temp.get("LowerThresholdNonCritical") == "N/A" else temp.get("LowerThresholdNonCritical"),
+                lower_threshold_critical = None if temp.get("LowerThresholdCritical") == "N/A" else temp.get("LowerThresholdCritical"),
+                lower_threshold_fatal = None if temp.get("LowerThresholdFatal") == "N/A" else temp.get("LowerThresholdFatal"),
+                upper_threshold_non_critical = None if temp.get("UpperThresholdNonCritical") == "N/A" else temp.get("UpperThresholdNonCritical"),
+                upper_threshold_critical = None if temp.get("UpperThresholdCritical") == "N/A" else temp.get("UpperThresholdCritical"),
+                upper_threshold_fatal = None if temp.get("UpperThresholdFatal") == "N/A" else temp.get("UpperThresholdFatal"),
+                chassi_ids = chassi_id
+            )
+
+            if args.verbose:
+                temp_inventory.source_data = temp
+
+            temp_inventory.reading_unit = "Celsius"
+            if temp.get("ReadingCelsius") is not None:
+                temp_inventory.reading = temp.get("ReadingCelsius")
+            elif temp.get("ReadingFahrenheit") is not None:
+                temp_inventory.reading = temp.get("ReadingFahrenheit")
+                temp_inventory.reading_unit = "Fahrenheit"
+            else:
+                temp_inventory.reading = 0
+
+            # add relations
+            temp_inventory.add_relation(plugin.rf.connection.system_properties, temp.get("Links"))
+            temp_inventory.add_relation(plugin.rf.connection.system_properties, temp.get("RelatedItem"))
+
+            plugin.inventory.add(temp_inventory)
+
             if state in [ "Absent", "Disabled", "UnavailableOffline" ]:
                 continue
 
             if status is None:
                 status = "OK" if state == "Enabled" else state
 
-            name = temp.get("Name").strip()
-            current_temp = temp.get("ReadingCelsius")
-            critical_temp = temp.get("UpperThresholdCritical")
-            warning_temp = temp.get("UpperThresholdNonCritical")
+            current_temp = temp_inventory.reading
+            critical_temp = temp_inventory.upper_threshold_critical
+            warning_temp = temp_inventory.upper_threshold_non_critical
 
             temp_num += 1
 
-            if current_temp is None:
-                current_temp = 0
+            if str(warning_temp) in [ "0", "N/A"]:
+                warning_temp = None
 
-            if warning_temp is None or str(warning_temp) == "0":
-                warning_temp = "N/A"
-
-            if warning_temp != "N/A" and float(current_temp) >= float(warning_temp):
+            if warning_temp is not None and float(current_temp) >= float(warning_temp):
                 status = "WARNING"
 
-            if critical_temp is None or str(critical_temp) == "0":
-                critical_temp = "N/A"
+            if str(critical_temp) in [ "0", "N/A"]:
+                critical_temp = None
 
-            if critical_temp != "N/A" and float(current_temp) >= float(critical_temp):
+            if critical_temp is not None and float(current_temp) >= float(critical_temp):
                 status = "CRITICAL"
 
-            status_text = f"Temp sensor {name} status is: {status} ({current_temp} °C) (max: {critical_temp} °C)"
+            critical_temp_text = "N/A" if critical_temp is None else "%.1f" % critical_temp
+
+            status_text = f"Temp sensor {temp_inventory.name} status is: {status} (%.1f °C) (max: {critical_temp_text} °C)" % current_temp
 
             plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
 
-            warning_temp = float(warning_temp) if warning_temp != "N/A" else None
-            critical_temp = float(critical_temp) if critical_temp != "N/A" else None
-
-            plugin.add_perf_data(f"temp_{name}", float(current_temp), warning=warning_temp, critical=critical_temp)
+            plugin.add_perf_data(f"temp_{temp_inventory.name}", float(current_temp), warning=warning_temp, critical=critical_temp)
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
@@ -1107,6 +1532,8 @@ def get_single_chassi_fan(redfish_url):
 
     plugin.set_current_command("Fan")
 
+    chassi_id = redfish_url.rstrip("/").split("/")[-1]
+
     redfish_url = f"{redfish_url}/Thermal"
 
     thermal_data = plugin.rf.get_view(redfish_url)
@@ -1118,51 +1545,84 @@ def get_single_chassi_fan(redfish_url):
 
             status_data = get_status_data(grab(fan,"Status"))
 
-            status = status_data.get("Health")
-            state = status_data.get("State")
-
-            if state == "Absent":
-                continue
-
-            if status is None:
-                status = "OK" if state == "Enabled" else state
-
-            fan_num += 1
-
+            id = grab(fan, "MemberId")
             name = fan.get("FanName") or fan.get("Name")
 
-            if fan.get("Oem") is not None:
+            if id is None:
+                id = name
 
-                if plugin.rf.vendor == "Lenovo":
-                    name = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info")
+            physical_context = fan.get("PhysicalContext")
 
-            speed_status = ""
+            oem_data = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}")
+            if physical_context is None:
+                physical_context = grab(oem_data, "Location") or grab(oem_data, "Position")
+
+            fan_inventory = Fan(
+                id = id,
+                name = name,
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                physical_context = physical_context,
+                min_reading = fan.get("MinReadingRange"),
+                max_reading = fan.get("MaxReadingRange"),
+                lower_threshold_non_critical = fan.get("LowerThresholdNonCritical"),
+                lower_threshold_critical = fan.get("LowerThresholdCritical"),
+                lower_threshold_fatal = fan.get("LowerThresholdFatal"),
+                upper_threshold_non_critical = fan.get("UpperThresholdNonCritical"),
+                upper_threshold_critical = fan.get("UpperThresholdCritical"),
+                upper_threshold_fatal = fan.get("UpperThresholdFatal"),
+                location = grab(fan, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info"),
+                chassi_ids = chassi_id
+            )
+
+            if args.verbose:
+                fan_inventory.source_data = fan
+
+            text_speed = ""
+            text_units = ""
+            fan_status = fan_inventory.health_status
+
+            # add relations
+            fan_inventory.add_relation(plugin.rf.connection.system_properties, fan.get("Links"))
+            fan_inventory.add_relation(plugin.rf.connection.system_properties, fan.get("RelatedItem"))
+
+            perf_units = ""
 
             # DELL, Fujitsu, Huawei
             if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
-                speed = fan.get("ReadingRPM") or fan.get("Reading")
-                speed_units = ""
+                fan_inventory.reading = fan.get("ReadingRPM") or fan.get("Reading")
+                fan_inventory.reading_unit = "RPM"
 
-                speed_status = f" ({speed} RPM)"
+                text_units = " RPM"
 
             # HP, Lenovo
             else:
-                speed = fan.get("Reading")
-                speed_units = fan.get("ReadingUnits")
+                fan_inventory.reading = fan.get("Reading")
+                fan_inventory.reading_unit = fan.get("ReadingUnits")
 
-                if speed_units:
-                    speed_units = speed_units.replace("Percent", "%")
-                else:
-                    speed_units = ""
+                if fan_inventory.reading_unit == "Percent":
 
-                speed_status = f" ({speed}{speed_units})"
+                    text_units = "%"
+                    perf_units = "%"
 
-            status_text = f"Fan '{name}'{speed_status} status is: {status}"
+            text_speed = f" ({fan_inventory.reading}{text_units})"
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin.inventory.add(fan_inventory)
 
-            if speed:
-                plugin.add_perf_data(f"Fan_{name}", int(speed), perf_uom=speed_units, warning=args.warning, critical=args.critical)
+            if fan_inventory.operation_status == "Absent":
+                continue
+
+            if fan_inventory.health_status is None:
+                fan_status = "OK" if fan_inventory.operation_status == "Enabled" else fan_inventory.operation_status
+
+            fan_num += 1
+
+            status_text = f"Fan '{fan_inventory.name}'{text_speed} status is: {fan_status}"
+
+            plugin.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status, status_text)
+
+            if fan_inventory.reading is not None:
+                plugin.add_perf_data(f"Fan_{fan_inventory.name}", int(fan_inventory.reading), perf_uom=perf_units, warning=args.warning, critical=args.critical)
 
         default_text = f"All fans ({fan_num}) are in good condition"
     else:
@@ -1244,13 +1704,15 @@ def get_single_system_procs(redfish_url):
         if proc_count is not None:
             proc_count_text = f"({proc_count}) "
 
-        if health == "OK" and args.detailed == False:
+        if health == "OK" and args.detailed == False and args.inventory == False:
             plugin.add_output_data("OK", f"All processors {proc_count_text}are in good condition", summary = True)
             return
 
     system_response_proc_key = "Processors"
     if systems_response.get(system_response_proc_key) is None:
-        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'")
+        issue_text = f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_proc_key}'"
+        plugin.inventory.add_issue(Processor, issue_text)
+        plugin.add_output_data("UNKNOWN", issue_text)
         return
 
     processors_link = grab(systems_response, f"{system_response_proc_key}/@odata.id", separator="/")
@@ -1269,21 +1731,87 @@ def get_single_system_procs(redfish_url):
 
             if proc_response.get("Id"):
 
-                proc_status = get_status_data(proc_response.get("Status"))
+                status_data = get_status_data(proc_response.get("Status"))
 
-                if proc_status.get("State") == "Absent":
+                model = proc_response.get("Model")
+
+                vendor_data = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}")
+
+                # get current/regular speed
+                current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or \
+                                grab(vendor_data, "RatedSpeedMHz") or \
+                                grab(vendor_data, "FrequencyMHz")
+
+                # try to extract speed from model if current_speed is None
+                # Intel XEON CPUs
+                if current_speed is None and model is not None and "GHz" in model:
+                    model_speed = model.split("@")[-1].strip().replace("GHz","")
+                    try:
+                        current_speed = int(float(model_speed) * 1000)
+                    except:
+                        pass
+
+                # get cache information
+                L1_cache_kib = grab(vendor_data, "L1CacheKiB")
+                L2_cache_kib = grab(vendor_data, "L2CacheKiB")
+                L3_cache_kib = grab(vendor_data, "L3CacheKiB")
+
+                                    # HPE                         # Lenovo
+                vendor_cache_data = grab(vendor_data, "Cache") or grab(vendor_data, "CacheInfo")
+
+                if vendor_cache_data is not None:
+
+                    for cpu_cache in vendor_cache_data:
+
+                                      # HPE                               # Lenovo
+                        cache_size =  cpu_cache.get("InstalledSizeKB") or cpu_cache.get("InstalledSizeKByte")
+                        cache_level = cpu_cache.get("Name")            or cpu_cache.get("CacheLevel")
+
+                        if cache_size is None or cache_level is None:
+                            continue
+
+                        if "L1" in cache_level:
+                            L1_cache_kib = cache_size * 1000 / 1024
+                        if "L2" in cache_level:
+                            L2_cache_kib = cache_size * 1000 / 1024
+                        if "L3" in cache_level:
+                            L3_cache_kib = cache_size * 1000 / 1024
+
+
+                proc_inventory = Processor(
+                    name = proc_response.get("Name"),
+                    id = proc_response.get("Id"),
+                    model = model,
+                    socket = proc_response.get("Socket"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    cores = proc_response.get("TotalCores"),
+                    threads = proc_response.get("TotalThreads"),
+                    current_speed = current_speed,
+                    max_speed = proc_response.get("MaxSpeedMHz"),
+                    manufacturer = proc_response.get("Manufacturer"),
+                    instruction_set = proc_response.get("InstructionSet"),
+                    architecture = proc_response.get("ProcessorArchitecture"),
+                    serial = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}.SerialNumber"),
+                    system_ids = systems_response.get("Id"),
+                    L1_cache_kib = L1_cache_kib,
+                    L2_cache_kib = L2_cache_kib,
+                    L3_cache_kib = L3_cache_kib
+                )
+
+                if args.verbose:
+                    proc_inventory.source_data = proc_response
+
+                plugin.inventory.add(proc_inventory)
+
+                if proc_inventory.operation_status == "Absent":
                     continue
 
                 num_procs += 1
 
-                socket = proc_response.get("Socket")
-                model =  proc_response.get("Model").strip()
+                status_text = f"Processor {proc_inventory.socket} ({proc_inventory.model}) status is: {proc_inventory.health_status}"
 
-                status = proc_status.get("Health")
-
-                status_text = f"Processor {socket} ({model}) status is: {status}"
-
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.add_output_data("CRITICAL" if proc_inventory.health_status not in ["OK", "WARNING"] else proc_inventory.health_status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No processor data returned for API URL '%s'" % proc_response.get("@odata.id"))
@@ -1314,7 +1842,7 @@ def get_single_system_mem(redfish_url):
         # Fujitsu is just Health an not HealthRollup
         health = memory_status.get("HealthRollup") or memory_status.get("Health")
 
-        if health == "OK" and args.detailed == False:
+        if health == "OK" and args.detailed == False and args.inventory == False:
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
 
@@ -1332,7 +1860,9 @@ def get_single_system_mem(redfish_url):
         memory_path_dict = systems_response
 
     if memory_path_dict.get(system_response_memory_key) is None:
-        plugin.add_output_data("UNKNOWN", f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'")
+        issue_text = f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'"
+        plugin.inventory.add_issue(Memory, issue_text)
+        plugin.add_output_data("UNKNOWN", issue_text)
         return
 
     redfish_url = memory_path_dict.get(system_response_memory_key).get("@odata.id") + "%s" % plugin.rf.vendor_data.expand_string
@@ -1354,48 +1884,69 @@ def get_single_system_mem(redfish_url):
             if mem_module_response.get("Id"):
 
                 # get size
-                size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB") or 0
+                module_size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB") or 0
 
-                size = int(size)
-                #size = MiB_to_GB(size)
+                module_size = int(module_size)
+
                 # DELL
                 if plugin.rf.vendor == "Dell":
-                    size = round(size * 1024 ** 2 / 1000 ** 2) / 1024
-                else:
-                    size = size / 1024
+                    module_size = round(module_size * 1024 ** 2 / 1000 ** 2)
 
                 # get name
-                name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator")
+                module_name = mem_module_response.get("SocketLocator") or mem_module_response.get("DeviceLocator") or mem_module_response.get("Name")
 
-                if name is None:
-                    name = "UnknownNameLocation"
+                if module_name is None:
+                    module_name = "UnknownNameLocation"
 
                 # get status
-                module_status = get_status_data(mem_module_response.get("Status"))
-                status = module_status.get("Health")
-                state = module_status.get("State")
+                status_data = get_status_data(mem_module_response.get("Status"))
 
                 if plugin.rf.vendor == "HPE" and grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus"):
-                    status = grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus")
+                    status_data["State"] = grab(mem_module_response, f"Oem.{plugin.rf.vendor_dict_key}.DIMMStatus")
 
                 elif mem_module_response.get("DIMMStatus"):
 
-                    status = mem_module_response.get("DIMMStatus")
+                    status_data["State"] = mem_module_response.get("DIMMStatus")
 
-                if status in [ "Absent", "NotPresent"] or state in [ "Absent", "NotPresent"]:
+                mem_inventory = Memory(
+                    name = module_name,
+                    id = mem_module_response.get("Id"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    size_in_mb = module_size,
+                    manufacturer = mem_module_response.get("Manufacturer"),
+                    serial = mem_module_response.get("SerialNumber"),
+                    socket = grab(mem_module_response, "MemoryLocation.Socket"),
+                    slot = grab(mem_module_response, "MemoryLocation.Slot"),
+                    channel = grab(mem_module_response, "MemoryLocation.Channel"),
+                    speed = mem_module_response.get("OperatingSpeedMhz"),
+                    part_number = mem_module_response.get("PartNumber"),
+                    type = mem_module_response.get("MemoryDeviceType") or mem_module_response.get("MemoryType"),
+                    base_type = mem_module_response.get("BaseModuleType"),
+                    system_ids = systems_response.get("Id")
+                )
+
+                if args.verbose:
+                    mem_inventory.source_data = mem_module_response
+
+                plugin.inventory.add(mem_inventory)
+
+                if mem_inventory.operation_status in [ "Absent", "NotPresent"]:
                     continue
 
-                if status is None and state is not None:
-                    status = state
-
                 num_dimms += 1
-                size_sum += size
-                status_text = f"Memory module {name} ({size}GB) status is: {status}"
+                size_sum += module_size
 
-                if status in [ "GoodInUse", "Operable"]:
-                    status = "OK"
+                if mem_inventory.operation_status in [ "GoodInUse", "Operable"]:
+                    plugin_status = "OK"
+                    status_text = mem_inventory.operation_status
+                else:
+                    plugin_status = mem_inventory.health_status
+                    status_text = plugin_status
 
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                status_text = f"Memory module {mem_inventory.name} (%.1fGB) status is: {status_text}" % ( mem_inventory.size_in_mb / 1024)
+
+                plugin.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
@@ -1403,7 +1954,7 @@ def get_single_system_mem(redfish_url):
     if num_dimms == 0:
         plugin.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
     else:
-        plugin.add_output_data("OK", f"All {num_dimms} memory modules (Total {size_sum}GB) are in good condition", summary = True)
+        plugin.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (size_sum / 1024), summary = True)
 
     return
 
@@ -1412,6 +1963,8 @@ def get_system_nics_fujitsu(redfish_url):
     global plugin
 
     plugin.set_current_command("NICs")
+
+    system_id = redfish_url.rstrip("/").split("/")[-1]
 
     redfish_url = f"{redfish_url}/NetworkInterfaces{plugin.rf.vendor_data.expand_string}"
 
@@ -1465,33 +2018,69 @@ def get_system_nics_fujitsu(redfish_url):
 
                 num_nic_ports += 1
 
-                nic_name = network_function_member.get("Name")
-                nic_dev_func_type = network_port_data.get("ActiveLinkTechnology")
-                nic_port_current_speed = network_port_data.get("CurrentLinkSpeedMbps")
-                nic_port_link_status = network_port_data.get("LinkStatus")
+
+                # get health status
+                status_data = get_status_data(network_port_data.get("Status"))
+
+                # get and sanitize MAC address
+                mac_address = grab(network_function_member, "Ethernet.PermanentMACAddress")
+                if mac_address is not None:
+                    mac_address = mac_address.upper()
+
+                # get Link speed
+                current_speed = network_port_data.get("CurrentLinkSpeedMbps") or \
+                                grab(network_port_data, "SupportedLinkCapabilities.0.LinkSpeedMbps")
+
+                # get port number
                 if network_port_data.get("PhysicalPortNumber"):
                     nic_port_name = "Port " + network_port_data.get("PhysicalPortNumber")
                 else:
                     nic_port_name = network_port_data.get("Name")
 
-                nic_port_address = network_function_member.get("Ethernet")
-                if nic_port_address is not None:
-                    nic_port_address = nic_port_address.get("PermanentMACAddress")
+                # get IP addresses
+                ipv4_addresses = grab(network_function_member, f"Oem.{plugin.rf.vendor_dict_key}.IPv4Addresses")
+                if ipv4_addresses is not None and len(ipv4_addresses) == 0:
+                    ipv4_addresses = None
 
-                # get health status
-                nic_health_status = get_status_data(network_port_data.get("Status"))
+                ipv6_addresses = grab(network_function_member, f"Oem.{plugin.rf.vendor_dict_key}.IPv6Addresses")
+                if ipv6_addresses is not None and len(ipv6_addresses) == 0:
+                    ipv6_addresses = None
+
+                nic_inventory = NIC(
+                    id = network_function_member.get("Id"),
+                    name = network_function_member.get("Name"),
+                    port_name = nic_port_name,
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    mac_address = mac_address,
+                    link_type = network_port_data.get("ActiveLinkTechnology"),
+                    current_speed = network_port_data.get("CurrentLinkSpeedMbps"),
+                    capable_speed = grab(network_port_data, "SupportedLinkCapabilities.0.CapableLinkSpeedMbps.0"),
+                    link_status = network_port_data.get("LinkStatus"),
+                    ipv4_addresses = ipv4_addresses,
+                    ipv6_addresses = ipv6_addresses,
+                    system_ids = system_id
+                )
+
+                if args.verbose:
+                    nic_inventory.source_data = { "nic_functions": network_function_member, "nic_port": network_port_data }
+
+                # add relations
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_function_member.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_function_member.get("RelatedItem"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_port_data.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, network_port_data.get("RelatedItem"))
+
+                plugin.inventory.add(nic_inventory)
 
                 # ignore interface if state is not Enabled
-                if nic_health_status.get("State") != "Enabled":
+                if nic_inventory.operation_status != "Enabled":
                     continue
 
-                if nic_port_current_speed is None:
-                    nic_port_current_speed = grab(network_port_data, "SupportedLinkCapabilities.0.LinkSpeedMbps")
-
-                nic_capable_speed = grab(network_port_data, "SupportedLinkCapabilities.0.CapableLinkSpeedMbps.0")
-
-                status_text = f"NIC {nic_id} ({nic_name}) {nic_port_name} (Type: {nic_dev_func_type}, Speed: {nic_port_current_speed}/{nic_capable_speed}, MAC: {nic_port_address}) status: {nic_port_link_status}"
-                plugin.add_output_data("CRITICAL" if nic_health_status.get("Health") not in ["OK", "WARNING"] else nic_health_status.get("Health"), status_text)
+                status_text  = f"NIC {nic_inventory.id} ({nic_inventory.name}) {nic_inventory.port_name} "
+                status_text += f"(Type: {nic_inventory.link_type}, Speed: {nic_inventory.current_speed}/{nic_inventory.capable_speed}, MAC: {nic_inventory.mac_address}) "
+                status_text += f"status: {nic_inventory.link_status}"
+                plugin.add_output_data("CRITICAL" if nic_inventory.health_status not in ["OK", "WARNING"] else nic_inventory.health_status, status_text)
 
     if num_nic_ports == 0:
         plugin.add_output_data("UNKNOWN", f"No network interface data returned for API URL '{redfish_url}'")
@@ -1505,6 +2094,8 @@ def get_single_system_nics(redfish_url):
     global plugin
 
     plugin.set_current_command("NICs")
+
+    system_id = redfish_url.rstrip("/").split("/")[-1]
 
     redfish_url = f"{redfish_url}/EthernetInterfaces/{plugin.rf.vendor_data.expand_string}"
 
@@ -1526,22 +2117,48 @@ def get_single_system_nics(redfish_url):
 
                 nic_num += 1
 
-                link_status = None
-                id = nic_response.get("Id")
+                # get health status
+                status_data = get_status_data(nic_response.get("Status"))
 
-                nic_status = get_status_data(nic_response.get("Status"))
-                status = nic_status.get("Health") or "Undefined"
-                link_status = nic_response.get("LinkStatus")
+                # get and sanitize MAC address
+                mac_address = nic_response.get("PermanentMACAddress")
+                if mac_address is not None:
+                    mac_address = mac_address.upper()
 
-                status_text = f"NIC {id} status is: {status}"
+                nic_inventory = NIC(
+                    id = nic_response.get("Id"),
+                    name = nic_response.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    link_status = nic_response.get("LinkStatus"),
+                    mac_address = mac_address,
+                    current_speed = nic_response.get("SpeedMbps"),
+                    system_ids = system_id
+                )
 
-                if status == "Undefined":
-                    status = "OK"
+                if args.verbose:
+                    nic_inventory.source_data = nic_response
 
-                if link_status is not None and link_status != "NoLink":
-                    status_text += f" and link status is '{link_status}'"
+                # add relations
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, nic_response.get("Links"))
+                nic_inventory.add_relation(plugin.rf.connection.system_properties, nic_response.get("RelatedItem"))
 
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.inventory.add(nic_inventory)
+
+                nic_status_string = nic_inventory.health_status
+                if nic_status_string is None:
+                    nic_status_string = "Undefined"
+
+                status_text = f"NIC {nic_inventory.id} status is: {nic_status_string}"
+
+                plugin_status = nic_inventory.health_status
+                if plugin_status is None:
+                    plugin_status = "OK"
+
+                if nic_inventory.link_status is not None and nic_inventory.link_status != "NoLink":
+                    status_text += f" and link status is '{nic_inventory.link_status}'"
+
+                plugin.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status, status_text)
 
             else:
                 plugin.add_output_data("UNKNOWN", "No network interface data returned for API URL '%s'" % nic.get("@odata.id"))
@@ -1597,13 +2214,72 @@ def get_storage_hpe(system):
             else:
                 disk_response = plugin.rf.get(disk.get("@odata.id"))
 
-            status = get_status_data(disk_response.get("Status")).get("Health")
-            location = disk_response.get("Location")
-            size = disk_response.get("CapacityGB")
+            status_data = get_status_data(disk_response.get("Status"))
 
-            status_text = f"Physical Drive ({location}) {size}GB Status: {status}"
+            # get disk size
+            disk_size = None
+            if disk_response.get("CapacityLogicalBlocks") is not None and \
+               disk_response.get("BlockSizeBytes") is not None:
+                disk_size = int(disk_response.get("CapacityLogicalBlocks")) * int(disk_response.get("BlockSizeBytes"))
+            elif disk_response.get("CapacityMiB"):
+                disk_size = int(disk_response.get("CapacityMiB")) * 1024 ** 2
+            elif disk_response.get("CapacityGB"):
+                disk_size = disk_response.get("CapacityGB") * 1000 ** 3
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            # get location
+            drive_location = None
+            if disk_response.get("LocationFormat") is not None and disk_response.get("Location") is not None:
+                drive_location = dict(zip(disk_response.get("LocationFormat").lower().split(":"), disk_response.get("Location").split(":")))
+
+            predicted_media_life_left_percent = None
+            if disk_response.get("SSDEnduranceUtilizationPercentage") is not None:
+                try:
+                    predicted_media_life_left_percent = 100 - int(disk_response.get("SSDEnduranceUtilizationPercentage"))
+                except:
+                    pass
+
+            pd_inventory = PhysicalDrive(
+                # drive id repeats per controller
+                # prefix drive id with controller id
+                id = "{}:{}".format(controller_inventory.id,disk_response.get("Id")),
+                name  = disk_response.get("Name"),
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                model = disk_response.get("Model"),
+                firmware = grab(disk_response, "FirmwareVersion.Current.VersionString"),
+                serial = disk_response.get("SerialNumber"),
+                location = disk_response.get("Location"),
+                part_number = disk_response.get("PartNumber"),
+                type = disk_response.get("MediaType"),
+                speed_in_rpm = disk_response.get("RotationalSpeedRpm"),
+                failure_predicted = disk_response.get("FailurePredicted"),
+                predicted_media_life_left_percent = predicted_media_life_left_percent,
+                size_in_byte = disk_size,
+                power_on_hours = disk_response.get("PowerOnHours"),
+                interface_type = disk_response.get("InterfaceType"),
+                interface_speed = disk_response.get("InterfaceSpeedMbps"),
+                encrypted = disk_response.get("EncryptedDrive"),
+                bay = None if drive_location is None else drive_location.get("bay"),
+                temperature = disk_response.get("CurrentTemperatureCelsius")
+            )
+
+            if drive_location is not None:
+                pd_inventory.storage_port = drive_location.get("controllerport")
+            pd_inventory.storage_controller_ids = controller_inventory.id
+            pd_inventory.system_ids = system_id
+
+            if args.verbose:
+                pd_inventory.source_data = disk_response
+
+            plugin.inventory.add(pd_inventory)
+
+            plugin.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids", pd_inventory.id)
+
+            size = int(pd_inventory.size_in_byte / 1000 ** 3)
+
+            status_text = f"Physical Drive ({pd_inventory.location}) {size}GB Status: {pd_inventory.health_status}"
+
+            plugin.add_output_data("CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status, status_text)
 
     def get_logical_drives(link):
 
@@ -1620,14 +2296,55 @@ def get_storage_hpe(system):
             else:
                 logical_drive_response = plugin.rf.get(logical_drive.get("@odata.id"))
 
-            status = get_status_data(logical_drive_response.get("Status")).get("Health")
-            id = logical_drive_response.get("LogicalDriveNumber")
-            size = int(logical_drive_response.get("CapacityMiB")) * 1024 ** 2 / 1000 ** 3
-            raid = logical_drive_response.get("Raid")
+            status_data = get_status_data(logical_drive_response.get("Status"))
 
-            status_text = "Logical Drive (%s) %.0fGB (RAID %s) Status: %s" % (id, size, raid, status)
+            # get size
+            size = logical_drive_response.get("CapacityMiB")
+            if size is not None:
+                size = int(size) * 1024 ** 2
+                printed_size = size / 1000 ** 3
+            else:
+                printed_size = 0
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            ld_inventory = LogicalDrive(
+                # logical drive id repeats per controller
+                # prefix drive id with controller id
+                id = "{}:{}".format(controller_inventory.id, logical_drive_response.get("Id")),
+                name  = logical_drive_response.get("LogicalDriveName"),
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                type = logical_drive_response.get("LogicalDriveType"),
+                size_in_byte = size,
+                raid_type = logical_drive_response.get("Raid"),
+                encrypted = logical_drive_response.get("LogicalDriveEncryption")
+            )
+
+            if args.verbose:
+                ld_inventory.source_data = logical_drive_response
+
+            data_drives_link = grab(logical_drive_response, "Links/DataDrives/@odata.id", separator="/")
+
+            if data_drives_link is not None:
+                data_drives_response = plugin.rf.get(data_drives_link)
+
+                for data_drive in data_drives_response.get("Members"):
+                    data_drive_id = ("{}:{}".format(
+                        controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
+
+                    ld_inventory.update("physical_drive_ids", data_drive_id, True)
+                    plugin.inventory.append(PhysicalDrive, data_drive_id, "logical_drive_ids", ld_inventory.id)
+
+            ld_inventory.storage_controller_ids = controller_inventory.id
+            ld_inventory.system_ids = system_id
+
+            plugin.inventory.add(ld_inventory)
+
+            plugin.inventory.append(StorageController, controller_inventory.id, "logical_drive_ids", ld_inventory.id)
+
+            status_text = f"Logical Drive ({ld_inventory.id}) %.1fGB (RAID {ld_inventory.raid_type}) Status: {ld_inventory.health_status}" % \
+                printed_size
+
+            plugin.add_output_data("CRITICAL" if ld_inventory.health_status not in ["OK", "WARNING"] else ld_inventory.health_status, status_text)
 
     def get_enclosures(link):
 
@@ -1644,16 +2361,57 @@ def get_storage_hpe(system):
             else:
                 enclosure_response = plugin.rf.get(enclosure.get("@odata.id"))
 
-            status = get_status_data(enclosure_response.get("Status")).get("Health")
-            location = enclosure_response.get("Location")
+            status_data = get_status_data(enclosure_response.get("Status"))
 
-            status_text = f"StorageEnclosure ({location}) Status: {status}"
+            # get location
+            enclosure_location = None
+            if enclosure_response.get("LocationFormat") is not None and enclosure_response.get("Location") is not None:
+                enclosure_location = dict(zip(enclosure_response.get("LocationFormat").lower().split(":"), enclosure_response.get("Location").split(":")))
 
-            plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            enclosure_inventory = StorageEnclosure(
+                # enclosure id repeats per controller
+                # prefix drive id with controller id
+                id = "{}:{}".format(controller_inventory.id, enclosure_response.get("Id")),
+                name = enclosure_response.get("Name"),
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                serial = enclosure_response.get("SerialNumber"),
+                storage_port = None if enclosure_location is None else enclosure_location.get("controller"),
+                model = enclosure_response.get("Model"),
+                location = enclosure_response.get("Location"),
+                firmware = grab(enclosure_response, "FirmwareVersion.Current.VersionString"),
+                num_bays = enclosure_response.get("DriveBayCount")
+            )
+
+            if args.verbose:
+                enclosure_inventory.source_data = enclosure_response
+
+            enclosure_inventory.storage_controller_ids = controller_inventory.id
+            enclosure_inventory.system_ids = system_id
+
+            # set relation between disk drives and enclosures
+            for drive in plugin.inventory.base_structure.get("physical_drives"):
+
+                # get list of drives for each enclosure
+                if drive.location is not None and enclosure_inventory.location is not None and \
+                    drive.location.startswith(enclosure_inventory.location):
+                    enclosure_inventory.update("physical_drive_ids", drive.id, True)
+                    plugin.inventory.append(PhysicalDrive, drive.id, "storage_enclosure_ids", enclosure_inventory.id)
+
+            plugin.inventory.add(enclosure_inventory)
+
+            plugin.inventory.append(StorageController, controller_inventory.id, "storage_enclosure_ids", enclosure_inventory.id)
+
+
+            status_text = f"StorageEnclosure ({enclosure_inventory.location}) Status: {enclosure_inventory.health_status}"
+
+            plugin.add_output_data("CRITICAL" if enclosure_inventory.health_status not in ["OK", "WARNING"] else enclosure_inventory.health_status, status_text)
 
     global plugin
 
     plugin.set_current_command("Storage")
+
+    system_id = system.rstrip("/").split("/")[-1]
 
     redfish_url = f"{system}/SmartStorage/"
 
@@ -1662,7 +2420,7 @@ def get_storage_hpe(system):
     storage_status = get_status_data(storage_response.get("Status"))
     status = storage_status.get("Health")
 
-    if status == "OK" and args.detailed == False:
+    if status == "OK" and args.detailed == False and args.inventory == False:
         plugin.add_output_data("OK", f"Status of HP SmartArray is: {status}", summary = True)
         return
 
@@ -1681,23 +2439,44 @@ def get_storage_hpe(system):
                 controller_response = plugin.rf.get(array_controller.get("@odata.id"))
 
             if controller_response.get("Id"):
-                model = controller_response.get("Model")
-                fw_version = grab(controller_response, "FirmwareVersion.Current.VersionString")
-                controller_status = get_status_data(controller_response.get("Status"))
 
-                if controller_status.get("State") == "Absent":
+                status_data = get_status_data(controller_response.get("Status"))
+
+                backup_power_present = False
+                if controller_response.get("BackupPowerSourceStatus") == "Present":
+                    backup_power_present = True
+
+                controller_inventory = StorageController(
+                    id = controller_response.get("Id"),
+                    name  = controller_response.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    model = controller_response.get("Model"),
+                    manufacturer = "HPE",
+                    firmware = grab(controller_response, "FirmwareVersion.Current.VersionString"),
+                    serial = controller_response.get("SerialNumber"),
+                    location = controller_response.get("Location"),
+                    backup_power_present = backup_power_present,
+                    cache_size_in_mb = controller_response.get("CacheMemorySizeMiB"),
+                    system_ids = system_id
+                )
+
+                if args.verbose:
+                    controller_inventory.source_data = controller_response
+
+                plugin.inventory.add(controller_inventory)
+
+                if controller_inventory.operation_status == "Absent":
                     continue
 
-                status = controller_status.get("Health")
+                status_text = f"{controller_inventory.model} (FW: {controller_inventory.firmware}) status is: {controller_inventory.health_status}"
 
-                status_text = f"{model} (FW: {fw_version}) status is: {status}"
-
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.add_output_data("CRITICAL" if controller_inventory.health_status not in ["OK", "WARNING"] else controller_inventory.health_status, status_text)
 
                 get_disks(array_controller.get("@odata.id"))
+                get_disks(array_controller.get("@odata.id"), "UnconfiguredDrives")
                 get_logical_drives(array_controller.get("@odata.id"))
                 get_enclosures(array_controller.get("@odata.id"))
-                get_disks(array_controller.get("@odata.id"), "UnconfiguredDrives")
             else:
                 plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % array_controller.get("@odata.id"))
 
@@ -1716,34 +2495,103 @@ def get_storage_generic(system):
             plugin.add_output_data("UNKNOWN", f"Unable to retrieve disk infos: {drive_link}")
             return
 
-        name = drive_response.get("Name")
-        model = drive_response.get("Model")
-        type = drive_response.get("MediaType")
-        protocol = drive_response.get("Protocol")
-        size = drive_response.get("CapacityBytes")
+        # get status data
+        status_data = get_status_data(drive_response.get("Status"))
 
-        if name is not None:
-            name = name.strip()
+        # get disk size
+        disk_size = None
+        if drive_response.get("CapacityLogicalBlocks") is not None and \
+           drive_response.get("BlockSizeBytes") is not None:
+            disk_size = int(drive_response.get("CapacityLogicalBlocks")) * int(drive_response.get("BlockSizeBytes"))
+        elif drive_response.get("CapacityBytes"):
+            disk_size = drive_response.get("CapacityBytes")
+        elif drive_response.get("CapacityMiB"):
+            disk_size = int(drive_response.get("CapacityMiB")) * 1024 ** 2
+        elif drive_response.get("CapacityGB"):
+            disk_size = drive_response.get("CapacityGB") * 1000 ** 3
 
-        location = grab(drive_response, "Location.0.Info") or grab(drive_response, "PhysicalLocation.0.Info")
-        if location is None or name == location:
-            location = ""
+        drive_oem_data = grab(drive_response, f"Oem.{plugin.rf.vendor_dict_key}")
+
+        temperature = None
+        bay = None
+        storage_port = None
+        power_on_hours = drive_response.get("PowerOnHours")
+        if drive_oem_data is not None:
+            temperature = drive_oem_data.get("TemperatureCelsius") or drive_oem_data.get("TemperatureC")
+            if power_on_hours is None:
+                power_on_hours = drive_oem_data.get("HoursOfPoweredUp") or drive_oem_data.get("PowerOnHours")
+            bay = drive_oem_data.get("SlotNumber")
+
+        # Dell
+        dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
+        if dell_disk_data is not None:
+            if bay is None:
+                bay = dell_disk_data.get("Slot")
+            storage_port = dell_disk_data.get("Connector")
+
+        interface_speed = None
+        if drive_response.get("NegotiatedSpeedGbs") is not None:
+            interface_speed = int(drive_response.get("NegotiatedSpeedGbs")) * 1000
+
+        encrypted = None
+        if drive_response.get("EncryptionStatus") is not None:
+            if drive_response.get("EncryptionStatus").lower() == "encrypted":
+                encrypted = True
+            else:
+                encrypted = False
+
+        pd_inventory = PhysicalDrive(
+            # drive id repeats per controller
+            # prefix drive id with controller id
+            id = "{}:{}".format(controller_inventory.id,drive_response.get("Id")),
+            name  = drive_response.get("Name"),
+            health_status = status_data.get("Health"),
+            operation_status = status_data.get("State"),
+            model = drive_response.get("Model"),
+            manufacturer = drive_response.get("Manufacturer"),
+            firmware = drive_response.get("FirmwareVersion") or drive_response.get("Revision"),
+            serial = drive_response.get("SerialNumber"),
+            location = grab(drive_response, "Location.0.Info") or grab(drive_response, "PhysicalLocation.0.Info"),
+            type = drive_response.get("MediaType"),
+            speed_in_rpm = drive_response.get("RotationalSpeedRpm") or drive_response.get("RotationSpeedRPM"),
+            failure_predicted = drive_response.get("FailurePredicted"),
+            predicted_media_life_left_percent = drive_response.get("PredictedMediaLifeLeftPercent"),
+            part_number = drive_response.get("PartNumber"),
+            size_in_byte = disk_size,
+            power_on_hours = power_on_hours,
+            interface_type = drive_response.get("Protocol"),
+            interface_speed = interface_speed,
+            encrypted = encrypted,
+            storage_port = storage_port,
+            bay = bay,
+            temperature = temperature,
+            system_ids = system_response.get("Id"),
+            storage_controller_ids = controller_inventory.id
+        )
+
+        if args.verbose:
+            pd_inventory.source_data = drive_response
+
+        plugin.inventory.add(pd_inventory)
+
+        plugin.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids", pd_inventory.id)
+
+        if pd_inventory.location is None or pd_inventory.name == pd_inventory.location:
+            location_string = ""
         else:
-            location = f"{location} "
+            location_string = f"{pd_inventory.location} "
 
-        status = get_status_data(drive_response.get("Status")).get("Health")
+        if pd_inventory.health_status is not None:
+            drives_status_list.append(pd_inventory.health_status)
 
-        if status is not None:
-            drives_status_list.append(status)
-
-        if size is not None and size > 0:
-            size = "%0.2fGiB" % (size / ( 1000 ** 3))
+        if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
+            size_string = "%0.2fGiB" % (pd_inventory.size_in_byte / ( 1000 ** 3))
         else:
-            size = "0GiB"
+            size_string = "0GiB"
 
-        status_text = f"Physical Drive {name} {location}({model} / {type} / {protocol}) {size} status: {status}"
+        status_text = f"Physical Drive {pd_inventory.name} {location_string}({pd_inventory.model} / {pd_inventory.type} / {pd_inventory.interface_type}) {size_string} status: {pd_inventory.health_status}"
 
-        plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+        plugin.add_output_data("OK" if pd_inventory.health_status in ["OK", None] else pd_inventory.health_status, status_text)
 
     def get_volumes(volumes_link):
 
@@ -1759,14 +2607,17 @@ def get_storage_generic(system):
             if volume_data.get("Name") is None:
                 continue
 
-            name = volume_data.get("Name")
-            status = get_status_data(volume_data.get("Status")).get("Health")
+            # get status data
+            status_data = get_status_data(volume_data.get("Status"))
 
-            if status is not None:
-                volume_status_list.append(status)
-
+            # get size
             size = volume_data.get("CapacityBytes") or 0
-            size = int(size) / ( 1000 ** 3)
+            if size is not None:
+                printed_size = int(size) / ( 1000 ** 3)
+            else:
+                printed_size = 0
+
+            name = volume_data.get("Name")
 
             raid_level = volume_data.get("VolumeType")
             volume_name = volume_data.get("Description")
@@ -1781,9 +2632,46 @@ def get_storage_generic(system):
                     raid_level = oem_data.get("RaidLevel")
                     volume_name = oem_data.get("Name")
 
-            status_text = "Logical Drive %s (%s) %.0fGiB (%s) Status: %s" % (name, volume_name, size, raid_level, status)
+            ld_inventory = LogicalDrive(
+                # logical drive id repeats per controller
+                # prefix drive id with controller id
+                id = "{}:{}".format(controller_inventory.id, volume_data.get("Id")),
+                name = volume_name,
+                health_status = status_data.get("Health"),
+                operation_status = status_data.get("State"),
+                type = volume_data.get("VolumeType"),
+                size_in_byte = size,
+                raid_type = raid_level,
+                encrypted = volume_data.get("Encrypted"),
+                system_ids = system_response.get("Id"),
+                storage_controller_ids = controller_inventory.id
+            )
 
-            plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+            if args.verbose:
+                ld_inventory.source_data = volume_data
+
+            data_drives_links = grab(volume_data, "Links.Drives")
+
+            if data_drives_links is not None:
+
+                for data_drive in data_drives_links:
+                    data_drive_id = ("{}:{}".format(
+                        controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
+
+                    ld_inventory.update("physical_drive_ids", data_drive_id, True)
+                    plugin.inventory.append(PhysicalDrive, data_drive_id, "logical_drive_ids", ld_inventory.id)
+
+            if ld_inventory.health_status is not None:
+                volume_status_list.append(ld_inventory.health_status)
+
+            plugin.inventory.add(ld_inventory)
+
+            plugin.inventory.append(StorageController, controller_inventory.id, "logical_drive_ids", ld_inventory.id)
+
+            status_text = "Logical Drive %s (%s) %.0fGiB (%s) Status: %s" % \
+                (name, ld_inventory.name, printed_size, ld_inventory.raid_type, ld_inventory.health_status)
+
+            plugin.add_output_data("OK" if ld_inventory.health_status in ["OK", None] else ld_inventory.health_status, status_text)
 
     def get_enclosures(enclosure_link):
 
@@ -1791,23 +2679,59 @@ def get_storage_generic(system):
         if enclosure_link in plugin.rf.connection.system_properties.get("chassis"):
             return
 
-        enclosures_response = plugin.rf.get(enclosure_link)
+        enclosure_response = plugin.rf.get(enclosure_link)
 
-        if enclosures_response.get("Name") is None:
+        if enclosure_response.get("Name") is None:
             plugin.add_output_data("UNKNOWN", f"Unable to retrieve enclosure infos: {enclosure_link}")
             return
 
-        name = enclosures_response.get("Name")
-        chassis_type = enclosures_response.get("ChassisType")
-        power_state = enclosures_response.get("PowerState")
-        status = get_status_data(enclosures_response.get("Status")).get("Health")
+        chassis_type = enclosure_response.get("ChassisType")
+        power_state = enclosure_response.get("PowerState")
 
-        if status is not None:
-            enclosure_status_list.append(status)
+        status_data = get_status_data(enclosure_response.get("Status"))
 
-        status_text = f"{chassis_type} {name} (Power: {power_state}) Status: {status}"
+        enclosure_inventory = StorageEnclosure(
+            # enclosure id repeats per controller
+            # prefix drive id with controller id
+            id = "{}:{}".format(controller_inventory.id, enclosure_response.get("Id")),
+            name = enclosure_response.get("Name"),
+            health_status = status_data.get("Health"),
+            operation_status = status_data.get("State"),
+            serial = enclosure_response.get("SerialNumber"),
+            model = enclosure_response.get("Model"),
+            manufacturer = enclosure_response.get("Manufacturer"),
+            location = enclosure_response.get("Location"),
+            firmware = enclosure_response.get("FirmwareVersion"),
+            num_bays = enclosure_response.get("DriveBayCount"),
+            storage_controller_ids = controller_inventory.id,
+            system_ids = system_response.get("Id")
+        )
 
-        plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+        if args.verbose:
+            enclosure_inventory.source_data = enclosure_response
+
+        # set relation between disk drives and enclosures
+        data_drives_links = grab(enclosure_response, "Links.Drives")
+
+        if data_drives_links is not None:
+
+            for data_drive in data_drives_links:
+                data_drive_id = ("{}:{}".format(
+                    controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
+
+                enclosure_inventory.update("physical_drive_ids", data_drive_id, True)
+                plugin.inventory.append(PhysicalDrive, data_drive_id, "storage_enclosure_ids", enclosure_inventory.id)
+
+        plugin.inventory.add(enclosure_inventory)
+
+        plugin.inventory.append(StorageController, controller_inventory.id, "storage_enclosure_ids", enclosure_inventory.id)
+
+        if enclosure_inventory.health_status is not None:
+            enclosure_status_list.append(enclosure_inventory.health_status)
+
+        status_text = f"{chassis_type} {enclosure_inventory.name} (Power: {power_state}) Status: {enclosure_inventory.health_status}"
+
+        plugin.add_output_data("OK" if enclosure_inventory.health_status in ["OK", None] else enclosure_inventory.health_status, status_text)
 
     def condensed_status_from_list(status_list):
 
@@ -1864,37 +2788,76 @@ def get_storage_generic(system):
                     controller_response["StorageControllers"] = [ controller_response.get("StorageControllers") ]
 
                 for storage_controller in controller_response.get("StorageControllers"):
-                    name = storage_controller.get("Name")
-                    model = storage_controller.get("Model")
-                    fw_version = storage_controller.get("FirmwareVersion")
-                    location = grab(storage_controller, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info")
-                    controller_status = get_status_data(storage_controller.get("Status"))
+
+                    status_data = get_status_data(storage_controller.get("Status"))
 
                     controller_oem_data = grab(storage_controller, f"Oem.{plugin.rf.vendor_dict_key}")
 
-                    model = grab(controller_oem_data, "Type") or model
+                    cache_size_in_mb = None
+                    backup_power_present = False
+                    model = storage_controller.get("Model")
+                    if controller_oem_data is not None:
+                        cache_size_in_mb = controller_oem_data.get("MemorySizeMiB")
+                        if controller_oem_data.get("Type") is not None:
+                            model = controller_oem_data.get("Type")
+                        if controller_oem_data.get("CapacitanceStatus") is not None:
+                            backup_power_present = True
+                        if controller_oem_data.get("BackupUnit") is not None:
+                            backup_power_present = True
+
+                    # Cisco
+                    if controller_response.get("Id") is None:
+                        controller_response["Id"] = controller_response.get("@odata.id").rstrip("/").split("/")[-1]
+
+                    if storage_controller.get("MemberId") is not None and \
+                            controller_response.get("Id") != storage_controller.get("MemberId"):
+                        id = "{}:{}".format(controller_response.get("Id"), storage_controller.get("MemberId"))
+                    else:
+                        id = controller_response.get("Id")
+
+                    controller_inventory = StorageController(
+                        id = id,
+                        name  = storage_controller.get("Name"),
+                        health_status = status_data.get("Health"),
+                        operation_status = status_data.get("State"),
+                        model = model,
+                        manufacturer = storage_controller.get("Manufacturer"),
+                        firmware = storage_controller.get("FirmwareVersion"),
+                        serial = storage_controller.get("SerialNumber"),
+                        location = grab(storage_controller, f"Oem.{plugin.rf.vendor_dict_key}.Location.Info"),
+                        backup_power_present = backup_power_present,
+                        cache_size_in_mb = cache_size_in_mb,
+                        system_ids = system_response.get("Id")
+                    )
+
+                    if args.verbose:
+                        controller_inventory.source_data = controller_response
+
+                    if controller_inventory.name is None:
+                        controller_inventory.name = "Storage controller"
+
+                    plugin.inventory.add(controller_inventory)
 
                     # ignore absent controllers
-                    if controller_status.get("State") == "Absent":
+                    if controller_inventory.operation_status == "Absent":
                         continue
 
-                    status = controller_status.get("Health")
+                    if controller_inventory.health_status is not None:
+                        storage_status_list.append(controller_inventory.health_status)
 
-                    if status is not None:
-                        storage_status_list.append(status)
-
-                    storage_controller_names_list.append(f"{name} {model}")
+                    storage_controller_names_list.append(f"{controller_inventory.name} {controller_inventory.model}")
                     storage_controller_id_list.append(controller_response.get("@odata.id"))
 
-                    if location is None:
-                        location = ""
+                    if controller_inventory.location is None:
+                        location_string = ""
                     else:
-                        location = f"{location} "
+                        location_string = f"{controller_inventory.location} "
 
-                    status_text = f"{name} {model} {location}(FW: {fw_version}) status is: {status}"
+                    status_text = f"{controller_inventory.name} {controller_inventory.model} {location_string}(FW: {controller_inventory.firmware}) status is: {controller_inventory.health_status}"
 
-                    plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
+                    plugin.add_output_data("OK" if controller_inventory.health_status in ["OK", None] else controller_inventory.health_status, status_text)
 
+                    # Huawei
                     if grab(controller_oem_data, "CapacitanceStatus") is not None:
                         cap_model = controller_oem_data.get("CapacitanceName")
                         cap_status = get_status_data(controller_oem_data.get("CapacitanceStatus")).get("Health")
@@ -1946,30 +2909,81 @@ def get_storage_generic(system):
                 if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list:
                     continue
 
-                status = get_status_data(simple_storage_controller_response.get("Status"))
+                status_data = get_status_data(simple_storage_controller_response.get("Status"))
 
-                if status.get("State") != "Enabled":
+                controller_inventory = StorageController(
+                    id = simple_storage_controller_response.get("Id"),
+                    name  = simple_storage_controller_response.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    model = simple_storage_controller_response.get("Description"),
+                    system_ids = system_response.get("Id")
+                )
+
+                if args.verbose:
+                    controller_inventory.source_data = simple_storage_controller_response
+
+                plugin.inventory.add(controller_inventory)
+
+                if status_data.get("State") != "Enabled":
                     continue
 
                 if simple_storage_controller_response.get("Devices") is not None and len(simple_storage_controller_response.get("Devices")) > 0:
 
-                    name = simple_storage_controller_response.get("Name")
-                    status = status.get("Health")
+                    if controller_inventory.health_status is not None:
+                        storage_status_list.append(controller_inventory.health_status)
 
-                    if status is not None:
-                        storage_status_list.append(status)
+                    storage_controller_names_list.append(f"{controller_inventory.name}")
 
-                    storage_controller_names_list.append(f"{name}")
+                    status_text = f"{controller_inventory.name} status: {controller_inventory.health_status}"
+                    plugin.add_output_data("OK" if controller_inventory.health_status in ["OK", None] else controller_inventory.health_status, status_text)
 
-                    status_text = f"{name} status: {status}"
-                    plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
-
+                    disk_id = 0
+                    enclosure_id = 0
                     for simple_storage_device in simple_storage_controller_response.get("Devices"):
+
                         name = simple_storage_device.get("Name")
                         manufacturer = simple_storage_device.get("Manufacturer")
                         model = simple_storage_device.get("Model")
                         capacity = simple_storage_device.get("CapacityBytes")
-                        status = get_status_data(simple_storage_device.get("Status"))
+                        status_data = get_status_data(simple_storage_device.get("Status"))
+
+                        if capacity is not None:
+
+                            disk_id += 1
+                            pd_inventory = PhysicalDrive(
+                                id = "{}:{}".format(controller_inventory.id,disk_id),
+                                name = name,
+                                health_status = status_data.get("Health"),
+                                operation_status = status_data.get("State"),
+                                model = model,
+                                manufacturer = manufacturer,
+                                size_in_byte = capacity,
+                                system_ids = system_response.get("Id"),
+                                storage_controller_ids = controller_inventory.id
+                            )
+
+                            plugin.inventory.add(pd_inventory)
+
+                            plugin.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids", pd_inventory.id)
+                        else:
+
+                            enclosure_id += 1
+
+                            enclosure_inventory = StorageEnclosure(
+                                id = "{}:{}".format(controller_inventory.id, enclosure_id),
+                                name = name,
+                                health_status = status_data.get("Health"),
+                                operation_status = status_data.get("State"),
+                                model = model,
+                                manufacturer = system_response.get("Manufacturer"),
+                                system_ids = system_response.get("Id"),
+                                storage_controller_ids = controller_inventory.id
+                            )
+
+                            plugin.inventory.add(enclosure_inventory)
+
+                            plugin.inventory.append(StorageController, controller_inventory.id, "storage_enclosure_ids", enclosure_inventory.id)
 
                         status_text = f"{manufacturer} {name} {model}"
 
@@ -1980,20 +2994,18 @@ def get_storage_generic(system):
                                 pass
 
                         # skip device if state is not "Enabled"
-                        if status.get("State") != "Enabled":
+                        if status_data.get("State") != "Enabled":
                             continue
 
-                        status = status.get("Health")
+                        status = status_data.get("Health")
 
-                        if status is not None:
+                        if status_data is not None:
                             drives_status_list.append(status)
 
                         status_text += f" status: {status}"
 
                         plugin.add_output_data("OK" if status in ["OK", None] else status, status_text)
 
-                else:
-                    continue
 
     # check additional drives
     system_drives = grab(system_response, f"Oem.{plugin.rf.vendor_dict_key}.StorageViewsSummary.Drives")
@@ -2003,6 +3015,8 @@ def get_storage_generic(system):
             drive_url = grab(system_drive, "Link/@odata.id", separator="/")
             if drive_url not in system_drives_list:
                 system_drives_list.append(drive_url)
+                # create placeholder for storage controller
+                controller_inventory = StorageController(id = 0)
                 get_drive(drive_url)
 
     condensed_storage_status = condensed_status_from_list(storage_status_list)
@@ -2039,6 +3053,9 @@ def get_storage_generic(system):
 def get_event_log(type):
 
     global plugin
+
+    if args.inventory is True:
+        return
 
     if type not in ["Manager", "System"]:
         raise Exception("Unknown event log type: %s", type)
@@ -2473,6 +3490,12 @@ def get_system_info():
     for system in systems:
         get_single_system_info(system)
 
+    # add chassi inventory here too
+    if args.inventory is True:
+
+        for chassi in plugin.rf.connection.system_properties.get("chassis"):
+            get_single_chassi_info(chassi)
+
     return
 
 def get_single_system_info(redfish_url):
@@ -2485,54 +3508,59 @@ def get_single_system_info(redfish_url):
         plugin.add_output_data("UNKNOWN", f"No system information data returned for API URL '{redfish_url}'")
         return
 
+    # get model data
     model = system_response.get("Model")
-    vendor_name = system_response.get("Manufacturer")
-    serial = system_response.get("SerialNumber")
-    system_health_state = get_status_data(system_response.get("Status")).get("Health")
-    power_state = system_response.get("PowerState")
-    bios_version = system_response.get("BiosVersion")
-    host_name = system_response.get("HostName")
-    cpu_num = grab(system_response, "ProcessorSummary.Count")
-    mem_size = grab(system_response, "MemorySummary.TotalSystemMemoryGiB")
-
-    if vendor_name is not None:
-        vendor_name = vendor_name.strip()
-
-    if serial is not None:
-        serial = serial.strip()
-
-    if model is not None:
-        model = model.strip()
-
     # Huawei system
     if plugin.rf.vendor == "Huawei":
         model = grab(system_response, f"Oem.{plugin.rf.vendor_dict_key}.ProductName")
+
+    # get memory size
+    mem_size = grab(system_response, "MemorySummary.TotalSystemMemoryGiB")
 
     # Dell system
     # just WHY?
     if plugin.rf.vendor == "Dell":
         mem_size = round(mem_size * 1024 ** 3 / 1000 ** 3)
 
-    status = "OK"
-    if system_health_state == "WARNING":
-        status = "WARNING"
-    elif system_health_state != "OK":
-        status = "CRITICAL"
+    status_data = get_status_data(system_response.get("Status"))
 
-    if host_name is not None:
-        host_name = host_name.strip()
-    else:
-        host_name = ""
+    system_inventory = System(
+        id = system_response.get("Id"),
+        name = system_response.get("Name"),
+        manufacturer = system_response.get("Manufacturer"),
+        serial = system_response.get("SerialNumber"),
+        health_status = status_data.get("Health"),
+        operation_status = status_data.get("State"),
+        power_state = system_response.get("PowerState"),
+        bios_version = system_response.get("BiosVersion"),
+        host_name = system_response.get("HostName"),
+        indicator_led = system_response.get("IndicatorLED"),
+        cpu_num = grab(system_response, "ProcessorSummary.Count"),
+        part_number = system_response.get("PartNumber"),
+        mem_size = mem_size,
+        model = model,
+        type = system_response.get("SystemType")
+    )
 
-    # make sure that stripped empty hostname results in something
-    host_name = "NOT SET" if host_name == "" else host_name
+    if args.verbose:
+        system_inventory.source_data = system_response
 
-    status_text = f"Type: {vendor_name} {model} (CPU: {cpu_num}, MEM: {mem_size}GB) - BIOS: {bios_version} - Serial: {serial} - Power: {power_state} - Name: {host_name}"
+    # add relations
+    system_inventory.add_relation(plugin.rf.connection.system_properties, system_response.get("Links"))
 
-    if args.detailed is False:
-        plugin.add_output_data(status, status_text, summary = True)
-    else:
-        plugin.add_output_data(status, status_text)
+    plugin.inventory.add(system_inventory)
+
+    host_name = "NOT SET"
+    if system_inventory.host_name is not None and len(system_inventory.host_name) > 0:
+        host_name = system_inventory.host_name
+
+    status_text  = f"Type: {system_inventory.manufacturer} {system_inventory.model} (CPU: {system_inventory.cpu_num}, MEM: {system_inventory.mem_size}GB)"
+    status_text += f" - BIOS: {system_inventory.bios_version} - Serial: {system_inventory.serial} - Power: {system_inventory.power_state} - Name: {host_name}"
+
+    plugin.add_output_data("CRITICAL" if system_inventory.health_status not in ["OK", "WARNING"] else system_inventory.health_status, status_text, summary = not args.detailed)
+
+    if args.detailed is True:
+
         # add ILO data
         if plugin.rf.vendor == "HPE":
             plugin.add_output_data("OK", "%s - FW: %s" % (plugin.rf.vendor_data.ilo_version, plugin.rf.vendor_data.ilo_firmware_version))
@@ -2547,6 +3575,38 @@ def get_single_system_info(redfish_url):
 
                 status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
                 plugin.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status, status_text)
+
+    return
+
+def get_single_chassi_info(redfish_url):
+
+    global plugin
+
+    chassi_response = plugin.rf.get(redfish_url)
+
+    # get status data
+    status_data = get_status_data(chassi_response.get("Status"))
+
+    chassi_inventory = Chassi(
+        id = chassi_response.get("Id"),
+        name = chassi_response.get("Name"),
+        manufacturer = chassi_response.get("Manufacturer"),
+        serial = chassi_response.get("SerialNumber"),
+        health_status = status_data.get("Health"),
+        operation_status = status_data.get("State"),
+        sku = chassi_response.get("SKU"),
+        indicator_led = chassi_response.get("IndicatorLED"),
+        model = chassi_response.get("Model"),
+        type = chassi_response.get("ChassisType")
+    )
+
+    if args.verbose:
+        chassi_inventory.source_data = chassi_response
+
+    # add relations
+    chassi_inventory.add_relation(plugin.rf.connection.system_properties, chassi_response.get("Links"))
+
+    plugin.inventory.add(chassi_inventory)
 
     return
 
@@ -2577,9 +3637,43 @@ def get_firmware_info():
     else:
         get_firmware_info_generic()
 
+    # return gathered firmware information
+    firmware_health_summary = "OK"
+    for firmware_inventory in plugin.inventory.get(Firmware):
+
+        firmware_health = "OK"
+
+        if firmware_inventory.health_status is not None:
+
+            if firmware_inventory.health_status == "CRITICAL":
+                firmware_health = firmware_inventory.health_status
+                firmware_health_summary = firmware_inventory.health_status
+
+            if firmware_inventory.health_status == "WARNING":
+                firmware_health = firmware_inventory.health_status
+                if firmware_health_summary != "CRITICAL":
+                    firmware_health_summary = firmware_inventory.health_status
+
+        name = firmware_inventory.name
+        id = ""
+        if plugin.rf.vendor != "HPE" and firmware_inventory.id is not None and \
+                firmware_inventory.name != firmware_inventory.id:
+
+            id = f" ({firmware_inventory.id})"
+
+        location = ""
+        if firmware_inventory.location is not None:
+            location = f" ({firmware_inventory.location})"
+
+        if args.detailed is True:
+            plugin.add_output_data(firmware_health, f"{name}{id}{location}: {firmware_inventory.version}")
+
+    if args.detailed is False:
+        plugin.add_output_data(firmware_health_summary, "Found %d firmware entries. Use '--detailed' option to display them." % len(plugin.inventory.get(Firmware)), summary = True)
+
     return
 
-def get_firmware_info_hpe_ilo4(system_id = 1):
+def get_firmware_info_hpe_ilo4(system_id):
 
     global plugin
 
@@ -2587,21 +3681,28 @@ def get_firmware_info_hpe_ilo4(system_id = 1):
 
     firmware_response = plugin.rf.get(redfish_url)
 
+    fw_id = 0
     for key, firmware_entry in firmware_response.get("Current").items():
 
         for firmware_entry_object in firmware_entry:
 
-            component_name = firmware_entry_object.get("Name")
-            component_version = firmware_entry_object.get("VersionString")
-            component_location = firmware_entry_object.get("Location")
+            fw_id += 1
 
-            plugin.add_output_data("OK", f"{component_name} ({component_location}): {component_version}")
+            firmware_inventory = Firmware(
+                id = fw_id,
+                name = firmware_entry_object.get("Name"),
+                version = firmware_entry_object.get("VersionString"),
+                location = firmware_entry_object.get("Location")
+            )
 
-    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Current")), summary = True)
+            if args.verbose:
+                firmware_inventory.source_data = firmware_entry_object
+
+            plugin.inventory.add(firmware_inventory)
 
     return
 
-def get_firmware_info_fujitsu(system_id):
+def get_firmware_info_fujitsu(system_id, bmc_only=False):
 
     # there is room for improvement
 
@@ -2618,15 +3719,28 @@ def get_firmware_info_fujitsu(system_id):
 
     if manager_ids is not None and len(manager_ids) > 0:
 
-        irmc_firmware_informations = get_bmc_firmware_fujitsu(manager_ids[0])
+        manager_response = plugin.rf.get(manager_ids[0])
+
+        # get configuration
+        iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
+
+        iRMCConfiguration = None
+        if iRMCConfiguration_link is not None:
+            iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
+
+        irmc_firmware_informations = None
+        firmware_information_link = grab(iRMCConfiguration, f"FWUpdate/@odata.id", separator="/")
+        if firmware_information_link is not None:
+            irmc_firmware_informations = plugin.rf.get(firmware_information_link)
 
         if irmc_firmware_informations is not None:
             for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
                 fw_info = irmc_firmware_informations.get(bmc_fw_bank)
                 if fw_info is not None:
                     firmware_entries.append(
-                        { "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
-                          "version": "%s, Booter %s, SDDR: %s/%s (%s)," % (
+                        { "id": bmc_fw_bank,
+                          "name": "%s iRMC" % fw_info.get("FirmwareRunningState"),
+                          "version": "%s, Booter %s, SDDR: %s/%s (%s)" % (
                             fw_info.get("FirmwareVersion"),
                             fw_info.get("BooterVersion"),
                             fw_info.get("SDRRVersion"),
@@ -2636,6 +3750,12 @@ def get_firmware_info_fujitsu(system_id):
                           "location": "System Board"
                         }
                     )
+
+        # special case:
+        #   Firmware information was requested from bmc check.
+        #   So we just return the bmc firmware list
+        if bmc_only is True:
+         return firmware_entries
 
     # get power supply firmware
     chassie_ids = plugin.rf.connection.system_properties.get("chassis")
@@ -2654,6 +3774,7 @@ def get_firmware_info_fujitsu(system_id):
                     ps_fw_version = ps_data.get("FirmwareVersion")
 
                     firmware_entries.append({
+                        "id": f"{ps_location}",
                         "name": f"Power Supply {ps_manufacturer} {ps_model}",
                         "version": f"{ps_fw_version}",
                         "location": f"{ps_location}"
@@ -2680,9 +3801,10 @@ def get_firmware_info_fujitsu(system_id):
                 drive_name = drive_response.get("Name")
                 drive_firmware = drive_response.get("Revision")
                 drive_slot = grab(drive_response, f"Oem.{plugin.rf.vendor_dict_key}.SlotNumber")
-                drive_storage_controller = storage_member.get("Id")
+                drive_storage_controller = controller_response.get("Id")
 
                 firmware_entries.append({
+                    "id": f"Drive:{drive_storage_controller}:{drive_slot}",
                     "name": f"Drive {drive_name}",
                     "version": f"{drive_firmware}",
                     "location": f"{drive_storage_controller}:{drive_slot}"
@@ -2691,11 +3813,14 @@ def get_firmware_info_fujitsu(system_id):
     # get other firmware
     redfish_url = f"{system_id}/Oem/%s/FirmwareInventory/" % plugin.rf.vendor_dict_key
 
+    system_id_num = system_id.rstrip("/").split("/")[-1]
+
     firmware_response = plugin.rf.get(redfish_url)
 
     # get BIOS
     if firmware_response.get("SystemBIOS"):
         firmware_entries.append({
+            "id": f"System:{system_id_num}",
             "name": "SystemBIOS",
             "version": "%s" % firmware_response.get("SystemBIOS"),
             "location": "System Board"
@@ -2708,11 +3833,16 @@ def get_firmware_info_fujitsu(system_id):
             continue
 
         if isinstance(value, dict) and value.get("@odata.id") is not None:
+            component_type = value.get("@odata.id").rstrip("/").split("/")[-1]
             component_fw_data = plugin.rf.get(value.get("@odata.id"))
 
             if component_fw_data.get("Ports") is not None and len(component_fw_data.get("Ports")) > 0:
 
+                component_id = 0
                 for component_entry in component_fw_data.get("Ports"):
+
+                    component_id += 1
+
                     component_name = component_entry.get("AdapterName")
                     component_location = component_entry.get("ModuleName")
                     component_bios_version = component_entry.get("BiosVersion")
@@ -2721,6 +3851,7 @@ def get_firmware_info_fujitsu(system_id):
                     component_port = component_entry.get("PortId")
 
                     firmware_entries.append({
+                        "id": f"{component_type}_Port_{component_id}",
                         "name": f"{component_name}",
                         "version": f"{component_fw_version} (BIOS: {component_bios_version})",
                         "location": f"{component_location} {component_slot}/{component_port}"
@@ -2728,25 +3859,32 @@ def get_firmware_info_fujitsu(system_id):
 
             if component_fw_data.get("Adapters") is not None and len(component_fw_data.get("Adapters")) > 0:
 
+                component_id = 0
                 for component_entry in component_fw_data.get("Adapters"):
+
+                    component_id += 1
+
                     component_name = component_entry.get("ModuleName")
                     component_pci_segment = component_entry.get("PciSegment")
                     component_bios_version = component_entry.get("BiosVersion")
                     component_fw_version = component_entry.get("FirmwareVersion")
 
-                    system_id_num = system_id.split("/")[-1]
-
                     firmware_entries.append({
+                        "id": f"{component_type}_Adapter_{component_id}",
                         "name": f"{component_name} controller",
                         "version": f"{component_fw_version} (BIOS: {component_bios_version})",
                         "location": f"{system_id_num}:{component_pci_segment}"
                     })
 
-    if args.detailed is True:
-        for fw_entry in firmware_entries:
-            plugin.add_output_data("OK", "%s (%s): %s" % (fw_entry.get("name"), fw_entry.get("location"), fw_entry.get("version")))
+    # add firmware entry to inventory
+    for fw_entry in firmware_entries:
 
-    plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_entries), summary = True)
+        firmware_inventory = Firmware(**fw_entry)
+
+        if args.verbose:
+            firmware_inventory.source_data = fw_entry
+
+        plugin.inventory.add(firmware_inventory)
 
     return
 
@@ -2768,10 +3906,6 @@ def get_firmware_info_generic():
     if plugin.rf.vendor == "Cisco" and firmware_response.get("FirmwareInventory") is not None:
         firmware_response["Members"] = firmware_response.get("FirmwareInventory")
 
-    if args.detailed is False:
-        plugin.add_output_data("OK", "Found %d firmware entries. Use '--detailed' option to display them." % len(firmware_response.get("Members")), summary = True)
-        return
-
     for firmware_member in firmware_response.get("Members"):
 
         if firmware_member.get("@odata.type"):
@@ -2779,20 +3913,50 @@ def get_firmware_info_generic():
         else:
             firmware_entry = plugin.rf.get(firmware_member.get("@odata.id"))
 
+        # get name and id
         component_name = firmware_entry.get("Name")
+        component_id = firmware_entry.get("Id")
+
+        if component_id == component_name and firmware_entry.get("SoftwareId") is not None:
+            component_name = firmware_entry.get("SoftwareId")
+
+        if component_id == None:
+            component_id = component_name
+
+        # get firmware version
         component_version = firmware_entry.get("Version")
         if component_version is not None:
             component_version = component_version.strip().replace("\n","")
 
-        component_id = None
+        if grab(firmware_entry, f"Oem.{plugin.rf.vendor_dict_key}.FirmwareBuild") is not None:
+            component_version = f"{component_version} %s" % grab(firmware_entry, f"Oem.{plugin.rf.vendor_dict_key}.FirmwareBuild")
+
+        # get location
+        component_location = grab(firmware_entry, f"Oem.{plugin.rf.vendor_dict_key}.PositionId")
 
         if plugin.rf.vendor == "HPE":
-            component_id = grab(firmware_entry, f"Oem.{plugin.rf.vendor_dict_key}.DeviceContext")
+            component_location = grab(firmware_entry, f"Oem.{plugin.rf.vendor_dict_key}.DeviceContext")
 
-        if component_id is None:
-            component_id = firmware_entry.get("Id")
+        if component_location is None and firmware_entry.get("SoftwareId") is not None:
+            component_location = firmware_entry.get("SoftwareId")
 
-        plugin.add_output_data("OK", f"{component_name} ({component_id}): {component_version}")
+        # get status
+        status_data = get_status_data(firmware_entry.get("Status"))
+
+        firmware_inventory = Firmware(
+            id = component_id,
+            name = component_name,
+            health_status = status_data.get("Health"),
+            operation_status = status_data.get("State"),
+            version = component_version,
+            location = component_location,
+            updateable = firmware_entry.get("Updateable")
+        )
+
+        if args.verbose:
+            firmware_inventory.source_data = firmware_entry
+
+        plugin.inventory.add(firmware_inventory)
 
     return
 
@@ -2809,186 +3973,95 @@ def get_bmc_info():
         return
 
     for manager in managers:
-        if plugin.rf.vendor == "HPE":
-            get_bmc_info_hpe(manager)
 
-        elif plugin.rf.vendor == "Lenovo":
-            get_bmc_info_lenovo(manager)
-
-        elif plugin.rf.vendor == "Huawei":
-            get_bmc_info_huawei(manager)
-
-        else:
-            get_bmc_info_generic(manager)
+        get_bmc_info_generic(manager)
 
     return
-
-def get_bmc_info_hpe(redfish_url):
-
-    global plugin
-
-    view_response = plugin.rf.get_view(f"{redfish_url}/" + plugin.rf.vendor_data.expand_string)
-
-    if view_response.get("ILO"):
-        manager_response = view_response.get("ILO")[0]
-    else:
-        manager_response = view_response
-
-    # get general informations
-    ilo_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
-
-    # firmware
-    ilo_firmware = grab(ilo_data, "Firmware.Current")
-    ilo_fw_date = ilo_firmware.get("Date")
-    ilo_fw_version = ilo_firmware.get("VersionString")
-
-    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_fw_date})")
-
-    # license
-    ilo_license_string = grab(ilo_data, "License.LicenseString")
-    ilo_license_key = grab(ilo_data, "License.LicenseKey")
-
-    plugin.add_output_data("OK", f"Licenses: {ilo_license_string} ({ilo_license_key})")
-
-    # iLO Self Test
-    for self_test in ilo_data.get("iLOSelfTestResults"):
-
-        status = self_test.get("Status")
-
-        if status is None or status == "Informational":
-            continue
-
-        status = status.upper()
-
-        name = self_test.get("SelfTestName")
-        notes = self_test.get("Notes")
-
-        if notes is not None and len(notes) != 0:
-            notes = notes.strip()
-            status_text = f"SelfTest {name} ({notes}) status: {status}"
-        else:
-            status_text = f"SelfTest {name} status: {status}"
-
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
-
-    # iLO Network interfaces
-    redfish_url = f"{redfish_url}/EthernetInterfaces/" + plugin.rf.vendor_data.expand_string
-
-    if view_response.get("ILOInterfaces") is None:
-        manager_nic_response = plugin.rf.get(redfish_url)
-
-        if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
-            plugin.add_output_data("UNKNOWN", "No informations about the iLO network interfaces found.")
-            return
-
-    for manager_nic_member in view_response.get("ILOInterfaces") or manager_nic_response.get("Members"):
-
-        if manager_nic_member.get("@odata.context"):
-            manager_nic = manager_nic_member
-        else:
-            manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
-
-        nic_status = get_status_data(manager_nic.get("Status"))
-
-        if nic_status.get("State") in ["Disabled", None]:
-            continue
-
-        # workaround for older ILO versions
-        if nic_status.get("Health")is not None:
-            status = nic_status.get("Health")
-        elif nic_status.get("State") == "Enabled":
-            status = "OK"
-        else:
-            status = "UNKNOWN"
-
-        speed = manager_nic.get("SpeedMbps")
-        duplex = "full" if manager_nic.get("FullDuplex") is True else "half"
-        autoneg = "on" if manager_nic.get("AutoNeg") is True else "off"
-        host_name = manager_nic.get("HostName")
-        nic_id = manager_nic.get("Id")
-
-        status_text = f"iLO NIC {nic_id} '{host_name}' (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
-
-        plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
-
-    plugin.add_output_data("OK", f"{ilo_fw_version} ({ilo_license_string} license) all self tests and nics are in 'OK' state.", summary = True)
-
-    return
-
-def get_bmc_info_lenovo(redfish_url):
-
-    global plugin
-
-    manager_response = plugin.rf.get(redfish_url)
-
-    imm_model = manager_response.get("Model")
-    imm_fw_version = manager_response.get("FirmwareVersion")
-
-    status_text = f"{imm_model} ({imm_fw_version})"
-
-    redfish_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
-
-    chassi_response = None
-    if redfish_url is not None:
-        chassi_response = plugin.rf.get(redfish_url)
-
-    located_data = grab(chassi_response, f"Oem.{plugin.rf.vendor_dict_key}.LocatedIn")
-
-    if located_data is not None:
-        descriptive_name = located_data.get("DescriptiveName")
-        rack = located_data.get("Rack")
-
-        status_text += f" system name: {descriptive_name} ({rack})"
-
-    plugin.add_output_data("OK", status_text, summary = not args.detailed)
-
-def get_bmc_firmware_fujitsu(manager_url):
-
-    manager_response = plugin.rf.get(manager_url)
-
-    # get configuration
-    iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
-
-    iRMCConfiguration = None
-    if iRMCConfiguration_link is not None:
-        iRMCConfiguration = plugin.rf.get(iRMCConfiguration_link)
-
-    firmware_information = None
-    firmware_information_link = grab(iRMCConfiguration, f"FWUpdate/@odata.id", separator="/")
-    if firmware_information_link is not None:
-        firmware_information = plugin.rf.get(firmware_information_link)
-
-    return firmware_information
 
 def get_bmc_info_generic(redfish_url):
 
     global plugin
 
-    manager_response = plugin.rf.get(redfish_url)
+    """
+    Possible Infos to add
+    * NTP Status
+    * NTP servers configured
+    * BMC accounts
+    * BIOS settings (maybe, varies a lot between vendors)
+    """
 
+    view_response = plugin.rf.get_view(f"{redfish_url}{plugin.rf.vendor_data.expand_string}")
+
+    # HPE iLO 5 view
+    if view_response.get("ILO"):
+        manager_response = view_response.get("ILO")[0]
+    else:
+        manager_response = view_response
+
+    # get model
     bmc_model = manager_response.get("Model")
     bmc_fw_version = manager_response.get("FirmwareVersion")
 
-    bmc_type = "iDRAC " if plugin.rf.vendor == "Dell" else ""
+    if plugin.rf.vendor == "HPE":
+        bmc_model = " ".join(bmc_fw_version.split(" ")[0:2])
 
-    status_text = f"{bmc_type}{bmc_model} (Firmware: {bmc_fw_version})"
+    if plugin.rf.vendor == "Dell":
+        if bmc_model == "13G Monolithic":
+            bmc_model = "iDRAC 8"
+        if bmc_model == "14G Monolithic":
+            bmc_model = "iDRAC 9"
 
-    manager_status = get_status_data(manager_response.get("Status"))
-    status = manager_status.get("Health")
+    status_text = f"{bmc_model} (Firmware: {bmc_fw_version})"
 
-    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+    # get status data
+    status_data = get_status_data(manager_response.get("Status"))
+    manager_inventory = Manager(
+        id = manager_response.get("Id"),
+        type = manager_response.get("ManagerType"),
+        name = manager_response.get("Name"),
+        health_status = status_data.get("Health"),
+        operation_status = status_data.get("State"),
+        model = bmc_model,
+        firmware = bmc_fw_version
+    )
+
+    if args.verbose:
+        manager_inventory.source_data = manager_response
+
+    # add relations
+    manager_inventory.add_relation(plugin.rf.connection.system_properties, manager_response.get("Links"))
+
+    plugin.inventory.add(manager_inventory)
+
+    # workaround for older ILO versions
+    if manager_inventory.health_status is not None:
+        bmc_status = manager_inventory.health_status
+    elif manager_inventory.operation_status == "Enabled":
+        bmc_status = "OK"
+    else:
+        bmc_status = "UNKNOWN"
+
+    plugin.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text)
 
     # BMC Network interfaces
     manager_nic_response = None
-    manager_nics_link = grab(manager_response, "EthernetInterfaces/@odata.id", separator="/")
-    if manager_nics_link is not None:
-        manager_nic_response = plugin.rf.get(f"{manager_nics_link}{plugin.rf.vendor_data.expand_string}")
+
+    if plugin.rf.vendor == "HPE" and view_response.get("ILOInterfaces") is not None:
+        manager_nic_response = { "Members": view_response.get("ILOInterfaces") }
+    else:
+        manager_nics_link = grab(manager_response, "EthernetInterfaces/@odata.id", separator="/")
+        if manager_nics_link is not None:
+            manager_nic_response = plugin.rf.get(f"{manager_nics_link}{plugin.rf.vendor_data.expand_string}")
 
     if manager_nic_response is not None:
 
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
+
             status_text = f"{status_text} but no informations about the BMC network interfaces found"
         else:
+
+            #if args.detailed is False:
+            status_text = f"{status_text} and all nics are in 'OK' state."
 
             for manager_nic_member in manager_nic_response.get("Members"):
 
@@ -2997,56 +4070,140 @@ def get_bmc_info_generic(redfish_url):
                 else:
                     manager_nic = plugin.rf.get(manager_nic_member.get("@odata.id"))
 
-                nic_status = manager_nic.get("Status")
+                status_data = get_status_data(manager_nic.get("Status"))
 
-                if nic_status is None:
-                    nic_status = { "Health": "OK", "State": "Enabled" }
+                def get_ip_adresses(type):
 
-                if nic_status.get("State") in ["Disabled", None]:
+                    list_of_addresses = list()
+
+                    ip_addresses = grab(manager_nic, type)
+
+                    # Cisco
+                    if isinstance(ip_addresses, dict):
+                        if ip_addresses.get("Address") is not None:
+                            list_of_addresses.append(ip_addresses.get("Address"))
+
+                    if isinstance(ip_addresses, list):
+                        for ip_address in ip_addresses:
+                            if ip_address.get("Address") is not None:
+                                list_of_addresses.append(ip_address.get("Address"))
+
+                    list_of_addresses = list(set(list_of_addresses))
+
+                    return [address for address in list_of_addresses if address not in ['::', '0.0.0.0']]
+
+                # get and sanitize MAC address
+                mac_address = manager_nic.get("PermanentMACAddress")
+                if mac_address is not None:
+                    mac_address = mac_address.upper()
+
+                if plugin.rf.vendor == "Dell":
+                    id = manager_nic.get("Id")
+                else:
+                    id = "{}:{}".format(manager_inventory.id,manager_nic.get("Id"))
+
+                network_inventory = NIC(
+                    id = id,
+                    name = manager_nic.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                    current_speed = manager_nic.get("SpeedMbps"),
+                    autoneg = manager_nic.get("AutoNeg"),
+                    full_duplex = manager_nic.get("FullDuplex"),
+                    hostname = manager_nic.get("HostName"),
+                    mac_address = mac_address,
+                    manager_ids = manager_inventory.id,
+                    system_ids = manager_inventory.system_ids,
+                    chassi_ids = manager_inventory.chassi_ids,
+                    ipv4_addresses = get_ip_adresses("IPv4Addresses"),
+                    ipv6_addresses = get_ip_adresses("IPv6Addresses"),
+                    link_type = "Ethernet",
+                    link_status = manager_nic.get("LinkStatus")
+                )
+
+                if args.verbose:
+                    network_inventory.source_data = manager_nic
+
+                plugin.inventory.add(network_inventory)
+
+                if plugin.rf.vendor == "Cisco" and manager_nic.get("InterfaceEnabled") is True:
+                    network_inventory.operation_status = "Enabled"
+
+                # Huawei is completely missing any status information
+                if plugin.rf.vendor == "Huawei" and network_inventory.operation_status is None:
+                    network_inventory.operation_status = "Enabled"
+
+                nic_status = None
+                if network_inventory.health_status:
+                    nic_status = network_inventory.health_status
+                elif network_inventory.operation_status == "Enabled":
+                    nic_status = "OK"
+                else:
+                    nic_status = "UNKNOWN"
+
+                if network_inventory.operation_status in ["Disabled", None]:
                     continue
 
-                if nic_status.get("Health"):
-                    status = nic_status.get("Health")
-                elif nic_status.get("State") == "Enabled":
-                    status = "OK"
-                else:
-                    status = "UNKNOWN"
-
-                speed = manager_nic.get("SpeedMbps")
-                duplex = manager_nic.get("FullDuplex")
-                autoneg = manager_nic.get("AutoNeg")
-                host_name = manager_nic.get("HostName") or "no hostname set"
-                nic_id = manager_nic.get("Id")
-                ip_addresses = list()
-
-                # get IPv4 address
-                ipv4_address = grab(manager_nic, "IPv4Addresses.Address") or grab(manager_nic, "IPv4Addresses.0.Address")
-                if ipv4_address is not None:
-                    ip_addresses.append(ipv4_address)
-
-                # get IPv6 address
-                ipv6_address  = grab(manager_nic, "IPv6Addresses.Address") or grab(manager_nic, "IPv6Addresses.0.Address")
-                if ipv6_address is not None and ipv6_address != "::":
-                    ip_addresses.append(ipv6_address)
+                host_name = network_inventory.hostname or "no hostname set"
 
                 ip_addresses_string = None
+                ip_addresses = [*network_inventory.ipv4_addresses, *network_inventory.ipv6_addresses]
                 if len(ip_addresses) > 0:
                     ip_addresses_string = "/".join(ip_addresses)
 
-                if duplex is not None:
-                    duplex = "full" if duplex is True else "half"
-                if autoneg is not None:
-                    autoneg = "on" if autoneg is True else "off"
+                duplex = autoneg = None
+                if network_inventory.full_duplex is not None:
+                    duplex = "full" if network_inventory.full_duplex is True else "half"
+                if network_inventory.autoneg is not None:
+                    autoneg = "on" if network_inventory.autoneg is True else "off"
 
-                status_text = f"NIC {nic_id} '{host_name}' (IPs: {ip_addresses_string}) (speed: {speed}, autoneg: {autoneg}, duplex: {duplex}) status: {status}"
+                nic_status_text  = f"NIC {network_inventory.id} '{host_name}' (IPs: {ip_addresses_string}) "
+                nic_status_text += f"(speed: {network_inventory.current_speed}, autoneg: {autoneg}, duplex: {duplex}) status: {nic_status}"
 
-                plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+                plugin.add_output_data("CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status, nic_status_text)
 
-    # get running firmware informations from Fujitsu server
-    if plugin.rf.vendor == "Fujitsu":
+    # get license information
+    # get vendor informations
+    vendor_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
+
+    bmc_licenses = list()
+    if plugin.rf.vendor == "HPE":
+
+        ilo_license_string = grab(vendor_data, "License.LicenseString")
+        ilo_license_key = grab(vendor_data, "License.LicenseKey")
+
+        bmc_licenses.append(f"{ilo_license_string} ({ilo_license_key})")
+
+    elif plugin.rf.vendor == "Lenovo":
+
+        fod_link = grab(vendor_data, "FoD/@odata.id", separator="/")
+
+        if fod_link is not None:
+            fod_data = plugin.rf.get(f"{fod_link}/Keys{plugin.rf.vendor_data.expand_string}")
+
+            if fod_data.get("Members") is None or len(fod_data.get("Members")) > 0:
+
+                for fod_member in fod_data.get("Members"):
+                    if manager_nic_member.get("@odata.context"):
+                        licenses_data = fod_member
+                    else:
+                        licenses_data = plugin.rf.get(fod_member.get("@odata.id"))
+
+                    lic_status = licenses_data.get("Status") # valid
+                    lic_expire_date = licenses_data.get("Expires") # NO CONSTRAINTS
+                    lic_description = licenses_data.get("Description")
+
+                    license_string = f"{lic_description}"
+                    if lic_expire_date != "NO CONSTRAINTS":
+                        license_string += " (expires: {lic_expire_date}"
+
+                    license_string += f" Status: {lic_status}"
+                    bmc_licenses.append(license_string)
+
+    elif plugin.rf.vendor == "Fujitsu":
 
         # get configuration
-        iRMCConfiguration_link = grab(manager_response, f"Oem/{plugin.rf.vendor_dict_key}/iRMCConfiguration/@odata.id", separator="/")
+        iRMCConfiguration_link = grab(vendor_data, f"iRMCConfiguration/@odata.id", separator="/")
 
         iRMCConfiguration = None
         if iRMCConfiguration_link is not None:
@@ -3057,84 +4214,90 @@ def get_bmc_info_generic(redfish_url):
         if license_informations_link is not None:
             license_informations = plugin.rf.get(license_informations_link)
 
-        irmc_firmware_informations = get_bmc_firmware_fujitsu(redfish_url)
-        if irmc_firmware_informations is not None:
-            for bmc_fw_bank in [ "iRMCFwImageHigh", "iRMCFwImageLow" ]:
-                fw_info = irmc_firmware_informations.get(bmc_fw_bank)
-                if fw_info is not None:
-                    plugin.add_output_data("OK", "Firmware: State: %s, Booter: %s, SDDR: %s (%s), Date: %s" % (
-                        fw_info.get("FirmwareRunningState"),
-                        fw_info.get("BooterVersion"),
-                        fw_info.get("SDRRVersion"),
-                        fw_info.get("SDRRId"),
-                        fw_info.get("FirmwareBuildDate")
-                        )
-                    )
-
         if license_informations is not None and license_informations.get("Keys@odata.count") > 0:
-            licenses = list()
             for bmc_license in license_informations.get("Keys"):
-                licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
+                bmc_licenses.append("%s (%s)" % ( bmc_license.get("Name"), bmc_license.get("Type")))
 
-            if len(licenses) > 0:
-                plugin.add_output_data("OK", "Licenses: %s" % ", ".join(licenses))
+    elif plugin.rf.vendor == "Huawei":
 
-    plugin.add_output_data("OK", f"{bmc_type}{bmc_model} ({bmc_fw_version}) and nics are in 'OK' state.", summary = True)
+        ibmc_license_link = vendor_data.get("LicenseService")
 
-def get_bmc_info_huawei(redfish_url):
+        if ibmc_license_link is not None and len(ibmc_license_link) > 0:
+            ibmc_lic = plugin.rf.get(ibmc_license_link.get("@odata.id"))
 
-    global plugin
+            bmc_licenses.append("%s (%s)" % ( ibmc_lic.get("InstalledStatus"), ibmc_lic.get("LicenseClass")))
 
-    manager_response = plugin.rf.get(f"{redfish_url}/{plugin.rf.vendor_data.expand_string}")
+    manager_inventory.licenses = bmc_licenses
 
-    ibmc_model = manager_response.get("Model")
-    ibmc_fw_version = manager_response.get("FirmwareVersion")
+    for bmc_license in bmc_licenses:
+        plugin.add_output_data("OK", f"License: {bmc_license}")
 
-    # get general informations
-    vendor_ibmc_data = grab(manager_response, f"Oem.{plugin.rf.vendor_dict_key}")
+    # HP ILO specific stuff
+    if plugin.rf.vendor == "HPE":
 
-    if vendor_ibmc_data is None:
-        plugin.add_output_data("UNKNOWN", "No iBMC data found.")
-        return
+        # iLO Self Test
+        for self_test in vendor_data.get("iLOSelfTestResults"):
 
-    ibmc_uptime = vendor_ibmc_data.get("BMCUpTime")
-    ibmc_ipv4 = vendor_ibmc_data.get("DeviceIPv4")
-    ibmc_ipv6 = vendor_ibmc_data.get("DeviceIPv6")
-    ibmc_hostname = vendor_ibmc_data.get("HostName")
-    ibmc_domainname = vendor_ibmc_data.get("DomainName")
-    ibmc_location = vendor_ibmc_data.get("DeviceLocation")
+            self_test_status = self_test.get("Status")
 
-    ibmc_license_link = vendor_ibmc_data.get("LicenseService")
-    ibmc_license_status = None
-    ibmc_license_class = None
+            if self_test_status in ["Informational", None]:
+                continue
 
-    if ibmc_license_link is not None and len(ibmc_license_link) > 0:
-        ibmc_license_informations = plugin.rf.get(ibmc_license_link.get("@odata.id"))
+            self_test_status = self_test_status.upper()
 
-        ibmc_license_status = ibmc_license_informations.get("InstalledStatus")
-        ibmc_license_class = ibmc_license_informations.get("LicenseClass")
+            self_test_name = self_test.get("SelfTestName")
+            self_test_notes = self_test.get("Notes")
 
-    status_text = f"{ibmc_model} ({ibmc_fw_version})"
+            if self_test_notes is not None and len(self_test_notes) != 0:
+                self_test_notes = self_test_notes.strip()
+                self_test_status_text = f"SelfTest {self_test_name} ({self_test_notes}) status: {self_test_status}"
+            else:
+                self_test_status_text = f"SelfTest {self_test_name} status: {self_test_status}"
 
-    if ibmc_hostname is not None:
-        status_text += f" {ibmc_hostname}"
-        if ibmc_domainname is not None and len(ibmc_domainname) > 0:
-            status_text += f".{ibmc_domainname}"
+            plugin.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status, self_test_status_text)
 
-    if ibmc_ipv4 and len(ibmc_ipv4) > 0:
-        status_text += f" IPv4: {ibmc_ipv4}"
-    if ibmc_ipv6 and len(ibmc_ipv6) > 0:
-        status_text += f" IPv6: {ibmc_ipv6}"
+    # Lenovo specific stuff
+    if plugin.rf.vendor == "Lenovo":
+        redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
 
-    if ibmc_location and len(ibmc_location) > 0:
-        status_text += f" Location: {ibmc_location}"
+        chassi_response = None
+        if redfish_chassi_url is not None:
+            chassi_response = plugin.rf.get(redfish_chassi_url)
 
-    if ibmc_license_status and ibmc_license_class:
-        status_text += f" License: {ibmc_license_class} (status: {ibmc_license_status})"
+        located_data = grab(chassi_response, f"Oem.{plugin.rf.vendor_dict_key}.LocatedIn")
 
-    status = get_status_data(manager_response.get("Status")).get("Health")
+        if located_data is not None:
+            descriptive_name = located_data.get("DescriptiveName")
+            rack = located_data.get("Rack")
 
-    plugin.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text, summary = not args.detailed)
+            system_name_string = f"System name: {descriptive_name} ({rack})"
+            if args.detailed:
+                plugin.add_output_data("OK", system_name_string)
+            else:
+                status_text += f" {system_name_string}"
+
+    # get running firmware informations from Fujitsu server
+    if plugin.rf.vendor == "Fujitsu":
+
+        for bmc_firmware in get_firmware_info_fujitsu(redfish_url,True):
+            plugin.add_output_data("OK", "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")))
+
+    # get Huawei Server location data
+    if plugin.rf.vendor == "Huawei":
+
+        ibmc_location = vendor_data.get("DeviceLocation")
+        if ibmc_location is not None and len(ibmc_location) > 0:
+
+            location_string = f"Location: {ibmc_location}"
+            if args.detailed:
+                plugin.add_output_data("OK", location_string)
+            else:
+                status_text += f" {location_string}"
+
+
+    plugin.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text, summary = True)
+
+    return
 
 def get_basic_system_info():
 
@@ -3245,24 +4408,27 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args)
 
+    # initialize inventory
+    plugin.inventory = Inventory()
+
     # try to get systems, managers and chassis IDs
     discover_system_properties()
 
     # get basic informations
     get_basic_system_info()
 
-    if "power"      in args.requested_query: get_chassi_data("power")
-    if "temp"       in args.requested_query: get_chassi_data("temp")
-    if "fan"        in args.requested_query: get_chassi_data("fan")
-    if "proc"       in args.requested_query: get_system_data("procs")
-    if "memory"     in args.requested_query: get_system_data("mem")
-    if "nic"        in args.requested_query: get_system_data("nics")
-    if "storage"    in args.requested_query: get_storage()
-    if "bmc"        in args.requested_query: get_bmc_info()
-    if "info"       in args.requested_query: get_system_info()
-    if "firmware"   in args.requested_query: get_firmware_info()
-    if "mel"        in args.requested_query: get_event_log("Manager")
-    if "sel"        in args.requested_query: get_event_log("System")
+    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data("power")
+    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data("temp")
+    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data("fan")
+    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data("procs")
+    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data("mem")
+    if any(x in args.requested_query for x in ['nic', 'all']):      get_system_data("nics")
+    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage()
+    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
+    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info()
+    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info()
+    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
+    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log("System")
 
     plugin.do_exit()
 

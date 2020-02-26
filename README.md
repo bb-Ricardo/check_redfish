@@ -1,7 +1,8 @@
 # check_redfish.py
 
-This is a monitoring plugin to check components and
+This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 ## Requirements
 * python >= 3.6
@@ -38,10 +39,11 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [-c CRITICAL] [-v] [-d] [-m MAX] [-r RETRIES]
                         [-t TIMEOUT] [--storage] [--proc] [--memory] [--power]
                         [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware]
-                        [--sel] [--mel]
+                        [--sel] [--mel] [--all] [-i]
 
-This is a monitoring plugin to check components and
+This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
@@ -69,7 +71,9 @@ optional arguments:
                         set warning value
   -c CRITICAL, --critical CRITICAL
                         set critical value
-  -v, --verbose         this will add all requests and responses to output
+  -v, --verbose         this will add all https requests and responses to
+                        output, also adds inventory source data to all
+                        inventory objects
   -d, --detailed        always print detailed result
   -m MAX, --max MAX     set maximum of returned items for --sel or --mel
   -r RETRIES, --retries RETRIES
@@ -78,7 +82,7 @@ optional arguments:
                         set number of request timeout per try/retry (default:
                         7)
 
-query status/health informations (at least one is required):
+query status/health information (at least one is required):
   --storage             request storage health
   --proc                request processor health
   --memory              request memory health
@@ -91,11 +95,16 @@ query status/health informations (at least one is required):
   --firmware            request firmware informations
   --sel                 request System Log status
   --mel                 request Management Processor Log status
+  --all                 request all of the above information at once.
+
+query inventory information (no health check):
+  -i, --inventory       return inventory in json format instead of regular
+                        plugin output
 
 ```
 
 ## General usage
-multiple request commands can be combined.
+multiple request commands can be combined. Or use `--all` to query all system information at once
 
 ### Lets start with an example
 ```/usr/lib64/nagios/plugins/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
@@ -141,7 +150,7 @@ BMC is expired a new session and session file will be created.
 To actually benefit from this feature you need to set the user session timeout in
 the BMC to a higher value then your default check interval!
 
-If your default check interval is 5 minutes then the session timout in the BMC
+If your default check interval is 5 minutes then the session timeout in the BMC
 should be at least 6 minutes!
 
 #### Session file name and location
@@ -160,7 +169,7 @@ results in following session file:
 
 ```/var/plugin/tmp/my-hostname.session```
 
-### WARNING and CRITICAL
+### WARNING and CRITICAL (health checks only)
 you can use warning and critical with following commands:
 
 **--mel** (values are passed as "days")<br>
@@ -178,7 +187,7 @@ Example: ```--mel --critical 1 --warning 3```
 * Entries with a != OK severity which are not older then 72 hours are reported as WARNING
 * Any entries with a != OK severity which are older then 72 hours will be roprted as OK
 
-### Detailed
+### Detailed (health checks only)
 Health status by default will be reported as a summary:
 
 ```[OK]: All power supplies (2) are in good condition|'ps_1'=122 'ps_2'=109```
@@ -191,9 +200,10 @@ If multiline output by default is preferred the option ```--detailed``` needs to
 
 ### Debugging
 Use option ```--verbose``` to check for connection problems.
-All redfish requests and responses will be printed.
+All redfish https requests and responses will be printed.
+This will also add the `source_data` attribute for each inventory object.
 
-### Max option
+### Max option (health checks only)
 This option can be used to limit the results output for event log entries requested
 by **--mel** and **--sel**
 
@@ -212,9 +222,7 @@ the plugin would be finished after 28 seconds.
 ## Known limitations
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
-* On HPE systems the nic status is reported unreliable
-* On Lenovo systems the commands **--mel** and **--sel** are not implemented due to
-issues with timeouts
+* On all systems the nic status is reported unreliable
 * On Huawei systems the command **--mel** is not implemented
 * For **--storage** components which report a Status.Health as **None**
 will be treated as **OK** if Status.State is set to **Enabled**
@@ -248,6 +256,9 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 
 ### Fujitsu
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
+
+### Cisco
+* Cisco C240M5SX (CIMC Version 3.1(3a))
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
