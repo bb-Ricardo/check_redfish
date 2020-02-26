@@ -889,6 +889,7 @@ class Inventory(object):
 
         # add metadata
         inventory_content["meta"] = {
+            "WARNING": "THIS is a alpha version of this implementation and possible changes might occur without notice",
             "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
             "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
             "inventory_layout_version": inventory_layout_version_string,
