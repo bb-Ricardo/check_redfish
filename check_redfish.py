@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 
 self_description = \
 """This is a monitoring/inventory plugin to check components and
