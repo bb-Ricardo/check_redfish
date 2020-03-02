@@ -233,6 +233,8 @@ This plugin is currently tested with following systems
 ### Hewlett Packard Enterprise
 Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ProLiant BL460c Gen8
+* ProLiant BL460c Gen9
+* ProLiant BL460c Gen10
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10

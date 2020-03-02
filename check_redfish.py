@@ -842,7 +842,7 @@ class Inventory(object):
         for inv_item in self.base_structure[object.inventory_item_name]:
             if inv_item.id == object.id:
                 #raise AttributeError(f"Object id '{object.id}' already used")
-                print("Object id '{object.id}' already used", file=sys.stderr)
+                print(f"Object id '{object.id}' already used", file=sys.stderr)
 
         self.base_structure[object.inventory_item_name].append(object)
 
@@ -2214,6 +2214,12 @@ def get_storage_hpe(system):
             else:
                 disk_response = plugin.rf.get(disk.get("@odata.id"))
 
+            # skip already processed disks
+            if disk_response.get("@odata.id") in system_drives_list:
+                continue
+            else:
+                system_drives_list.append(disk_response.get("@odata.id"))
+
             status_data = get_status_data(disk_response.get("Status"))
 
             # get disk size
@@ -2277,7 +2283,16 @@ def get_storage_hpe(system):
 
             size = int(pd_inventory.size_in_byte / 1000 ** 3)
 
-            status_text = f"Physical Drive ({pd_inventory.location}) {size}GB Status: {pd_inventory.health_status}"
+            drive_status_reasons = ""
+            if pd_inventory.health_status != "OK":
+                drive_status_reasons_list = disk_response.get("DiskDriveStatusReasons")
+                if "None" in drive_status_reasons_list:
+                    drive_status_reasons_list.remove("None")
+
+                if len(drive_status_reasons_list) > 0:
+                    drive_status_reasons = " (%s)" % (", ".join(drive_status_reasons_list))
+
+            status_text = f"Physical Drive ({pd_inventory.location}) {size}GB Status: {pd_inventory.health_status}{drive_status_reasons}"
 
             plugin.add_output_data("CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status, status_text)
 
@@ -2427,6 +2442,7 @@ def get_storage_hpe(system):
     # unhealthy
     redfish_url = f"{system}/SmartStorage/ArrayControllers/?$expand=."
 
+    system_drives_list = list()
     array_controllers_response = plugin.rf.get(redfish_url)
 
     if array_controllers_response.get("Members"):
