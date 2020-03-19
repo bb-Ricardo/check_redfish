@@ -1274,7 +1274,7 @@ def get_single_chassi_power(redfish_url):
             operatinal_status = status_data.get("State")
             part_number = ps.get("PartNumber")
             model = ps.get("Model") or part_number
-            last_power_output = ps.get("LastPowerOutputWatts")
+            last_power_output = ps.get("LastPowerOutputWatts") or ps.get("PowerOutputWatts")
             capacity_in_watt = ps.get("PowerCapacityWatts")
             bay = None
 
@@ -1291,8 +1291,8 @@ def get_single_chassi_power(redfish_url):
                 elif plugin.rf.vendor == "Lenovo":
                     bay = grab(oem_data, "Location.Info")
 
-                elif plugin.rf.vendor == "Huawei":
-                    last_power_output = grab(oem_data, f"PowerOutputWatts")
+                if last_power_output is None and grab(oem_data, "PowerOutputWatts") is not None:
+                    last_power_output = grab(oem_data, "PowerOutputWatts")
 
             if bay is None:
                 bay = ps_num
@@ -1737,6 +1737,9 @@ def get_single_system_procs(redfish_url):
 
                 vendor_data = grab(proc_response, f"Oem.{plugin.rf.vendor_dict_key}")
 
+                if plugin.rf.vendor == "Dell" and grab(vendor_data, "DellProcessor") is not None:
+                    vendor_data = grab(vendor_data, "DellProcessor")
+
                 # get current/regular speed
                 current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or \
                                 grab(vendor_data, "RatedSpeedMHz") or \
@@ -1755,6 +1758,11 @@ def get_single_system_procs(redfish_url):
                 L1_cache_kib = grab(vendor_data, "L1CacheKiB")
                 L2_cache_kib = grab(vendor_data, "L2CacheKiB")
                 L3_cache_kib = grab(vendor_data, "L3CacheKiB")
+
+                if plugin.rf.vendor == "Dell":
+                    L1_cache_kib = grab(vendor_data, "Cache1InstalledSizeKB")
+                    L2_cache_kib = grab(vendor_data, "Cache2InstalledSizeKB")
+                    L3_cache_kib = grab(vendor_data, "Cache3InstalledSizeKB")
 
                                     # HPE                         # Lenovo
                 vendor_cache_data = grab(vendor_data, "Cache") or grab(vendor_data, "CacheInfo")
@@ -1846,7 +1854,7 @@ def get_single_system_mem(redfish_url):
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
 
-            if plugin.rf.vendor == "Dell":
+            if plugin.rf.vendor == "Dell" and total_mem % 1024 != 0:
                 total_mem = total_mem * 1024 ** 3 / 1000 ** 3
 
             plugin.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
@@ -1888,8 +1896,8 @@ def get_single_system_mem(redfish_url):
 
                 module_size = int(module_size)
 
-                # DELL
-                if plugin.rf.vendor == "Dell":
+                # DELL fix for iDRAC 8
+                if plugin.rf.vendor == "Dell" and module_size % 1024 != 0:
                     module_size = round(module_size * 1024 ** 2 / 1000 ** 2)
 
                 # get name
@@ -2885,26 +2893,51 @@ def get_storage_generic(system):
                             cap_status_text += f" : {cap_fault_details}"
 
                         plugin.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status, cap_status_text)
-
-                for controller_drive in controller_response.get("Drives"):
-                    system_drives_list.append(controller_drive.get("@odata.id"))
-                    get_drive(controller_drive.get("@odata.id"))
-
-                # get volumes
-                get_volumes(controller_response.get("Volumes").get("@odata.id"))
-
-                # get enclosures
-                enclosure_list = grab(controller_response, "Links.Enclosures")
-
-                if isinstance(enclosure_list, list):
-
-                    for enclosure_link in enclosure_list:
-                        if isinstance(enclosure_link, str):
-                            get_enclosures(enclosure_link)
-                        else:
-                            get_enclosures(enclosure_link.get("@odata.id"))
             else:
-                plugin.add_output_data("UNKNOWN", "No array controller data returned for API URL '%s'" % controller_response.get("@odata.id"))
+                status_data = get_status_data(controller_response.get("Status"))
+                controller_inventory = StorageController(
+                    id = controller_response.get("Id"),
+                    name  = controller_response.get("Name"),
+                    health_status = status_data.get("Health"),
+                    operation_status = status_data.get("State"),
+                )
+
+                storage_controller_names_list.append(controller_inventory.name)
+                storage_controller_id_list.append(controller_response.get("@odata.id"))
+
+                if args.verbose:
+                    controller_inventory.source_data = controller_response
+
+                if controller_inventory.name is None:
+                    controller_inventory.name = "Storage controller"
+
+                plugin.inventory.add(controller_inventory)
+
+                # ignore absent controllers
+                if controller_inventory.operation_status == "Absent":
+                    continue
+
+                status_text = f"Controller {controller_inventory.name} status is: {controller_inventory.health_status}"
+
+                plugin.add_output_data("OK" if controller_inventory.health_status in ["OK", None] else controller_inventory.health_status, status_text)
+
+            for controller_drive in controller_response.get("Drives"):
+                system_drives_list.append(controller_drive.get("@odata.id"))
+                get_drive(controller_drive.get("@odata.id"))
+
+            # get volumes
+            get_volumes(controller_response.get("Volumes").get("@odata.id"))
+
+            # get enclosures
+            enclosure_list = grab(controller_response, "Links.Enclosures")
+
+            if isinstance(enclosure_list, list):
+
+                for enclosure_link in enclosure_list:
+                    if isinstance(enclosure_link, str):
+                        get_enclosures(enclosure_link)
+                    else:
+                        get_enclosures(enclosure_link.get("@odata.id"))
 
     # check SimpleStorage
     simple_storage_link = grab(system_response, "SimpleStorage/@odata.id", separator="/")
@@ -2922,7 +2955,8 @@ def get_storage_generic(system):
                     simple_storage_controller_response = plugin.rf.get(simple_storage_member.get("@odata.id"))
 
                 # this controller has already been checked
-                if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list:
+                if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list or \
+                        simple_storage_controller_response.get("Id") in [x.id for x in plugin.inventory.get(StorageController)]:
                     continue
 
                 status_data = get_status_data(simple_storage_controller_response.get("Status"))
@@ -3213,7 +3247,8 @@ def get_event_log_generic(type, system_manager_id):
     # define locations for known vendors
     if type == "System":
         if plugin.rf.vendor == "Dell":
-            redfish_url = f"{system_manager_id}/Logs/Sel"
+            log_service_data = plugin.rf.get(f"{system_manager_id}/LogServices/Sel")
+            redfish_url = log_service_data.get("Entries").get("@odata.id")
         elif plugin.rf.vendor == "Fujitsu":
             redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/"
         elif plugin.rf.vendor == "Cisco":
@@ -3222,7 +3257,8 @@ def get_event_log_generic(type, system_manager_id):
             redfish_url = f"{system_manager_id}/LogServices/ActiveLog/Entries/"
     else:
         if plugin.rf.vendor == "Dell":
-            redfish_url = f"{system_manager_id}/Logs/Lclog"
+            log_service_data = plugin.rf.get(f"{system_manager_id}/LogServices/Lclog")
+            redfish_url = log_service_data.get("Entries").get("@odata.id")
         elif plugin.rf.vendor == "Fujitsu":
             redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/"
         elif plugin.rf.vendor == "Cisco":
@@ -3535,7 +3571,7 @@ def get_single_system_info(redfish_url):
 
     # Dell system
     # just WHY?
-    if plugin.rf.vendor == "Dell":
+    if plugin.rf.vendor == "Dell" and mem_size % 1024 != 0:
         mem_size = round(mem_size * 1024 ** 3 / 1000 ** 3)
 
     status_data = get_status_data(system_response.get("Status"))
@@ -4024,7 +4060,7 @@ def get_bmc_info_generic(redfish_url):
     if plugin.rf.vendor == "Dell":
         if bmc_model == "13G Monolithic":
             bmc_model = "iDRAC 8"
-        if bmc_model == "14G Monolithic":
+        if bmc_model in [ "14G Monolithic", "15G Monolithic" ]:
             bmc_model = "iDRAC 9"
 
     status_text = f"{bmc_model} (Firmware: {bmc_fw_version})"
@@ -4405,8 +4441,11 @@ def discover_system_properties():
             # ToDo:
             #  * This is a DELL workaround
             #  * If RAID chassi is requested the iDRAC will restart
-            if "RAID" not in entity.get("@odata.id"):
-                system_properties[root_object.lower()].append(entity.get("@odata.id"))
+            if root_object == "Chassis" and \
+                    ("RAID" in entity.get("@odata.id") or "Enclosure" in entity.get("@odata.id")):
+                continue
+
+            system_properties[root_object.lower()].append(entity.get("@odata.id"))
 
     plugin.rf.connection.system_properties = system_properties
     plugin.rf.save_session_to_file()

@@ -249,9 +249,10 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ThinkSystem SR650 (BMC Version 2.12)
 
 ### Dell
-* PowerEdge R630 (iDRAC Version 2.70.70.70)
-* PowerEdge R740 (iDRAC Version 3.32.32.32)
-* PowerEdge R930 (iDRAC Version 2.70.70.70)
+* PowerEdge R630  (iDRAC 8 Version 2.70.70.70)
+* PowerEdge R740  (iDRAC 9 Version 3.32.32.32)
+* PowerEdge R7515 (iDRAC 9 Version 4.10.10.10)
+* PowerEdge R930  (iDRAC 8 Version 2.70.70.70)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
