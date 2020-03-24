@@ -1,6 +1,7 @@
 
 
 from .redfish import RedfishConnection
+from .inventory import Inventory
 
 # define valid return status types
 status_types = {
@@ -30,6 +31,8 @@ class PluginData:
 
         self.cli_args = cli_args
         self.rf = RedfishConnection(cli_args)
+
+        self.inventory = Inventory()
 
     def set_current_command(self, current_command=None):
 

@@ -1,38 +1,36 @@
 #!/usr/bin/env python3
 
-
-
-# import build-in modules
 import logging
-import pickle
-import os
-import tempfile
 
-import pprint
-import json
-import datetime
-import sys
-
-
-
+from cr_module.common import grab, parse_command_line
+from cr_module.classes.plugin import PluginData
+from cr_module.power import get_single_chassi_power
+from cr_module.temp import get_single_chassi_temp
+from cr_module.fan import get_single_chassi_fan
+from cr_module.system_chassi import get_system_info
+from cr_module.proc import get_single_system_procs
+from cr_module.mem import get_single_system_mem
+from cr_module.nic import get_single_system_nics, get_system_nics_fujitsu
+from cr_module.storage import get_storage
+from cr_module.bmc import get_bmc_info
+from cr_module.firmware import get_firmware_info
+from cr_module.event import get_event_log
 
 plugin = None
 
 
-def get_chassi_data(data_type = None):
+def get_chassi_data(plugin_object, data_type=None):
 
-    global plugin
-
-    if data_type is None or data_type not in [ "power", "temp", "fan" ]:
+    if data_type is None or data_type not in ["power", "temp", "fan"]:
         raise Exception("Unknown data_type not set for get_chassi_data(): %s", type)
 
-    if plugin.rf.connection.system_properties is None:
-        discover_system_properties()
+    if plugin_object.rf.connection.system_properties is None:
+        plugin_object.rf.discover_system_properties()
 
-    chassis = grab(plugin.rf.connection.system_properties, "chassis")
+    chassis = grab(plugin_object.rf.connection.system_properties, "chassis")
 
     if chassis is None or len(chassis) == 0:
-        plugin.add_output_data("UNKNOWN", "No 'chassis' property found in root path '/redfish/v1'")
+        plugin_object.add_output_data("UNKNOWN", "No 'chassis' property found in root path '/redfish/v1'")
         return
 
     for chassi in chassis:
@@ -45,16 +43,15 @@ def get_chassi_data(data_type = None):
 
     return
 
-def get_system_data(data_type):
 
-    global plugin
+def get_system_data(plugin_object, data_type):
 
-    if data_type is None or data_type not in [ "procs", "mem", "nics" ]:
-        plugin.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
+    if data_type is None or data_type not in ["procs", "mem", "nics"]:
+        plugin_object.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
         return
 
-    if plugin.rf.connection.system_properties is None:
-        discover_system_properties()
+    if plugin_object.rf.connection.system_properties is None:
+        plugin_object.rf.discover_system_properties()
 
     systems = plugin.rf.connection.system_properties.get("systems")
 
@@ -87,27 +84,24 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args)
 
-    # initialize inventory
-    plugin.inventory = Inventory()
-
     # try to get systems, managers and chassis IDs
-    discover_system_properties()
+    plugin.rf.discover_system_properties()
 
     # get basic information
-    get_basic_system_info()
+    plugin.rf.determine_vendor()
 
-    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data("power")
-    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data("temp")
-    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data("fan")
-    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data("procs")
-    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data("mem")
-    if any(x in args.requested_query for x in ['nic', 'all']):      get_system_data("nics")
-    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage()
-    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
-    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info()
-    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info()
-    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
-    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log("System")
+    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data(plugin, "power")
+    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data(plugin, "temp")
+    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data(plugin, "fan")
+    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data(plugin, "procs")
+    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data(plugin, "mem")
+    if any(x in args.requested_query for x in ['nic', 'all']):      get_system_data(plugin, "nics")
+    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage(plugin)
+    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info(plugin)
+    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info(plugin)
+    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info(plugin)
+    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log(plugin, "Manager")
+    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log(plugin, "System")
 
     plugin.do_exit()
 
