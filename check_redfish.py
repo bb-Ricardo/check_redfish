@@ -1,34 +1,23 @@
 #!/usr/bin/env python3
 
-self_description = \
-"""This is a monitoring/inventory plugin to check components and
-health status of systems which support Redfish.
-It will also create a inventory of all components of a system.
 
-R.I.P. IPMI
-"""
 
 # import build-in modules
 import logging
 import pickle
 import os
 import tempfile
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
+
 import pprint
 import json
 import datetime
 import sys
 
-# import 3rd party modules
-import redfish
 
-__version__ = "0.0.11"
-__version_date__ = "2020-02-11"
-__author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
-__description__ = "Check Redfish Plugin"
-__license__ = "MIT"
+
 
 plugin = None
+
 
 def get_chassi_data(data_type = None):
 
@@ -104,7 +93,7 @@ if __name__ == "__main__":
     # try to get systems, managers and chassis IDs
     discover_system_properties()
 
-    # get basic informations
+    # get basic information
     get_basic_system_info()
 
     if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data("power")

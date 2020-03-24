@@ -1,7 +1,16 @@
 
+"""Contains the different vendor definitions"""
 
 
-class VendorHPEData():
+class VendorGeneric:
+
+    view_supported = False
+    view_select = None
+
+    expand_string = ""
+
+
+class VendorHPEData(VendorGeneric):
 
     ilo_hostname = None
     ilo_version = None
@@ -25,15 +34,15 @@ class VendorHPEData():
         "Select": [
             {
                 "From": "/Systems/1/Memory/?$expand=.",
-                "Properties": [ "Members AS Memory"]
+                "Properties": ["Members AS Memory"]
             },
             {
                 "From": "/Systems/1/Processors/?$expand=.",
-                "Properties": [ "Members AS Processors"]
+                "Properties": ["Members AS Processors"]
             },
             {
                 "From": "/Systems/1/EthernetInterfaces/?$expand=.",
-                "Properties": [ "Members AS EthernetInterfaces"]
+                "Properties": ["Members AS EthernetInterfaces"]
             },
             {
                 "From": "/Chassis/1/Power/?$expand=.",
@@ -41,60 +50,45 @@ class VendorHPEData():
             },
             {
                 "From": "/Chassis/1/Thermal/",
-                "Properties": ["Temperatures", "Fans" ]
+                "Properties": ["Temperatures", "Fans"]
             },
             {
                 "From": "/Managers/?$expand=.",
-                "Properties": [ "Members as ILO" ]
+                "Properties": ["Members as ILO"]
             },
             {
                 "From": "/Managers/1/EthernetInterfaces/?$expand=.",
-                "Properties": [ "Members as ILOInterfaces" ]
+                "Properties": ["Members as ILOInterfaces"]
             }
         ]
     }
 
     view_response = None
 
-class VendorLenovoData():
 
-    view_supported = False
-    view_select = None
+class VendorLenovoData(VendorGeneric):
 
     expand_string = "?$expand=*"
 
-class VendorDellData():
 
-    view_supported = False
-    view_select = None
+class VendorDellData(VendorGeneric):
 
     expand_string = "?$expand=*($levels=1)"
 
-class VendorHuaweiData():
 
-    view_supported = False
-    view_select = None
+class VendorHuaweiData(VendorGeneric):
 
     # currently $expand is not supported
     expand_string = ""
 
-class VendorFujitsuData():
 
-    view_supported = False
-    view_select = None
+class VendorFujitsuData(VendorGeneric):
 
     expand_string = "?$expand=Members"
 
-class VendorCiscoData():
 
-    view_supported = False
-    view_select = None
+class VendorCiscoData(VendorGeneric):
 
     expand_string = ""
 
-class VendorGeneric():
-
-    view_supported = False
-    view_select = None
-
-    expand_string = ""
+# EOF

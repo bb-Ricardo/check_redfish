@@ -1,18 +1,21 @@
 
 
+from .redfish import RedfishConnection
+
 # define valid return status types
 status_types = {
-    "OK" : 0,
+    "OK": 0,
     "WARNING": 1,
     "CRITICAL": 2,
     "UNKNOWN": 3
 }
 
 
-class PluginData():
+class PluginData:
 
     rf = None
     inventory = None
+    cli_args = None
 
     __perf_data = list()
     __output_data = dict()
@@ -20,14 +23,15 @@ class PluginData():
     __return_status = "OK"
     __current_command = "global"
 
-    def __init__(self, cli_args = None):
+    def __init__(self, cli_args=None):
 
         if cli_args is None:
             raise Exception("No args passed to RedfishConnection()")
 
+        self.cli_args = cli_args
         self.rf = RedfishConnection(cli_args)
 
-    def set_current_command(self, current_command = None):
+    def set_current_command(self, current_command=None):
 
         if current_command is None:
             raise Exception("current_command not set")
@@ -45,7 +49,7 @@ class PluginData():
         if status_types[state] > status_types[self.__return_status]:
             self.__return_status = state
 
-    def add_output_data(self, state = None, text = None, summary = False):
+    def add_output_data(self, state=None, text=None, summary=False):
 
         if state is None:
             raise Exception("state not set")
@@ -71,7 +75,7 @@ class PluginData():
 
             self.__output_data[self.__current_command][state].append(text)
 
-    def add_log_output_data(self, state = None, text = None):
+    def add_log_output_data(self, state=None, text=None):
 
         if state is None:
             raise Exception("state not set")
@@ -85,12 +89,13 @@ class PluginData():
             self.__log_output_data[self.__current_command] = list()
 
         self.__log_output_data[self.__current_command].append(
-            { "status": state,
-              "text": "[%s]: %s" % (state, text)
+            {
+                "status": state,
+                "text": "[%s]: %s" % (state, text)
             }
         )
 
-    def add_perf_data(self, name, value, perf_uom = None, warning = None, critical = None):
+    def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None):
 
         if name is None:
             raise Exception("option name for perf data not set")
@@ -120,8 +125,9 @@ class PluginData():
 
         for command, _ in self.__output_data.items():
 
-            if self.__output_data[command].get("issues_found") == False and args.detailed == False:
-                return_text.append("[%s]: %s" % (self.__output_data[command].get("summary_state"), self.__output_data[command].get("summary")))
+            if self.__output_data[command].get("issues_found") is False and self.cli_args.detailed is False:
+                return_text.append("[%s]: %s" % (
+                    self.__output_data[command].get("summary_state"), self.__output_data[command].get("summary")))
             else:
                 for status_type_name, _ in sorted(status_types.items(), key=lambda item: item[1], reverse=True):
 
@@ -129,7 +135,7 @@ class PluginData():
                         continue
 
                     for data_output in self.__output_data[command].get(status_type_name):
-                        if status_type_name != "OK" or args.detailed == True:
+                        if status_type_name != "OK" or self.cli_args.detailed is True:
                             return_text.append("[%s]: %s" % (status_type_name, data_output))
 
         # add data from log commands
@@ -141,7 +147,7 @@ class PluginData():
 
             for log_entry in log_entries:
 
-                if args.detailed == True:
+                if self.cli_args.detailed is True:
                     return_text.append(log_entry.get("text"))
                 else:
 
@@ -156,11 +162,12 @@ class PluginData():
                     if most_recent.get(log_entry.get("status")) is None:
                         most_recent[log_entry.get("status")] = log_entry.get("text")
 
-            if args.detailed == False:
+            if self.cli_args.detailed is False:
 
-                message_summary = " and ".join([ "%d %s" % (value, key) for key,value in log_entry_counter.items() ])
+                message_summary = " and ".join(["%d %s" % (value, key) for key, value in log_entry_counter.items()])
 
-                return_text.append(f"[{command_status}]: Found {message_summary} {command} entries. Most recent notable: %s" % most_recent.get(command_status))
+                return_text.append(f"[{command_status}]: Found {message_summary} {command} entries. "
+                                   f"Most recent notable: %s" % most_recent.get(command_status))
 
         return_string = "\n".join(return_text)
 
@@ -170,7 +177,7 @@ class PluginData():
 
         return return_string
 
-    def get_return_status(self, level = False):
+    def get_return_status(self, level=False):
 
         if level is True:
             return status_types[self.__return_status]
@@ -180,10 +187,12 @@ class PluginData():
     def do_exit(self):
 
         # return inventory and exit with 0
-        if args.inventory is True and self.inventory is not None:
+        if self.cli_args.detailed.inventory is True and self.inventory is not None:
             print(self.inventory.to_json())
             exit(0)
 
         print(self.return_output_data())
 
         exit(self.get_return_status(True))
+
+# EOF

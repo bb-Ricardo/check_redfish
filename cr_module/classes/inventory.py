@@ -1,56 +1,32 @@
 
 
+import datetime
+import os
+import json
+import sys
+
+from .plugin import status_types
+from cr_module import __version__
+
 # inventory definition
-inventory_layout_version_string = "0.1"
-physical_drive_attributes = [ "id", "name", "serial", "type", "speed_in_rpm", "health_status", "operation_status", "bay",
-                              "size_in_byte", "firmware", "model", "power_on_hours", "interface_type", "interface_speed",
-                              "encrypted", "manufacturer", "temperature", "location", "storage_port", "system_ids",
-                              "storage_controller_ids", "storage_enclosure_ids", "logical_drive_ids", "failure_predicted",
-                              "predicted_media_life_left_percent", "part_number"]
-logical_drive_attributes = ["id", "name", "type", "health_status", "operation_status", "size_in_byte", "raid_type",
-                            "encrypted", "storage_controller_ids", "physical_drive_ids", "system_ids"]
-storage_controller_attributes = ["id", "name", "serial", "model", "location", "firmware", "health_status", "operation_status",
-                                 "backup_power_present", "cache_size_in_mb", "system_ids", "manufacturer",
-                                 "storage_enclosure_ids", "logical_drive_ids", "physical_drive_ids"]
-storage_enclosure_attributes = ["id", "name", "serial", "model", "location", "firmware", "health_status", "operation_status",
-                                "num_bays", "storage_controller_ids", "physical_drive_ids", "storage_port", "system_ids",
-                                "manufacturer"]
-processor_attributes = [ "id", "name", "serial", "model", "socket", "health_status", "operation_status", "cores",
-                         "threads", "current_speed", "max_speed", "manufacturer", "instruction_set", "architecture",
-                         "system_ids", "L1_cache_kib", "L2_cache_kib", "L3_cache_kib"]
-memory_attributes = [ "id", "name", "serial", "socket", "slot", "channel", "health_status", "operation_status",
-                      "speed", "part_number", "manufacturer", "type", "size_in_mb", "base_type", "system_ids"]
-ps_attributes = [ "id", "name", "last_power_output", "part_number", "model", "health_status", "operation_status",
-                  "bay", "model", "vendor", "serial", "firmware", "type", "capacity_in_watt", "input_voltage", "chassi_ids" ]
-temp_fan_common_attributes = [ "id", "name", "physical_context", "health_status", "operation_status", "reading",
-                   "min_reading", "max_reading", "lower_threshold_non_critical", "lower_threshold_critical",
-                   "lower_threshold_fatal", "upper_threshold_non_critical", "upper_threshold_critical",
-                   "upper_threshold_fatal", "reading_unit", "location", "chassi_ids"]
-nic_attributes = [ "id", "name", "current_speed", "capable_speed", "health_status", "operation_status", "link_status",
-                   "full_duplex", "autoneg", "ipv4_addresses", "ipv6_addresses", "mac_address", "link_type", "port_name",
-                   "system_ids", "hostname", "manager_ids", "chassi_ids"]
-system_attributes = [ "id", "name", "serial", "model", "manufacturer", "chassi_ids", "bios_version", "host_name", "power_state",
-                      "cpu_num", "mem_size", "health_status", "operation_status", "part_number", "type", "indicator_led",
-                      "manager_ids"]
-firmware_attributes = [ "id", "name", "version", "location", "updateable", "health_status", "operation_status" ]
-manager_attributes = [ "id", "name", "firmware", "model", "type", "system_ids", "chassi_ids", "licenses", "health_status",
-                       "operation_status" ]
-chassi_attributes = [ "id", "name", "model", "type", "manufacturer", "system_ids", "health_status", "operation_status",
-                      "indicator_led", "serial", "sku", "manager_ids" ]
+inventory_layout_version_string = "0.1.1"
 
 
-
-
+# noinspection PyBroadException
 class InventoryItem(object):
     """
 
     """
     valid_attributes = None
     inventory_item_name = None
+    id = None
 
-    def __init__(self, **kwargs):
+    verbose = False
 
-        if args.verbose:
+    def __init__(self, verbose=False, **kwargs):
+
+        if verbose is True:
+            self.verbose = verbose
             self.valid_attributes.append("source_data")
 
         for attribute in self.valid_attributes:
@@ -61,7 +37,7 @@ class InventoryItem(object):
 
             super().__setattr__(attribute, value)
 
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     def update(self, data_key, data_value, append=False):
@@ -118,24 +94,24 @@ class InventoryItem(object):
 
         # iterate over managers, systems and chassis to check if
         # this inventory item has a relation to it
-        for property, property_links in system_properties.items():
+        for property_name, property_links in system_properties.items():
 
             for property_link in property_links:
                 if property_link.rstrip("/") in relation_links:
-                    relations_property_attribute = relations.get(property)
+                    relations_property_attribute = relations.get(property_name)
 
                     # add relation if item has attribute
                     if relations_property_attribute is not None and hasattr(self, relations_property_attribute):
 
-                        id = property_link.rstrip("/").split("/")[-1]
+                        property_id = property_link.rstrip("/").split("/")[-1]
                         # check if object id is an int
                         try:
-                            id = int(id)
-                        except:
+                            property_id = int(property_id)
+                        except Exception:
                             pass
 
                         # update attribute
-                        self.update(relations_property_attribute, id, True)
+                        self.update(relations_property_attribute, property_id, True)
 
     def __setattr__(self, key, value):
 
@@ -159,15 +135,17 @@ class InventoryItem(object):
                 value = None
 
             def is_int(v):
-                return v=='0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
+                return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
 
             def is_float(v):
-                try:     i = float(v)
-                except:  return False
+                try:
+                    _ = float(v)
+                except Exception:
+                    return False
                 return True
 
-            # skip formating of certain attributes
-            if value is not None and key not in [ "id", "name", "firmware", "serial", "version" ]:
+            # skip formatting of certain attributes
+            if value is not None and key not in ["id", "name", "firmware", "serial", "version"]:
                 if is_int(value):
                     value = int(float(value))
 
@@ -181,70 +159,312 @@ class InventoryItem(object):
             if value is None:
                 value = list()
             elif isinstance(value, (str, int, float)):
-                value = [ value ]
+                value = [value]
             elif not isinstance(value, list):
-                value = [ f"{value}" ]
+                value = [f"{value}"]
         else:
             if isinstance(value, (list, dict, set, tuple)):
                 value = f"{value}"
 
         super().__setattr__(key, value)
 
+
 class PhysicalDrive(InventoryItem):
     inventory_item_name = "physical_drives"
-    valid_attributes = physical_drive_attributes
+    valid_attributes = [
+        "bay",
+        "encrypted",
+        "failure_predicted",
+        "firmware",
+        "health_status",
+        "id",
+        "interface_speed",
+        "interface_type",
+        "location",
+        "logical_drive_ids",
+        "manufacturer",
+        "model",
+        "name",
+        "operation_status",
+        "part_number",
+        "power_on_hours",
+        "predicted_media_life_left_percent",
+        "serial",
+        "size_in_byte",
+        "speed_in_rpm",
+        "storage_controller_ids",
+        "storage_enclosure_ids",
+        "storage_port",
+        "system_ids",
+        "temperature",
+        "type"
+    ]
+
 
 class LogicalDrive(InventoryItem):
     inventory_item_name = "logical_drives"
-    valid_attributes = logical_drive_attributes
+    valid_attributes = [
+       "encrypted",
+       "health_status",
+       "id",
+       "name",
+       "operation_status",
+       "physical_drive_ids",
+       "raid_type",
+       "size_in_byte",
+       "storage_controller_ids",
+       "system_ids",
+       "type"
+    ]
+
 
 class StorageController(InventoryItem):
     inventory_item_name = "storage_controllers"
-    valid_attributes = storage_controller_attributes
+    valid_attributes = [
+       "backup_power_present",
+       "cache_size_in_mb",
+       "firmware",
+       "health_status",
+       "id",
+       "location",
+       "logical_drive_ids",
+       "manufacturer",
+       "model",
+       "name",
+       "operation_status",
+       "physical_drive_ids",
+       "serial",
+       "storage_enclosure_ids",
+       "system_ids"
+    ]
+
 
 class StorageEnclosure(InventoryItem):
     inventory_item_name = "storage_enclosures"
-    valid_attributes = storage_enclosure_attributes
+    valid_attributes = [
+       "firmware",
+       "health_status",
+       "id",
+       "location",
+       "manufacturer",
+       "model",
+       "name",
+       "num_bays",
+       "operation_status",
+       "physical_drive_ids",
+       "serial",
+       "storage_controller_ids",
+       "storage_port",
+       "system_ids"
+    ]
+
 
 class Processor(InventoryItem):
     inventory_item_name = "processors"
-    valid_attributes = processor_attributes
+    valid_attributes = [
+       "L1_cache_kib",
+       "L2_cache_kib",
+       "L3_cache_kib",
+       "architecture",
+       "cores",
+       "current_speed",
+       "health_status",
+       "id",
+       "instruction_set",
+       "manufacturer",
+       "max_speed",
+       "model",
+       "name",
+       "operation_status",
+       "serial",
+       "socket",
+       "system_ids",
+       "threads"
+    ]
+
 
 class Memory(InventoryItem):
     inventory_item_name = "memories"
-    valid_attributes = memory_attributes
+    valid_attributes = [
+        "base_type",
+        "channel",
+        "health_status",
+        "id",
+        "manufacturer",
+        "name",
+        "operation_status",
+        "part_number",
+        "serial",
+        "size_in_mb",
+        "slot",
+        "socket",
+        "speed",
+        "system_ids",
+        "type"
+    ]
+
 
 class PowerSupply(InventoryItem):
     inventory_item_name = "power_supplies"
-    valid_attributes = ps_attributes
+    valid_attributes = [
+        "bay",
+        "capacity_in_watt",
+        "chassi_ids",
+        "firmware",
+        "health_status",
+        "id",
+        "input_voltage",
+        "last_power_output",
+        "model",
+        "model",
+        "name",
+        "operation_status",
+        "part_number",
+        "serial",
+        "type",
+        "vendor"
+    ]
+
 
 class Temperature(InventoryItem):
     inventory_item_name = "temperatures"
-    valid_attributes = temp_fan_common_attributes
+    valid_attributes = [
+        "chassi_ids",
+        "health_status",
+        "id",
+        "location",
+        "lower_threshold_critical",
+        "lower_threshold_fatal",
+        "lower_threshold_non_critical",
+        "max_reading",
+        "min_reading",
+        "name",
+        "operation_status",
+        "physical_context",
+        "reading",
+        "reading_unit",
+        "upper_threshold_critical",
+        "upper_threshold_fatal",
+        "upper_threshold_non_critical"
+    ]
+
 
 class Fan(InventoryItem):
     inventory_item_name = "fans"
-    valid_attributes = temp_fan_common_attributes
+    valid_attributes = [
+        "chassi_ids",
+        "health_status",
+        "id",
+        "location",
+        "lower_threshold_critical",
+        "lower_threshold_fatal",
+        "lower_threshold_non_critical",
+        "max_reading",
+        "min_reading",
+        "name",
+        "operation_status",
+        "physical_context",
+        "reading",
+        "reading_unit",
+        "upper_threshold_critical",
+        "upper_threshold_fatal",
+        "upper_threshold_non_critical"
+    ]
+
 
 class NIC(InventoryItem):
     inventory_item_name = "nics"
-    valid_attributes = nic_attributes
+    valid_attributes = [
+        "autoneg",
+        "capable_speed",
+        "chassi_ids",
+        "current_speed",
+        "full_duplex",
+        "health_status",
+        "hostname",
+        "id",
+        "ipv4_addresses",
+        "ipv6_addresses",
+        "link_status",
+        "link_type",
+        "mac_address",
+        "manager_ids",
+        "name",
+        "operation_status",
+        "port_name",
+        "system_ids"
+    ]
+
 
 class System(InventoryItem):
     inventory_item_name = "systems"
-    valid_attributes = system_attributes
+    valid_attributes = [
+        "bios_version",
+        "chassi_ids",
+        "cpu_num",
+        "health_status",
+        "host_name",
+        "id",
+        "indicator_led",
+        "manager_ids",
+        "manufacturer",
+        "mem_size",
+        "model",
+        "name",
+        "operation_status",
+        "part_number",
+        "power_state",
+        "serial",
+        "type"
+    ]
+
 
 class Firmware(InventoryItem):
     inventory_item_name = "firmware"
-    valid_attributes = firmware_attributes
+    valid_attributes = [
+        "health_status",
+        "id",
+        "location",
+        "name",
+        "operation_status",
+        "updateable",
+        "version"
+    ]
+
 
 class Manager(InventoryItem):
     inventory_item_name = "managers"
-    valid_attributes = manager_attributes
+    valid_attributes = [
+        "chassi_ids",
+        "firmware",
+        "health_status",
+        "id",
+        "licenses",
+        "model",
+        "name",
+        "operation_status",
+        "system_ids",
+        "type"
+    ]
+
 
 class Chassi(InventoryItem):
     inventory_item_name = "chassis"
-    valid_attributes = chassi_attributes
+    valid_attributes = [
+        "health_status",
+        "id",
+        "indicator_led",
+        "manager_ids",
+        "manufacturer",
+        "model",
+        "name",
+        "operation_status",
+        "serial",
+        "sku",
+        "system_ids",
+        "type"
+    ]
+
 
 class Inventory(object):
     """
@@ -254,35 +474,34 @@ class Inventory(object):
     inventory_start = None
     data_retrieval_issues = list()
 
-
     def __init__(self):
         for inventory_sub_class in InventoryItem.__subclasses__():
             if inventory_sub_class.inventory_item_name is None:
                 raise AttributeError("The 'inventory_item_name' attribute for class '%s' is undefined." %
-                                 inventory_sub_class.__name__)
+                                     inventory_sub_class.__name__)
 
             self.base_structure[inventory_sub_class.inventory_item_name] = list()
 
         # set metadata
         self.inventory_start = datetime.datetime.utcnow()
 
-    def add(self, object):
+    def add(self, object_type):
 
-        if not isinstance(object, InventoryItem):
+        if not isinstance(object_type, InventoryItem):
             raise AttributeError("'%s' object not allowed to add to a '%s' class item." %
-                                 (object.__class__.__name__, InventoryItem.__name__))
+                                 (object_type.__class__.__name__, InventoryItem.__name__))
 
         # check if ID is already used and add issue
-        for inv_item in self.base_structure[object.inventory_item_name]:
-            if inv_item.id == object.id:
-                #raise AttributeError(f"Object id '{object.id}' already used")
-                print(f"Object id '{object.id}' already used", file=sys.stderr)
+        for inv_item in self.base_structure[object_type.inventory_item_name]:
+            if inv_item.id == object_type.id:
 
-        self.base_structure[object.inventory_item_name].append(object)
+                print(f"Object id '{object_type.id}' already used", file=sys.stderr)
+
+        self.base_structure[object_type.inventory_item_name].append(object_type)
 
     def update(self, class_name, component_id, data_key, data_value, append=False):
 
-        if not class_name in InventoryItem.__subclasses__():
+        if class_name not in InventoryItem.__subclasses__():
             raise AttributeError("'%s' object must be a sub class of '%s'." %
                                  (class_name.__name__, InventoryItem.__name__))
 
@@ -296,12 +515,12 @@ class Inventory(object):
 
         self.update(class_name, component_id, data_key, data_value, True)
 
-    def add_issue(self, class_name, issue = None):
+    def add_issue(self, class_name, issue=None):
 
         if issue is None:
             return
 
-        if not class_name in InventoryItem.__subclasses__():
+        if class_name not in InventoryItem.__subclasses__():
             raise AttributeError("'%s' object must be a sub class of '%s'." %
                                  (class_name.__name__, InventoryItem.__name__))
 
@@ -309,7 +528,7 @@ class Inventory(object):
 
     def get(self, class_name):
 
-        if not class_name in InventoryItem.__subclasses__():
+        if class_name not in InventoryItem.__subclasses__():
             raise AttributeError("'%s' object must be a sub class of '%s'." %
                                  (class_name.__name__, InventoryItem.__name__))
 
@@ -321,18 +540,22 @@ class Inventory(object):
     def to_json(self):
         inventory_content = self.base_structure
 
+        start_date = self.inventory_start.replace(
+            tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat()
+
         # add metadata
         inventory_content["meta"] = {
-            "WARNING": "THIS is a alpha version of this implementation and possible changes might occur without notice",
-            "start_of_data_collection": self.inventory_start.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(),
-            "duration_of_data_colection_in_seconds": (datetime.datetime.utcnow() - self.inventory_start).total_seconds(),
+            "WARNING":
+                "THIS is an alpha version of this implementation and possible changes might occur without notice",
+            "start_of_data_collection": start_date,
+            "duration_of_data_collection_in_seconds": (datetime.datetime.utcnow()-self.inventory_start).total_seconds(),
             "inventory_layout_version": inventory_layout_version_string,
             "data_retrieval_issues": self.data_retrieval_issues,
             "host_that_collected_inventory": os.uname()[1],
             "script_version": __version__
         }
 
-        output = { "inventory": inventory_content }
+        output = {"inventory": inventory_content}
 
         return json.dumps(output, default=lambda o: o.__dict__,
                           sort_keys=True, indent=4)
