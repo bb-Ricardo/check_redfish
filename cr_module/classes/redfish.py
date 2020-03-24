@@ -7,9 +7,8 @@ import pprint
 import sys
 
 
-from .plugin import status_types
-from cr_module.common import grab
-from .vendor import *
+from cr_module.common import *
+from cr_module.classes.vendor import *
 
 # import 3rd party modules
 import redfish

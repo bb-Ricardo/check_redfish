@@ -2,7 +2,7 @@
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
-from .classes.plugin import status_types
+from cr_module.classes import status_types
 from . import __long_description__, __version__, __version_date__
 from .classes.redfish import default_conn_max_retries, default_conn_timeout
 

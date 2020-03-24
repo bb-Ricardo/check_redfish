@@ -2,14 +2,7 @@
 
 from .redfish import RedfishConnection
 from .inventory import Inventory
-
-# define valid return status types
-status_types = {
-    "OK": 0,
-    "WARNING": 1,
-    "CRITICAL": 2,
-    "UNKNOWN": 3
-}
+from cr_module.classes import status_types
 
 
 class PluginData:
@@ -190,7 +183,7 @@ class PluginData:
     def do_exit(self):
 
         # return inventory and exit with 0
-        if self.cli_args.detailed.inventory is True and self.inventory is not None:
+        if self.cli_args.inventory is True and self.inventory is not None:
             print(self.inventory.to_json())
             exit(0)
 

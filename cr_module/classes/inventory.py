@@ -5,7 +5,7 @@ import os
 import json
 import sys
 
-from .plugin import status_types
+from cr_module.classes import status_types
 from cr_module import __version__
 
 # inventory definition
