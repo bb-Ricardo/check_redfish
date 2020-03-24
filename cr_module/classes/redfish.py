@@ -377,7 +377,7 @@ class RedfishConnection:
 
         return None
 
-    def get_basic_system_info(self):
+    def determine_vendor(self):
 
         vendor_string = ""
 
@@ -389,7 +389,6 @@ class RedfishConnection:
             self.vendor_dict_key = vendor_string
 
             if vendor_string in ["Hpe", "Hp"]:
-                self.vendor = "HPE"
 
                 self.vendor_data = VendorHPEData()
 
@@ -404,37 +403,34 @@ class RedfishConnection:
                         self.vendor_data.view_supported = True
 
             if vendor_string in ["Lenovo"]:
-                self.vendor = "Lenovo"
 
                 self.vendor_data = VendorLenovoData()
 
             if vendor_string in ["Dell"]:
-                self.vendor = "Dell"
 
                 self.vendor_data = VendorDellData()
 
             if vendor_string in ["Huawei"]:
-                self.vendor = "Huawei"
 
                 self.vendor_data = VendorHuaweiData()
 
             if vendor_string in ["ts_fujitsu"]:
-                self.vendor = "Fujitsu"
 
                 self.vendor_data = VendorFujitsuData()
 
+        # Cisco does not provide a OEM property in root object
         if "CIMC" in str(self.connection.system_properties.get("managers")):
-            self.vendor = "Cisco"
 
             self.vendor_data = VendorCiscoData()
 
         if self.vendor_data is None:
-            if vendor_string is None:
-                self.vendor = "Generic"
-            else:
-                self.vendor = vendor_string
 
             self.vendor_data = VendorGeneric()
+
+            if vendor_string is not None and len(vendor_string) > 0:
+                self.vendor_data.name = vendor_string
+
+        self.vendor = self.vendor_data.name
 
         return
 

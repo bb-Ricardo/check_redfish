@@ -4,6 +4,7 @@
 
 class VendorGeneric:
 
+    name = "Generic"
     view_supported = False
     view_select = None
 
@@ -11,6 +12,8 @@ class VendorGeneric:
 
 
 class VendorHPEData(VendorGeneric):
+
+    name = "HPE"
 
     ilo_hostname = None
     ilo_version = None
@@ -68,27 +71,32 @@ class VendorHPEData(VendorGeneric):
 
 class VendorLenovoData(VendorGeneric):
 
+    name = "Lenovo"
     expand_string = "?$expand=*"
 
 
 class VendorDellData(VendorGeneric):
 
+    name = "Dell"
     expand_string = "?$expand=*($levels=1)"
 
 
 class VendorHuaweiData(VendorGeneric):
 
+    name = "Huawei"
     # currently $expand is not supported
     expand_string = ""
 
 
 class VendorFujitsuData(VendorGeneric):
 
+    name = "Fujitsu"
     expand_string = "?$expand=Members"
 
 
 class VendorCiscoData(VendorGeneric):
 
+    name = "Cisco"
     expand_string = ""
 
 # EOF
