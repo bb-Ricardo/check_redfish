@@ -1,78 +1,83 @@
+from cr_module.common import grab
 
-def get_event_log(type):
+import datetime
 
-    global plugin
 
-    if args.inventory is True:
+def get_event_log(plugin_object, event_type):
+
+    if plugin_object.cli_args.inventory is True:
         return
 
-    if type not in ["Manager", "System"]:
-        raise Exception("Unknown event log type: %s", type)
+    if event_type not in ["Manager", "System"]:
+        raise Exception("Unknown event log type: %s", event_type)
 
-    plugin.set_current_command("%s Event Log" % type)
+    plugin_object.set_current_command("%s Event Log" % event_type)
 
-    if type == "System" and plugin.rf.vendor in ["Huawei", "HPE", "Cisco"]:
+    if event_type == "System" and plugin_object.rf.vendor in ["Huawei", "HPE", "Cisco"]:
         property_name = "systems"
     else:
         property_name = "managers"
 
-    if plugin.rf.vendor == "Lenovo":
+    if plugin_object.rf.vendor == "Lenovo":
         property_name = "systems"
 
-    if plugin.rf.connection.system_properties is None:
-        discover_system_properties()
+    if plugin_object.rf.connection.system_properties is None:
+        plugin_object.rf.discover_system_properties()
 
-    system_manager_ids = plugin.rf.connection.system_properties.get(property_name)
+    system_manager_ids = plugin_object.rf.connection.system_properties.get(property_name)
 
     if system_manager_ids is None or len(system_manager_ids) == 0:
-        plugin.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'", summary = not args.detailed)
+        plugin_object.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'",
+                                      summary=not plugin_object.cli_args.detailed)
         return
 
     for system_manager_id in system_manager_ids:
 
-        if plugin.rf.vendor == "HPE":
-            get_event_log_hpe(type, system_manager_id)
+        if plugin_object.rf.vendor == "HPE":
+            get_event_log_hpe(plugin_object, event_type, system_manager_id)
 
-        elif plugin.rf.vendor == "Huawei":
-            get_event_log_huawei(type, system_manager_id)
+        elif plugin_object.rf.vendor == "Huawei":
+            get_event_log_huawei(plugin_object, event_type, system_manager_id)
 
         else:
-            get_event_log_generic(type, system_manager_id)
+            get_event_log_generic(plugin_object, event_type, system_manager_id)
 
     return
 
-def get_event_log_hpe(type, system_manager_id):
 
-    global plugin
+def get_event_log_hpe(plugin_object, event_type, system_manager_id):
 
-    limit_of_returned_itmes = args.max
+    limit_of_returned_items = plugin_object.cli_args.max
     forced_limit = False
     data_now = datetime.datetime.now()
+    date_warning = None
+    date_critical = None
 
-    if plugin.rf.vendor_data.ilo_version.lower() != "ilo 5":
+    if plugin_object.rf.vendor_data.ilo_version.lower() != "ilo 5":
         ilo4_limit = 30
-        if args.max:
-            limit_of_returned_itmes = min(args.max, ilo4_limit)
-            if args.max > ilo4_limit:
+        if plugin_object.cli_args.max:
+            limit_of_returned_items = min(plugin_object.cli_args.max, ilo4_limit)
+            if plugin_object.cli_args.max > ilo4_limit:
                 forced_limit = True
         else:
             forced_limit = True
-            limit_of_returned_itmes = ilo4_limit
+            limit_of_returned_items = ilo4_limit
 
-    if type == "System":
+    if event_type == "System":
         redfish_url = f"{system_manager_id}/LogServices/IML/Entries/?$expand=."
     else:
         redfish_url = f"{system_manager_id}/LogServices/IEL/Entries?$expand=."
 
-        if args.warning:
-            date_warning = data_now - datetime.timedelta(days=int(args.warning))
-        if args.critical:
-            date_critical = data_now - datetime.timedelta(days=int(args.critical))
+        if plugin_object.cli_args.warning:
+            date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
+        if plugin_object.cli_args.critical:
+            date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin.rf.get(redfish_url)
+    event_data = plugin_object.rf.get(redfish_url)
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin.add_output_data("OK", f"No {type} log entries found.", summary = not args.detailed)
+        plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
+                                      summary=not plugin_object.cli_args.detailed)
         return
 
     # reverse list from newest to oldest entry
@@ -80,12 +85,12 @@ def get_event_log_hpe(type, system_manager_id):
     event_entries.reverse()
 
     num_entry = 0
-    for event_entry_itme in event_entries:
+    for event_entry_item in event_entries:
 
-        if event_entry_itme.get("@odata.context"):
-            event_entry = event_entry_itme
+        if event_entry_item.get("@odata.context"):
+            event_entry = event_entry_item
         else:
-            event_entry = plugin.rf.get(event_entry_itme.get("@odata.id"))
+            event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
         message = event_entry.get("Message")
 
@@ -95,9 +100,9 @@ def get_event_log_hpe(type, system_manager_id):
         if severity is not None:
             severity = severity.upper()
         date = event_entry.get("Created")
-        repaired = grab(event_entry, f"Oem.{plugin.rf.vendor_dict_key}.Repaired")
+        repaired = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Repaired")
 
-        if repaired == None:
+        if repaired is None:
             repaired = False
 
         # take care of date = None
@@ -106,7 +111,7 @@ def get_event_log_hpe(type, system_manager_id):
 
         status = "OK"
 
-        if type == "System":
+        if event_type == "System":
             if severity == "WARNING" and repaired is False:
                 status = "WARNING"
             elif severity != "OK" and repaired is False:
@@ -114,92 +119,94 @@ def get_event_log_hpe(type, system_manager_id):
         else:
             entry_data = datetime.datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ")
 
-            if args.critical:
+            if plugin_object.cli_args.critical and date_critical is not None:
                 if entry_data > date_critical and severity != "OK":
                     status = "CRITICAL"
-            if args.warning:
+            if plugin_object.cli_args.warning and date_warning is not None:
                 if entry_data > date_warning and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
 
         # obey max results returned
-        if limit_of_returned_itmes is not None and num_entry >= limit_of_returned_itmes:
+        if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             if forced_limit:
-                plugin.add_log_output_data("OK", "This is an %s, limited results to %d entries" %
-                    (plugin.rf.vendor_data.ilo_version, limit_of_returned_itmes))
+                plugin_object.add_log_output_data("OK", "This is an %s, limited results to %d entries" %
+                                                  (plugin_object.rf.vendor_data.ilo_version, limit_of_returned_items))
             return
 
     return
 
-def get_event_log_generic(type, system_manager_id):
 
-    global plugin
+def get_event_log_generic(plugin_object, event_type, system_manager_id):
 
-    limit_of_returned_itmes = args.max
-    forced_limit = False
+    limit_of_returned_items = plugin_object.cli_args.max
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
     redfish_url = None
 
     # define locations for known vendors
-    if type == "System":
-        if plugin.rf.vendor == "Dell":
-            log_service_data = plugin.rf.get(f"{system_manager_id}/LogServices/Sel")
+    if event_type == "System":
+        if plugin_object.rf.vendor == "Dell":
+            log_service_data = plugin_object.rf.get(f"{system_manager_id}/LogServices/Sel")
             redfish_url = log_service_data.get("Entries").get("@odata.id")
-        elif plugin.rf.vendor == "Fujitsu":
+        elif plugin_object.rf.vendor == "Fujitsu":
             redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/"
-        elif plugin.rf.vendor == "Cisco":
+        elif plugin_object.rf.vendor == "Cisco":
             redfish_url = f"{system_manager_id}/LogServices/SEL/Entries/"
-        elif plugin.rf.vendor == "Lenovo":
+        elif plugin_object.rf.vendor == "Lenovo":
             redfish_url = f"{system_manager_id}/LogServices/ActiveLog/Entries/"
     else:
-        if plugin.rf.vendor == "Dell":
-            log_service_data = plugin.rf.get(f"{system_manager_id}/LogServices/Lclog")
+        if plugin_object.rf.vendor == "Dell":
+            log_service_data = plugin_object.rf.get(f"{system_manager_id}/LogServices/Lclog")
             redfish_url = log_service_data.get("Entries").get("@odata.id")
-        elif plugin.rf.vendor == "Fujitsu":
+        elif plugin_object.rf.vendor == "Fujitsu":
             redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/"
-        elif plugin.rf.vendor == "Cisco":
+        elif plugin_object.rf.vendor == "Cisco":
             redfish_url = f"{system_manager_id}/LogServices/CIMC/Entries/"
-        elif plugin.rf.vendor == "Lenovo":
+        elif plugin_object.rf.vendor == "Lenovo":
             redfish_url = f"{system_manager_id}/LogServices/StandardLog/Entries/"
 
     # try to discover log service
     if redfish_url is None:
-        system_manager_data = plugin.rf.get(system_manager_id)
+        system_manager_data = plugin_object.rf.get(system_manager_id)
 
         log_services = None
         log_services_link = grab(system_manager_data, "LogServices/@odata.id", separator="/")
         if log_services_link is not None:
-            log_services = plugin.rf.get(log_services_link)
+            log_services = plugin_object.rf.get(log_services_link)
 
         if grab(log_services, "Members") is not None and len(log_services.get("Members")) > 0:
 
             for log_service in log_services.get("Members"):
 
-                log_service_data = plugin.rf.get(log_service.get("@odata.id"))
+                log_service_data = plugin_object.rf.get(log_service.get("@odata.id"))
 
                 # check if "Name" contains "System" or "Manager"
-                if log_service_data.get("Name") is not None and type.lower() in log_service_data.get("Name").lower():
+                if log_service_data.get("Name") is not None and \
+                        event_type.lower() in log_service_data.get("Name").lower():
 
                     if log_service_data.get("Entries") is not None:
                         redfish_url = log_service_data.get("Entries").get("@odata.id")
                         break
 
     if redfish_url is None:
-        plugin.add_output_data("UNKNOWN", f"No log services discoverd in {system_manager_id}/LogServices that match {type}")
+        plugin_object.add_output_data("UNKNOWN",
+                                      f"No log services discovered in "
+                                      f"{system_manager_id}/LogServices that match {event_type}")
         return
 
-    if args.warning:
-        date_warning = data_now - datetime.timedelta(days=int(args.warning))
-    if args.critical:
-        date_critical = data_now - datetime.timedelta(days=int(args.critical))
+    if plugin_object.cli_args.warning:
+        date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
+    if plugin_object.cli_args.critical:
+        date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin.rf.get(redfish_url)
+    event_data = plugin_object.rf.get(redfish_url)
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin.add_output_data("OK", f"No {type} log entries found.", summary = not args.detailed)
+        plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
+                                      summary=not plugin_object.cli_args.detailed)
         return
 
     event_entries = event_data.get("Members")
@@ -207,7 +214,7 @@ def get_event_log_generic(type, system_manager_id):
     assoc_id_status = dict()
 
     # reverse list from newest to oldest entry
-    if plugin.rf.vendor == "Lenovo":
+    if plugin_object.rf.vendor == "Lenovo":
         event_entries.reverse()
 
     num_entry = 0
@@ -216,7 +223,7 @@ def get_event_log_generic(type, system_manager_id):
         if event_entry_item.get("Id"):
             event_entry = event_entry_item
         else:
-            event_entry = plugin.rf.get(event_entry_item.get("@odata.id"))
+            event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
         message = event_entry.get("Message")
 
@@ -230,7 +237,7 @@ def get_event_log_generic(type, system_manager_id):
             severity = severity.upper()
 
         # CISCO WHY?
-        if severity in  ["NORMAL", "INFORMATIONAL"]:
+        if severity in ["NORMAL", "INFORMATIONAL"]:
             severity = "OK"
 
         date = event_entry.get("Created")
@@ -243,7 +250,7 @@ def get_event_log_generic(type, system_manager_id):
 
         # keep track of message IDs
         # newer message can clear a status for older messages
-        if type == "System":
+        if event_type == "System":
 
             # get log entry id to associate older log entries
             assoc_id = event_entry.get("SensorNumber")
@@ -270,25 +277,27 @@ def get_event_log_generic(type, system_manager_id):
 
             entry_date = None
             try:
-                entry_date = datetime.datetime.strptime(date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+                entry_date = datetime.datetime.strptime(date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
             except Exception:
                 pass
 
             if entry_date is not None and date_critical is not None:
-              if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
+                if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
                     status = "CRITICAL"
             if entry_date is not None and date_warning is not None:
-                if entry_date > date_warning.astimezone(entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
+                if entry_date > date_warning.astimezone(
+                        entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
 
         # obey max results returned
-        if limit_of_returned_itmes is not None and num_entry >= limit_of_returned_itmes:
+        if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             return
     return
 
-def get_event_log_huawei(type, system_manager_id):
+
+def get_event_log_huawei(plugin_object, event_type, system_manager_id):
 
     def collect_log_entries(entry_url):
 
@@ -296,30 +305,30 @@ def get_event_log_huawei(type, system_manager_id):
 
         while True:
 
-            event_data = plugin.rf.get(entry_url)
+            event_data = plugin_object.rf.get(entry_url)
 
             collected_log_entries_list.extend(event_data.get("Members"))
 
-            if limit_of_returned_itmes is not None and len(collected_log_entries_list) >= limit_of_returned_itmes:
+            if limit_of_returned_items is not None and len(collected_log_entries_list) >= limit_of_returned_items:
                 break
 
-            if event_data.get("Members@odata.nextLink") is not None and len(collected_log_entries_list) != event_data.get("Members@odata.count"):
+            if event_data.get("Members@odata.nextLink") is not None and len(
+                    collected_log_entries_list) != event_data.get("Members@odata.count"):
                 entry_url = event_data.get("Members@odata.nextLink")
             else:
                 break
 
         return collected_log_entries_list
 
-    global plugin
-
-    limit_of_returned_itmes = args.max
+    limit_of_returned_items = plugin_object.cli_args.max
     num_entry = 0
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
+    # noinspection PyUnusedLocal
     log_entries = list()
 
-    if type == "System":
+    if event_type == "System":
         redfish_url = f"{system_manager_id}/LogServices/Log1/Entries/"
 
         log_entries = collect_log_entries(redfish_url)
@@ -331,24 +340,29 @@ def get_event_log_huawei(type, system_manager_id):
         """
 
         # leave here and tell user about missing implementation
-        plugin.add_output_data("UNKNOWN", f"Command to check {type} Event Log not implemented for this vendor", summary = not args.detailed)
+        plugin_object.add_output_data("UNKNOWN",
+                                      f"Command to check {event_type} Event Log not implemented for this vendor",
+                                      summary=not plugin_object.cli_args.detailed)
         return
 
+        # noinspection PyUnreachableCode
+        """
         # set fix to max 50 (ugly, needs to be re-factored)
-        if limit_of_returned_itmes is not None and limit_of_returned_itmes > 50:
-            limit_of_returned_itmes = 50
+        if limit_of_returned_items is not None and limit_of_returned_items > 50:
+            limit_of_returned_items = 50
         else:
-            limit_of_returned_itmes = 50
+            limit_of_returned_items = 50
 
         redfish_url = f"{system_manager_id}"
 
-        manager_data = plugin.rf.get(redfish_url)
+        manager_data = plugin_object.rf.get(redfish_url)
 
         if len(manager_data.get("LogServices")) == 0:
-            plugin.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{redfish_url}'", summary = not args.detailed)
+            plugin_object.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{redfish_url}'",
+                                          summary=not args.detailed)
             return
 
-        log_services_data = plugin.rf.get(manager_data.get("LogServices").get("@odata.id"))
+        log_services_data = plugin_object.rf.get(manager_data.get("LogServices").get("@odata.id"))
 
         while True:
 
@@ -360,18 +374,18 @@ def get_event_log_huawei(type, system_manager_id):
             for manager_log_service in log_services_data.get("Members"):
                 log_entries.extend(manager_log_service.get("@odata.id") + "/Entries")
 
-            if limit_of_returned_itmes is not None and len(log_entries) >= limit_of_returned_itmes:
+            if limit_of_returned_items is not None and len(log_entries) >= limit_of_returned_items:
                 break
+        """
 
-
-    if args.warning:
-        date_warning = data_now - datetime.timedelta(days=int(args.warning))
-    if args.critical:
-        date_critical = data_now - datetime.timedelta(days=int(args.critical))
+    if plugin_object.cli_args.warning:
+        date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
+    if plugin_object.cli_args.critical:
+        date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
     for log_entry in log_entries:
 
-        event_entry = plugin.rf.get(log_entry.get("@odata.id"))
+        event_entry = plugin_object.rf.get(log_entry.get("@odata.id"))
 
         num_entry += 1
 
@@ -406,19 +420,19 @@ def get_event_log_huawei(type, system_manager_id):
         # to:
         #   2019-11-01T15:03:32-0500
 
-        entry_data = datetime.datetime.strptime(date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+        entry_data = datetime.datetime.strptime(date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
 
         if date_critical is not None:
-          if entry_data > date_critical.astimezone(entry_data.tzinfo) and severity != "OK":
+            if entry_data > date_critical.astimezone(entry_data.tzinfo) and severity != "OK":
                 status = "CRITICAL"
         if date_warning is not None:
             if entry_data > date_warning.astimezone(entry_data.tzinfo) and status != "CRITICAL" and severity != "OK":
                 status = "WARNING"
 
-        plugin.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
 
         # obey max results returned
-        if limit_of_returned_itmes is not None and num_entry >= limit_of_returned_itmes:
+        if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             return
 
     return
