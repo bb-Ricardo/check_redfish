@@ -35,11 +35,11 @@ def get_chassi_data(plugin_object, data_type=None):
 
     for chassi in chassis:
         if data_type == "power":
-            get_single_chassi_power(chassi)
+            get_single_chassi_power(plugin_object, chassi)
         if data_type == "temp":
-            get_single_chassi_temp(chassi)
+            get_single_chassi_temp(plugin_object, chassi)
         if data_type == "fan":
-            get_single_chassi_fan(chassi)
+            get_single_chassi_fan(plugin_object, chassi)
 
     return
 
@@ -61,14 +61,14 @@ def get_system_data(plugin_object, data_type):
 
     for system in systems:
         if data_type == "procs":
-            get_single_system_procs(system)
+            get_single_system_procs(plugin_object, system)
         if data_type == "mem":
-            get_single_system_mem(system)
+            get_single_system_mem(plugin_object, system)
         if data_type == "nics":
             if plugin.rf.vendor == "Fujitsu":
-                get_system_nics_fujitsu(system)
+                get_system_nics_fujitsu(plugin_object, system)
             else:
-                get_single_system_nics(system)
+                get_single_system_nics(plugin_object, system)
 
     return
 
