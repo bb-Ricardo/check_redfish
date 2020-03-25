@@ -5,7 +5,7 @@ import os
 import json
 import sys
 
-from cr_module.classes import status_types
+from cr_module.classes import plugin_status_types
 from cr_module import __version__
 
 # inventory definition
@@ -23,11 +23,7 @@ class InventoryItem(object):
 
     verbose = False
 
-    def __init__(self, verbose=False, **kwargs):
-
-        if verbose is True:
-            self.verbose = verbose
-            self.valid_attributes.append("source_data")
+    def __init__(self, **kwargs):
 
         for attribute in self.valid_attributes:
             value = None
@@ -152,7 +148,7 @@ class InventoryItem(object):
                 elif is_float(value):
                     value = float(value)
 
-                elif value.upper() in status_types.keys():
+                elif value.upper() in plugin_status_types.keys():
                     value = value.upper()
 
         if isinstance(current_value, list):

@@ -2,7 +2,7 @@
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
-from cr_module.classes import status_types
+from cr_module.classes import plugin_status_types
 from . import __long_description__, __version__, __version_date__
 from .classes.redfish import default_conn_max_retries, default_conn_timeout
 
@@ -115,7 +115,7 @@ def get_status_data(status_data=None):
         status types and add it as "Health" otherwise fill State
     """
     if isinstance(status_data, str):
-        if status_data.upper() in status_types.keys():
+        if status_data.upper() in plugin_status_types.keys():
             return_data["Health"] = status_data.upper()
         else:
             return_data["State"] = status_data
@@ -127,7 +127,7 @@ def get_status_data(status_data=None):
                 if status_key.lower() == key.lower():
                     if status_value is not None and \
                             key.lower().startswith("health") and \
-                            status_value.upper() in status_types.keys():
+                            status_value.upper() in plugin_status_types.keys():
                         status_value = status_value.upper()
                     return_data[key] = status_value
 

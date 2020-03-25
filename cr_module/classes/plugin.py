@@ -2,7 +2,7 @@
 
 from .redfish import RedfishConnection
 from .inventory import Inventory
-from cr_module.classes import status_types
+from cr_module.classes import plugin_status_types
 
 
 class PluginData:
@@ -39,10 +39,10 @@ class PluginData:
         if self.__return_status == state:
             return
 
-        if state not in list(status_types.keys()):
+        if state not in list(plugin_status_types.keys()):
             raise Exception(f"Status '{state}' is invalid")
 
-        if status_types[state] > status_types[self.__return_status]:
+        if plugin_status_types[state] > plugin_status_types[self.__return_status]:
             self.__return_status = state
 
     def add_output_data(self, state=None, text=None, summary=False):
@@ -125,7 +125,7 @@ class PluginData:
                 return_text.append("[%s]: %s" % (
                     self.__output_data[command].get("summary_state"), self.__output_data[command].get("summary")))
             else:
-                for status_type_name, _ in sorted(status_types.items(), key=lambda item: item[1], reverse=True):
+                for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
 
                     if self.__output_data[command].get(status_type_name) is None:
                         continue
@@ -147,7 +147,7 @@ class PluginData:
                     return_text.append(log_entry.get("text"))
                 else:
 
-                    if status_types[log_entry.get("status")] > status_types[command_status]:
+                    if plugin_status_types[log_entry.get("status")] > plugin_status_types[command_status]:
                         command_status = log_entry.get("status")
 
                     if log_entry_counter.get(log_entry.get("status")):
@@ -176,7 +176,7 @@ class PluginData:
     def get_return_status(self, level=False):
 
         if level is True:
-            return status_types[self.__return_status]
+            return plugin_status_types[self.__return_status]
 
         return self.__return_status
 

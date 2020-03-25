@@ -51,7 +51,7 @@ class RedfishConnection:
     def exit_on_error(message, level="UNKNOWN"):
 
         print("[%s]: %s" % (level, message))
-        exit(status_types.get(level))
+        exit(plugin_status_types.get(level))
 
     def get_credentials(self):
 
