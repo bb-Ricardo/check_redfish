@@ -1,8 +1,7 @@
 
-
-from .redfish import RedfishConnection
-from .inventory import Inventory
 from cr_module.classes import plugin_status_types
+from cr_module.classes.redfish import RedfishConnection
+from cr_module.classes.inventory import Inventory
 
 
 class PluginData:

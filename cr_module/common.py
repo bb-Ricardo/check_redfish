@@ -2,9 +2,9 @@
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
+from cr_module import __long_description__, __version__, __version_date__
 from cr_module.classes import plugin_status_types
-from . import __long_description__, __version__, __version_date__
-from .classes.redfish import default_conn_max_retries, default_conn_timeout
+from cr_module.classes.redfish import default_conn_max_retries, default_conn_timeout
 
 
 def grab(structure=None, path=None, separator="."):
@@ -225,4 +225,4 @@ def parse_command_line():
 
     return result
 
-
+# EOF

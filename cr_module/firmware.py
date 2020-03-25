@@ -1,6 +1,6 @@
 
-from .classes.inventory import Firmware
-from .common import grab, get_status_data
+from cr_module.classes.inventory import Firmware
+from cr_module.common import grab, get_status_data
 
 
 # noinspection PyShadowingNames
