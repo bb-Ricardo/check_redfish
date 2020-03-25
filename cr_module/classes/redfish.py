@@ -7,7 +7,8 @@ import pprint
 import sys
 
 
-from cr_module.common import *
+from cr_module.common import grab
+from cr_module.classes import plugin_status_types
 from cr_module.classes.vendor import *
 
 # import 3rd party modules

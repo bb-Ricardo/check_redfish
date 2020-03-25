@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 
-import logging
+description = """
+This is a monitoring/inventory plugin to check components and
+health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
-from cr_module.common import grab, parse_command_line
+R.I.P. IPMI
+"""
+
+import logging
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+
+from cr_module.common import grab
 from cr_module.classes.plugin import PluginData
 from cr_module.power import get_single_chassi_power
 from cr_module.temp import get_single_chassi_temp
@@ -16,7 +25,102 @@ from cr_module.bmc import get_bmc_info
 from cr_module.firmware import get_firmware_info
 from cr_module.event import get_event_log
 
+from cr_module import __version__, __version_date__
+from cr_module.classes.redfish import default_conn_max_retries, default_conn_timeout
+
 plugin = None
+
+
+def parse_command_line():
+    """parse command line arguments
+    Also add current version and version date to description
+    """
+
+    # define command line options
+    parser = ArgumentParser(
+        description=description + "\nVersion: " + __version__ + " (" + __version_date__ + ")",
+        formatter_class=RawDescriptionHelpFormatter, add_help=False)
+
+    group = parser.add_argument_group(title="mandatory arguments")
+    group.add_argument("-H", "--host",
+                       help="define the host to request. To change the port just add ':portnumber' to this parameter.")
+
+    group = parser.add_argument_group(title="authentication arguments")
+    group.add_argument("-u", "--username", help="the login user name")
+    group.add_argument("-p", "--password", help="the login password")
+    group.add_argument("-f", "--authfile", help="authentication file with user name and password")
+    group.add_argument("--sessionfile", help="define name of session file")
+    group.add_argument("--sessionfiledir", help="define directory where the plugin saves session files")
+
+    group = parser.add_argument_group(title="optional arguments")
+    group.add_argument("-h", "--help", action='store_true',
+                       help="show this help message and exit")
+    group.add_argument("-w", "--warning", default="",
+                       help="set warning value")
+    group.add_argument("-c", "--critical", default="",
+                       help="set critical value")
+    group.add_argument("-v", "--verbose", action='store_true',
+                       help="this will add all https requests and responses to output, "
+                            "also adds inventory source data to all inventory objects")
+    group.add_argument("-d", "--detailed", action='store_true',
+                       help="always print detailed result")
+    group.add_argument("-m", "--max", type=int,
+                       help="set maximum of returned items for --sel or --mel")
+    group.add_argument("-r", "--retries", type=int, default=default_conn_max_retries,
+                       help="set number of maximum retries (default: %d)" % default_conn_max_retries)
+    group.add_argument("-t", "--timeout", type=int, default=default_conn_timeout,
+                       help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
+
+    # require at least one argument
+    group = parser.add_argument_group(title="query status/health information (at least one is required)")
+    group.add_argument("--storage", dest="requested_query", action='append_const', const="storage",
+                       help="request storage health")
+    group.add_argument("--proc", dest="requested_query", action='append_const', const="proc",
+                       help="request processor health")
+    group.add_argument("--memory", dest="requested_query", action='append_const', const="memory",
+                       help="request memory health")
+    group.add_argument("--power", dest="requested_query", action='append_const', const="power",
+                       help="request power supply health")
+    group.add_argument("--temp", dest="requested_query", action='append_const', const="temp",
+                       help="request temperature sensors status")
+    group.add_argument("--fan", dest="requested_query", action='append_const', const="fan",
+                       help="request fan status")
+    group.add_argument("--nic", dest="requested_query", action='append_const', const="nic",
+                       help="request network interface status")
+    group.add_argument("--bmc", dest="requested_query", action='append_const', const="bmc",
+                       help="request bmc info and status")
+    group.add_argument("--info", dest="requested_query", action='append_const', const="info",
+                       help="request system information")
+    group.add_argument("--firmware", dest="requested_query", action='append_const', const="firmware",
+                       help="request firmware information")
+    group.add_argument("--sel", dest="requested_query", action='append_const', const="sel",
+                       help="request System Log status")
+    group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
+                       help="request Management Processor Log status")
+    group.add_argument("--all", dest="requested_query", action='append_const', const="all",
+                       help="request all of the above information at once.")
+
+    # inventory
+    group = parser.add_argument_group(title="query inventory information (no health check)")
+    group.add_argument("-i", "--inventory", action='store_true',
+                       help="return inventory in json format instead of regular plugin output")
+
+    result = parser.parse_args()
+
+    if result.help:
+        parser.print_help()
+        print("")
+        exit(0)
+
+    if result.requested_query is None:
+        parser.error("You need to specify at least one query command.")
+
+    # need to check this our self otherwise it's not
+    # possible to put the help command into a arguments group
+    if result.host is None:
+        parser.error("no remote host defined")
+
+    return result
 
 
 def get_chassi_data(plugin_object, data_type=None):

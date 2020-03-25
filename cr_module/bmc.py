@@ -321,7 +321,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     # get running firmware information from Fujitsu server
     if plugin_object.rf.vendor == "Fujitsu":
 
-        for bmc_firmware in get_firmware_info_fujitsu(redfish_url, True):
+        for bmc_firmware in get_firmware_info_fujitsu(plugin_object, redfish_url, True):
             plugin_object.add_output_data("OK",
                                           "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")))
 
