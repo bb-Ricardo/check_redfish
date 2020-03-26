@@ -90,9 +90,9 @@ query status/health information (at least one is required):
   --temp                request temperature sensors status
   --fan                 request fan status
   --nic                 request network interface status
-  --bmc                 request bmc infos and status
-  --info                request system informations
-  --firmware            request firmware informations
+  --bmc                 request bmc info and status
+  --info                request system information
+  --firmware            request firmware information
   --sel                 request System Log status
   --mel                 request Management Processor Log status
   --all                 request all of the above information at once.
@@ -185,7 +185,7 @@ Example: ```--mel --critical 1 --warning 3```
 
 * Entries with a != OK severity which are not older then 24 hours are reported as CRITICAL
 * Entries with a != OK severity which are not older then 72 hours are reported as WARNING
-* Any entries with a != OK severity which are older then 72 hours will be roprted as OK
+* Any entries with a != OK severity which are older then 72 hours will be reported as OK
 
 ### Detailed (health checks only)
 Health status by default will be reported as a summary:

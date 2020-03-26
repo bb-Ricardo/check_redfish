@@ -3,11 +3,11 @@
         "redfish_test": {
             "arguments": {
                 "--authfile": {
-                    "description": "Autentication file content: \n                                                    username=<username>  \n                                                    password=<password>",
+                    "description": "Authentication file content: \n                                                    username=<username>  \n                                                    password=<password>",
                     "value": "$redfish_authfile$"
                 },
                 "--bmc": {
-                    "description": "request bmc infos and status",
+                    "description": "request bmc info and status",
                     "set_if": "$redfish_bmc$"
                 },
                 "--critical": {
@@ -23,7 +23,7 @@
                     "set_if": "$redfish_fan$"
                 },
                 "--firmware": {
-                    "description": "request firmware informations",
+                    "description": "request firmware information",
                     "set_if": "$redfish_firmware$"
                 },
                 "--host": {
@@ -32,7 +32,7 @@
                     "value": "$redfish_hostname$"
                 },
                 "--info": {
-                    "description": "request summary of system informations",
+                    "description": "request summary of system information",
                     "set_if": "$redfish_info$"
                 },
                 "--max": {
