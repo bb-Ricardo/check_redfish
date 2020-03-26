@@ -6,7 +6,6 @@ import json
 import sys
 
 from cr_module.classes import plugin_status_types
-from cr_module import __version__
 
 # inventory definition
 inventory_layout_version_string = "0.1.1"
@@ -469,8 +468,9 @@ class Inventory(object):
     base_structure = dict()
     inventory_start = None
     data_retrieval_issues = list()
+    plugin_version = None
 
-    def __init__(self):
+    def __init__(self, plugin_version):
         for inventory_sub_class in InventoryItem.__subclasses__():
             if inventory_sub_class.inventory_item_name is None:
                 raise AttributeError("The 'inventory_item_name' attribute for class '%s' is undefined." %
@@ -480,6 +480,7 @@ class Inventory(object):
 
         # set metadata
         self.inventory_start = datetime.datetime.utcnow()
+        self.plugin_version = plugin_version
 
     def add(self, object_type):
 
@@ -548,7 +549,7 @@ class Inventory(object):
             "inventory_layout_version": inventory_layout_version_string,
             "data_retrieval_issues": self.data_retrieval_issues,
             "host_that_collected_inventory": os.uname()[1],
-            "script_version": __version__
+            "script_version": self.plugin_version
         }
 
         output = {"inventory": inventory_content}

@@ -8,6 +8,13 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
+__version__ = "0.0.11"
+__version_date__ = "2020-02-11"
+__author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
+__description__ = "Check Redfish Plugin"
+__license__ = "MIT"
+
+
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
@@ -25,7 +32,6 @@ from cr_module.bmc import get_bmc_info
 from cr_module.firmware import get_firmware_info
 from cr_module.event import get_event_log
 
-from cr_module import __version__, __version_date__
 from cr_module.classes.redfish import default_conn_max_retries, default_conn_timeout
 
 plugin = None
@@ -186,7 +192,7 @@ if __name__ == "__main__":
         logging.basicConfig(level="DEBUG", format='%(asctime)s - %(levelname)s: %(message)s')
 
     # initialize plugin object
-    plugin = PluginData(args)
+    plugin = PluginData(args, plugin_version=__version__)
 
     # try to get systems, managers and chassis IDs
     plugin.rf.discover_system_properties()

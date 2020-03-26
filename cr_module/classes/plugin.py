@@ -16,7 +16,7 @@ class PluginData:
     __return_status = "OK"
     __current_command = "global"
 
-    def __init__(self, cli_args=None):
+    def __init__(self, cli_args=None, plugin_version=None):
 
         if cli_args is None:
             raise Exception("No args passed to RedfishConnection()")
@@ -24,7 +24,7 @@ class PluginData:
         self.cli_args = cli_args
         self.rf = RedfishConnection(cli_args)
 
-        self.inventory = Inventory()
+        self.inventory = Inventory(plugin_version)
 
     def set_current_command(self, current_command=None):
 
