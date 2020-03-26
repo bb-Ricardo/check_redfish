@@ -3,26 +3,75 @@ from cr_module.common import grab
 import datetime
 
 
+def discover_log_services(plugin_object, event_type, system_manager_id):
+    # try to discover log service
+    redfish_url = None
+
+    system_manager_data = plugin_object.rf.get(system_manager_id)
+
+    log_services = None
+    log_services_link = grab(system_manager_data, "LogServices/@odata.id", separator="/")
+    if log_services_link is not None:
+        log_services = plugin_object.rf.get(log_services_link)
+
+    if grab(log_services, "Members") is not None and len(log_services.get("Members")) > 0:
+
+        for log_service in log_services.get("Members"):
+
+            log_service_data = plugin_object.rf.get(log_service.get("@odata.id"))
+
+            # check if "Name" contains "System" or "Manager"
+            if log_service_data.get("Name") is not None and \
+                    event_type.lower() in log_service_data.get("Name").lower():
+
+                if log_service_data.get("Entries") is not None:
+                    redfish_url = log_service_data.get("Entries").get("@odata.id")
+                    break
+
+    return redfish_url
+
+
 def get_event_log(plugin_object, event_type):
 
+    # event logs are not part of the inventory
     if plugin_object.cli_args.inventory is True:
         return
 
     if event_type not in ["Manager", "System"]:
-        raise Exception("Unknown event log type: %s", event_type)
+        raise Exception(f"Unknown event log type: {event_type}")
 
-    plugin_object.set_current_command("%s Event Log" % event_type)
+    plugin_object.set_current_command(f"{event_type} Event Log")
 
-    if event_type == "System" and plugin_object.rf.vendor in ["Huawei", "HPE", "Cisco"]:
-        property_name = "systems"
+    if event_type == "System":
+        property_name = plugin_object.rf.vendor_data.system_event_log_location
+        event_entries_redfish_path = plugin_object.rf.vendor_data.system_event_log_entries_path
     else:
-        property_name = "managers"
-
-    if plugin_object.rf.vendor == "Lenovo":
-        property_name = "systems"
+        property_name = plugin_object.rf.vendor_data.manager_event_log_location
+        event_entries_redfish_path = plugin_object.rf.vendor_data.manager_event_log_entries_path
 
     if plugin_object.rf.connection.system_properties is None:
         plugin_object.rf.discover_system_properties()
+
+    # we need to discover the log services if no property_name is set (generic vendor)
+    if property_name is None:
+        for this_property in ["managers", "systems"]:
+            for s_m_id in plugin_object.rf.connection.system_properties.get(this_property):
+                event_entries_redfish_path = discover_log_services(plugin_object, event_type, s_m_id)
+                if event_entries_redfish_path is not None:
+                    event_entries_redfish_path = event_entries_redfish_path.replace(s_m_id, "{system_manager_id}")
+                    property_name = this_property
+                    break
+
+            if property_name is not None:
+                break
+
+        if event_entries_redfish_path is None:
+            plugin_object.add_output_data("UNKNOWN",
+                                          f"No log services discovered where name matches '{event_type}'")
+            return
+
+    if property_name not in ["managers", "systems"]:
+        raise Exception(f"Unknown event log location: {property_name}")
 
     system_manager_ids = plugin_object.rf.connection.system_properties.get(property_name)
 
@@ -33,19 +82,22 @@ def get_event_log(plugin_object, event_type):
 
     for system_manager_id in system_manager_ids:
 
+        if event_entries_redfish_path is not None:
+            event_entries_redfish_path = event_entries_redfish_path.format(system_manager_id=system_manager_id)
+
         if plugin_object.rf.vendor == "HPE":
-            get_event_log_hpe(plugin_object, event_type, system_manager_id)
+            get_event_log_hpe(plugin_object, event_type, event_entries_redfish_path)
 
         elif plugin_object.rf.vendor == "Huawei":
             get_event_log_huawei(plugin_object, event_type, system_manager_id)
 
         else:
-            get_event_log_generic(plugin_object, event_type, system_manager_id)
+            get_event_log_generic(plugin_object, event_type, event_entries_redfish_path)
 
     return
 
 
-def get_event_log_hpe(plugin_object, event_type, system_manager_id):
+def get_event_log_hpe(plugin_object, event_type, redfish_path):
 
     limit_of_returned_items = plugin_object.cli_args.max
     forced_limit = False
@@ -63,17 +115,14 @@ def get_event_log_hpe(plugin_object, event_type, system_manager_id):
             forced_limit = True
             limit_of_returned_items = ilo4_limit
 
-    if event_type == "System":
-        redfish_url = f"{system_manager_id}/LogServices/IML/Entries/?$expand=."
-    else:
-        redfish_url = f"{system_manager_id}/LogServices/IEL/Entries?$expand=."
+    if event_type == "Manager":
 
         if plugin_object.cli_args.warning:
             date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
         if plugin_object.cli_args.critical:
             date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin_object.rf.get(redfish_url)
+    event_data = plugin_object.rf.get(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
@@ -131,81 +180,36 @@ def get_event_log_hpe(plugin_object, event_type, system_manager_id):
         # obey max results returned
         if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             if forced_limit:
-                plugin_object.add_log_output_data("OK", "This is an %s, limited results to %d entries" %
-                                                  (plugin_object.rf.vendor_data.ilo_version, limit_of_returned_items))
+                plugin_object.add_log_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
+                                                        f"limited {event_type} log results to "
+                                                        f"{limit_of_returned_items} entries")
             return
 
     return
 
 
-def get_event_log_generic(plugin_object, event_type, system_manager_id):
+def get_event_log_generic(plugin_object, event_type, redfish_path):
 
     limit_of_returned_items = plugin_object.cli_args.max
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
-    redfish_url = None
 
     # define locations for known vendors
-    if event_type == "System":
-        if plugin_object.rf.vendor == "Dell":
-            log_service_data = plugin_object.rf.get(f"{system_manager_id}/LogServices/Sel")
-            redfish_url = log_service_data.get("Entries").get("@odata.id")
-        elif plugin_object.rf.vendor == "Fujitsu":
-            redfish_url = f"{system_manager_id}/LogServices/SystemEventLog/Entries/"
-        elif plugin_object.rf.vendor == "Cisco":
-            redfish_url = f"{system_manager_id}/LogServices/SEL/Entries/"
-        elif plugin_object.rf.vendor == "Lenovo":
-            redfish_url = f"{system_manager_id}/LogServices/ActiveLog/Entries/"
-    else:
-        if plugin_object.rf.vendor == "Dell":
-            log_service_data = plugin_object.rf.get(f"{system_manager_id}/LogServices/Lclog")
-            redfish_url = log_service_data.get("Entries").get("@odata.id")
-        elif plugin_object.rf.vendor == "Fujitsu":
-            redfish_url = f"{system_manager_id}/LogServices/InternalEventLog/Entries/"
-        elif plugin_object.rf.vendor == "Cisco":
-            redfish_url = f"{system_manager_id}/LogServices/CIMC/Entries/"
-        elif plugin_object.rf.vendor == "Lenovo":
-            redfish_url = f"{system_manager_id}/LogServices/StandardLog/Entries/"
-
-    # try to discover log service
-    if redfish_url is None:
-        system_manager_data = plugin_object.rf.get(system_manager_id)
-
-        log_services = None
-        log_services_link = grab(system_manager_data, "LogServices/@odata.id", separator="/")
-        if log_services_link is not None:
-            log_services = plugin_object.rf.get(log_services_link)
-
-        if grab(log_services, "Members") is not None and len(log_services.get("Members")) > 0:
-
-            for log_service in log_services.get("Members"):
-
-                log_service_data = plugin_object.rf.get(log_service.get("@odata.id"))
-
-                # check if "Name" contains "System" or "Manager"
-                if log_service_data.get("Name") is not None and \
-                        event_type.lower() in log_service_data.get("Name").lower():
-
-                    if log_service_data.get("Entries") is not None:
-                        redfish_url = log_service_data.get("Entries").get("@odata.id")
-                        break
-
-    if redfish_url is None:
-        plugin_object.add_output_data("UNKNOWN",
-                                      f"No log services discovered in "
-                                      f"{system_manager_id}/LogServices that match {event_type}")
-        return
+    if plugin_object.rf.vendor == "Dell":
+        log_service_data = plugin_object.rf.get(redfish_path)
+        if grab(log_service_data, "Entries") is not None:
+            redfish_path = log_service_data.get("Entries").get("@odata.id")
 
     if plugin_object.cli_args.warning:
         date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin_object.rf.get(redfish_url)
+    event_data = plugin_object.rf.get(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
 
     if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
-        plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
+        plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
                                       summary=not plugin_object.cli_args.detailed)
         return
 

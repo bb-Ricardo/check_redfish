@@ -8,6 +8,13 @@ class VendorGeneric:
     view_supported = False
     view_select = None
 
+    # only "managers" and "systems" are valid values
+    manager_event_log_location = None
+    system_event_log_location = None
+
+    manager_event_log_entries_path = None
+    system_event_log_entries_path = None
+
     expand_string = ""
 
 
@@ -22,7 +29,11 @@ class VendorHPEData(VendorGeneric):
 
     expand_string = "?$expand=."
 
-    resource_directory = None
+    manager_event_log_location = "managers"
+    system_event_log_location = "systems"
+
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/IEL/Entries"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/IML/Entries"
 
     """
         Select and store view (supported from ILO 5)
@@ -36,19 +47,19 @@ class VendorHPEData(VendorGeneric):
     view_select = {
         "Select": [
             {
-                "From": "/Systems/1/Memory/?$expand=.",
+                "From": f"/Systems/1/Memory/{expand_string}",
                 "Properties": ["Members AS Memory"]
             },
             {
-                "From": "/Systems/1/Processors/?$expand=.",
+                "From": f"/Systems/1/Processors/{expand_string}",
                 "Properties": ["Members AS Processors"]
             },
             {
-                "From": "/Systems/1/EthernetInterfaces/?$expand=.",
+                "From": f"/Systems/1/EthernetInterfaces/{expand_string}",
                 "Properties": ["Members AS EthernetInterfaces"]
             },
             {
-                "From": "/Chassis/1/Power/?$expand=.",
+                "From": f"/Chassis/1/Power/{expand_string}",
                 "Properties": ["PowerSupplies", "Redundancy AS PowerRedundancy"]
             },
             {
@@ -56,11 +67,11 @@ class VendorHPEData(VendorGeneric):
                 "Properties": ["Temperatures", "Fans"]
             },
             {
-                "From": "/Managers/?$expand=.",
+                "From": f"/Managers/{expand_string}",
                 "Properties": ["Members as ILO"]
             },
             {
-                "From": "/Managers/1/EthernetInterfaces/?$expand=.",
+                "From": f"/Managers/1/EthernetInterfaces/{expand_string}",
                 "Properties": ["Members as ILOInterfaces"]
             }
         ]
@@ -74,11 +85,25 @@ class VendorLenovoData(VendorGeneric):
     name = "Lenovo"
     expand_string = "?$expand=*"
 
+    manager_event_log_location = "systems"
+    system_event_log_location = "systems"
+
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/StandardLog/Entries/"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/ActiveLog/Entries/"
+
 
 class VendorDellData(VendorGeneric):
 
     name = "Dell"
     expand_string = "?$expand=*($levels=1)"
+
+    manager_event_log_location = "managers"
+    system_event_log_location = "managers"
+
+    # ATTENTION: for Dell we only provide the "base" path.
+    #            the Entries path will be discovered in the the according function
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/Lclog"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/Sel"
 
 
 class VendorHuaweiData(VendorGeneric):
@@ -87,16 +112,35 @@ class VendorHuaweiData(VendorGeneric):
     # currently $expand is not supported
     expand_string = ""
 
+    manager_event_log_location = "managers"
+    system_event_log_location = "systems"
+
+    # defined in dedicated function get_event_log_huawei()
+    manager_event_log_entries_path = None
+    system_event_log_entries_path = None
+
 
 class VendorFujitsuData(VendorGeneric):
 
     name = "Fujitsu"
     expand_string = "?$expand=Members"
 
+    manager_event_log_location = "managers"
+    system_event_log_location = "systems"
+
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/InternalEventLog/Entries/"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/SystemEventLog/Entries/"
+
 
 class VendorCiscoData(VendorGeneric):
 
     name = "Cisco"
     expand_string = ""
+
+    manager_event_log_location = "managers"
+    system_event_log_location = "systems"
+
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/CIMC/Entries/"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/SEL/Entries/"
 
 # EOF
