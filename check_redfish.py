@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#  Copyright (c) 2020 Ricardo Bartels. All rights reserved.
+#
+#  check_redfish.py
+#
+#  This work is licensed under the terms of the MIT license.
+#  For a copy, see file LICENSE.txt included in this
+#  repository or visit: <https://opensource.org/licenses/MIT>.
 
 description = """
 This is a monitoring/inventory plugin to check components and
