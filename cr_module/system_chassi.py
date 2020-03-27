@@ -5,10 +5,7 @@ from cr_module.common import get_status_data, grab
 def get_system_info(plugin_object):
     plugin_object.set_current_command("System Info")
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
-    systems = plugin_object.rf.connection.system_properties.get("systems")
+    systems = plugin_object.rf.get_system_properties("systems")
 
     if systems is None or len(systems) == 0:
         plugin_object.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
@@ -20,7 +17,7 @@ def get_system_info(plugin_object):
     # add chassi inventory here too
     if plugin_object.cli_args.inventory is True:
 
-        for chassi in plugin_object.rf.connection.system_properties.get("chassis"):
+        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
             get_single_chassi_info(plugin_object, chassi)
 
     return
@@ -71,7 +68,7 @@ def get_single_system_info(plugin_object, redfish_url):
         system_inventory.source_data = system_response
 
     # add relations
-    system_inventory.add_relation(plugin_object.rf.connection.system_properties, system_response.get("Links"))
+    system_inventory.add_relation(plugin_object.rf.get_system_properties(), system_response.get("Links"))
 
     plugin_object.inventory.add(system_inventory)
 
@@ -135,7 +132,7 @@ def get_single_chassi_info(plugin_object, redfish_url):
         chassi_inventory.source_data = chassi_response
 
     # add relations
-    chassi_inventory.add_relation(plugin_object.rf.connection.system_properties, chassi_response.get("Links"))
+    chassi_inventory.add_relation(plugin_object.rf.get_system_properties(), chassi_response.get("Links"))
 
     plugin_object.inventory.add(chassi_inventory)
 

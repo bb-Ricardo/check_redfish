@@ -55,8 +55,8 @@ def get_single_chassi_fan(plugin_object, redfish_url):
             fan_status = fan_inventory.health_status
 
             # add relations
-            fan_inventory.add_relation(plugin_object.rf.connection.system_properties, fan.get("Links"))
-            fan_inventory.add_relation(plugin_object.rf.connection.system_properties, fan.get("RelatedItem"))
+            fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("Links"))
+            fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("RelatedItem"))
 
             perf_units = ""
 

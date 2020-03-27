@@ -110,13 +110,13 @@ def get_system_nics_fujitsu(plugin_object, redfish_url):
                                                  "nic_port": network_port_data}
 
                 # add relations
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties,
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                            network_function_member.get("Links"))
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties,
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                            network_function_member.get("RelatedItem"))
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties,
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                            network_port_data.get("Links"))
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties,
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                            network_port_data.get("RelatedItem"))
 
                 plugin_object.inventory.add(nic_inventory)
@@ -191,8 +191,8 @@ def get_single_system_nics(plugin_object, redfish_url):
                     nic_inventory.source_data = nic_response
 
                 # add relations
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties, nic_response.get("Links"))
-                nic_inventory.add_relation(plugin_object.rf.connection.system_properties,
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(), nic_response.get("Links"))
+                nic_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                            nic_response.get("RelatedItem"))
 
                 plugin_object.inventory.add(nic_inventory)

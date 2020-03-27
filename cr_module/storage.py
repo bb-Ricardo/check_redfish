@@ -5,10 +5,7 @@ from cr_module.common import get_status_data, grab
 def get_storage(plugin_object):
     plugin_object.set_current_command("Storage")
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
-    systems = plugin_object.rf.connection.system_properties.get("systems")
+    systems = plugin_object.rf.get_system_properties("systems")
 
     if systems is None or len(systems) == 0:
         plugin_object.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
@@ -543,7 +540,7 @@ def get_storage_generic(plugin_object, system):
     def get_enclosures(enclosure_link):
 
         # skip chassis listed as enclosures
-        if enclosure_link in plugin_object.rf.connection.system_properties.get("chassis"):
+        if enclosure_link in plugin_object.rf.get_system_properties("chassis"):
             return
 
         enclosure_response = plugin_object.rf.get(enclosure_link)

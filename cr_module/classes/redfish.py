@@ -419,7 +419,7 @@ class RedfishConnection:
                 self.vendor_data = VendorFujitsuData()
 
         # Cisco does not provide a OEM property in root object
-        if "CIMC" in str(self.connection.system_properties.get("managers")):
+        if "CIMC" in str(self.get_system_properties("managers")):
 
             self.vendor_data = VendorCiscoData()
 
@@ -469,4 +469,37 @@ class RedfishConnection:
 
         return
 
+    def get_system_properties(self, requested_property=None):
+        """
+        get a list of links to system properties for requested_property
+        i.e.:
+            "systems" -> [ "/redfish/v1/Systems/1" ]
+
+        if no property is requested the whole dict will be returned
+
+        Parameters
+        ----------
+        requested_property: str
+            can be either "chassis", "managers", "systems" or None
+
+        Returns
+        -------
+            list, dict
+                list of property links if requested_property was set or
+                dict of all properties if no requested_property was set
+        """
+
+        if requested_property is not None and requested_property not in ["chassis", "managers", "systems"]:
+            raise Exception(f"Invalid property '{requested_property}' requested.")
+
+        if self.connection.system_properties is None:
+            self.discover_system_properties()
+
+        if self.connection.system_properties is not None:
+            if requested_property is not None:
+                return self.connection.system_properties.get(requested_property)
+            else:
+                return self.connection.system_properties
+
+        return None
 # EOF

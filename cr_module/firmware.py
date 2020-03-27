@@ -11,10 +11,7 @@ def get_firmware_info(plugin_object):
     if (plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 4") \
             or plugin_object.rf.vendor == "Fujitsu":
 
-        if plugin_object.rf.connection.system_properties is None:
-            plugin_object.rf.discover_system_properties()
-
-        system_ids = plugin_object.rf.connection.system_properties.get("systems")
+        system_ids = plugin_object.rf.get_system_properties("systems")
 
         if system_ids is None or len(system_ids) == 0:
             plugin_object.add_output_data("UNKNOWN", f"No 'systems' property found in root path '/redfish/v1'")
@@ -107,11 +104,8 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
     # list of dicts: keys: {name, version, location}
     firmware_entries = list()
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
     # get iRMC firmware
-    manager_ids = plugin_object.rf.connection.system_properties.get("managers")
+    manager_ids = plugin_object.rf.get_system_properties("managers")
 
     if manager_ids is not None and len(manager_ids) > 0:
 
@@ -156,7 +150,7 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
             return firmware_entries
 
     # get power supply firmware
-    chassi_ids = plugin_object.rf.connection.system_properties.get("chassis")
+    chassi_ids = plugin_object.rf.get_system_properties("chassis")
 
     if chassi_ids is not None and len(chassi_ids) > 0:
 

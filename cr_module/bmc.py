@@ -7,7 +7,7 @@ def get_bmc_info(plugin_object):
 
     plugin_object.set_current_command("BMC Info")
 
-    managers = plugin_object.rf.connection.system_properties.get("managers")
+    managers = plugin_object.rf.get_system_properties("managers")
 
     if managers is None or len(managers) == 0:
         plugin_object.add_output_data("UNKNOWN", "No 'managers' property found in root path '/redfish/v1'")
@@ -67,7 +67,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         manager_inventory.source_data = manager_response
 
     # add relations
-    manager_inventory.add_relation(plugin_object.rf.connection.system_properties, manager_response.get("Links"))
+    manager_inventory.add_relation(plugin_object.rf.get_system_properties(), manager_response.get("Links"))
 
     plugin_object.inventory.add(manager_inventory)
 

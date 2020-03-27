@@ -134,10 +134,7 @@ def get_chassi_data(plugin_object, data_type=None):
     if data_type is None or data_type not in ["power", "temp", "fan"]:
         raise Exception("Unknown data_type not set for get_chassi_data(): %s", type)
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
-    chassis = grab(plugin_object.rf.connection.system_properties, "chassis")
+    chassis = plugin_object.rf.get_system_properties("chassis")
 
     if chassis is None or len(chassis) == 0:
         plugin_object.add_output_data("UNKNOWN", "No 'chassis' property found in root path '/redfish/v1'")
@@ -160,10 +157,7 @@ def get_system_data(plugin_object, data_type):
         plugin_object.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
         return
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
-    systems = plugin.rf.connection.system_properties.get("systems")
+    systems = plugin_object.rf.get_system_properties("systems")
 
     if systems is None or len(systems) == 0:
         plugin.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")

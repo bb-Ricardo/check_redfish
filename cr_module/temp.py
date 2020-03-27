@@ -66,8 +66,8 @@ def get_single_chassi_temp(plugin_object, redfish_url):
                 temp_inventory.reading = 0
 
             # add relations
-            temp_inventory.add_relation(plugin_object.rf.connection.system_properties, temp.get("Links"))
-            temp_inventory.add_relation(plugin_object.rf.connection.system_properties, temp.get("RelatedItem"))
+            temp_inventory.add_relation(plugin_object.rf.get_system_properties(), temp.get("Links"))
+            temp_inventory.add_relation(plugin_object.rf.get_system_properties(), temp.get("RelatedItem"))
 
             plugin_object.inventory.add(temp_inventory)
 

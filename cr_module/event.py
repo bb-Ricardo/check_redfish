@@ -49,13 +49,10 @@ def get_event_log(plugin_object, event_type):
         property_name = plugin_object.rf.vendor_data.manager_event_log_location
         event_entries_redfish_path = plugin_object.rf.vendor_data.manager_event_log_entries_path
 
-    if plugin_object.rf.connection.system_properties is None:
-        plugin_object.rf.discover_system_properties()
-
     # we need to discover the log services if no property_name is set (generic vendor)
     if property_name is None:
         for this_property in ["managers", "systems"]:
-            for s_m_id in plugin_object.rf.connection.system_properties.get(this_property):
+            for s_m_id in plugin_object.rf.get_system_properties(this_property) or list():
                 event_entries_redfish_path = discover_log_services(plugin_object, event_type, s_m_id)
                 if event_entries_redfish_path is not None:
                     event_entries_redfish_path = event_entries_redfish_path.replace(s_m_id, "{system_manager_id}")
@@ -73,7 +70,7 @@ def get_event_log(plugin_object, event_type):
     if property_name not in ["managers", "systems"]:
         raise Exception(f"Unknown event log location: {property_name}")
 
-    system_manager_ids = plugin_object.rf.connection.system_properties.get(property_name)
+    system_manager_ids = plugin_object.rf.get_system_properties(property_name)
 
     if system_manager_ids is None or len(system_manager_ids) == 0:
         plugin_object.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'",
