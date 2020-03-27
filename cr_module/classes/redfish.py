@@ -430,6 +430,7 @@ class RedfishConnection:
         if "CIMC" in str(self.get_system_properties("managers")):
 
             self.vendor_data = VendorCiscoData()
+            self.vendor_dict_key = self.vendor_data.name
 
         if self.vendor_data is None:
 

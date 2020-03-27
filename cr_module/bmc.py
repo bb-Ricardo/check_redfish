@@ -58,6 +58,11 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if bmc_model in ["14G Monolithic", "15G Monolithic"]:
             bmc_model = "iDRAC 9"
 
+    # some Cisco Systems have a second manager with no attributes which needs to be skipped
+    if plugin_object.rf.vendor == "Cisco":
+        if manager_response.get("Status") is None:
+            return
+
     status_text = f"{bmc_model} (Firmware: {bmc_fw_version})"
 
     # get status data

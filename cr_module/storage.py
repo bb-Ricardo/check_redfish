@@ -396,6 +396,11 @@ def get_storage_generic(plugin_object, system):
                 bay = dell_disk_data.get("Slot")
             storage_port = dell_disk_data.get("Connector")
 
+        physical_location = grab(drive_response, "PhysicalLocation.PartLocation")
+        if bay is None and physical_location is not None:
+            if physical_location.get("LocationType") == "Slot":
+                bay = physical_location.get("LocationOrdinalValue")
+
         interface_speed = None
         if drive_response.get("NegotiatedSpeedGbs") is not None:
             interface_speed = int(drive_response.get("NegotiatedSpeedGbs")) * 1000
@@ -492,6 +497,7 @@ def get_storage_generic(plugin_object, system):
 
             raid_level = volume_data.get("VolumeType")
             volume_name = volume_data.get("Description")
+            volume_state = status_data.get("State")
 
             oem_data = grab(volume_data, f"Oem.{plugin_object.rf.vendor_dict_key}")
             if oem_data is not None:
@@ -503,13 +509,22 @@ def get_storage_generic(plugin_object, system):
                     raid_level = oem_data.get("RaidLevel")
                     volume_name = oem_data.get("Name")
 
+                if plugin_object.rf.vendor == "Cisco":
+                    volume_state = oem_data.get("VolumeState")
+
+            if plugin_object.rf.vendor == "Cisco" and volume_data.get("Status") is None:
+                if volume_state == "Optimal":
+                    status_data["Health"] = "OK"
+                else:
+                    status_data["Health"] = "WARNING"
+
             ld_inventory = LogicalDrive(
                 # logical drive id repeats per controller
                 # prefix drive id with controller id
                 id="{}:{}".format(controller_inventory.id, volume_data.get("Id")),
                 name=volume_name,
                 health_status=status_data.get("Health"),
-                operation_status=status_data.get("State"),
+                operation_status=volume_state,
                 type=volume_data.get("VolumeType"),
                 size_in_byte=size,
                 raid_type=raid_level,
@@ -663,7 +678,10 @@ def get_storage_generic(plugin_object, system):
 
                 for storage_controller in controller_response.get("StorageControllers"):
 
-                    status_data = get_status_data(storage_controller.get("Status"))
+                    if storage_controller.get("Status") is not None:
+                        status_data = get_status_data(storage_controller.get("Status"))
+                    else:
+                        status_data = get_status_data(controller_response.get("Status"))
 
                     controller_oem_data = grab(storage_controller, f"Oem.{plugin_object.rf.vendor_dict_key}")
 
