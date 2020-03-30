@@ -376,6 +376,9 @@ def get_storage_hpe(plugin_object, system):
 def get_storage_generic(plugin_object, system):
     def get_drive(drive_link):
 
+        if drive_link is None:
+            return
+
         drive_response = plugin_object.rf.get(drive_link)
 
         if drive_response.get("Name") is None:
@@ -491,6 +494,9 @@ def get_storage_generic(plugin_object, system):
 
     def get_volumes(volumes_link):
 
+        if volumes_link is None:
+            return
+
         volumes_response = plugin_object.rf.get(volumes_link)
 
         if len(volumes_response.get("Members")) == 0:
@@ -582,6 +588,9 @@ def get_storage_generic(plugin_object, system):
                 "OK" if ld_inventory.health_status in ["OK", None] else ld_inventory.health_status, status_text)
 
     def get_enclosures(enclosure_link):
+
+        if enclosure_link is None:
+            return
 
         # skip chassis listed as enclosures
         if enclosure_link in plugin_object.rf.get_system_properties("chassis"):
@@ -824,7 +833,7 @@ def get_storage_generic(plugin_object, system):
                 get_drive(controller_drive.get("@odata.id"))
 
             # get volumes
-            get_volumes(controller_response.get("Volumes").get("@odata.id"))
+            get_volumes(grab(controller_response, "Volumes/@odata.id", separator="/"))
 
             # get enclosures
             enclosure_list = grab(controller_response, "Links.Enclosures")
@@ -966,12 +975,20 @@ def get_storage_generic(plugin_object, system):
 
     if system_drives is not None:
         for system_drive in system_drives:
-            drive_url = grab(system_drive, "Link/@odata.id", separator="/")
-            if drive_url not in system_drives_list:
-                system_drives_list.append(drive_url)
+            drive_path = grab(system_drive, "Link/@odata.id", separator="/")
+            if drive_path not in system_drives_list:
+                system_drives_list.append(drive_path)
                 # create placeholder for storage controller
                 controller_inventory = StorageController(id=0)
-                get_drive(drive_url)
+                get_drive(drive_path)
+
+    # check drives in chassi links
+    for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+        for chassi_drive in grab(plugin_object.rf.get(chassi), f"Links.Drives") or list():
+            drive_path = chassi_drive.get("@odata.id")
+            if drive_path is not None and drive_path not in system_drives_list:
+                controller_inventory = StorageController(id=0)
+                get_drive(drive_path)
 
     condensed_storage_status = condensed_status_from_list(storage_status_list)
     condensed_drive_status = condensed_status_from_list(drives_status_list)
@@ -989,7 +1006,7 @@ def get_storage_generic(plugin_object, system):
 
             plugin_object.add_output_data(condensed_drive_status, drive_summary_status, summary=True)
 
-        elif len(storage_controller_names_list) != 1 and len(system_drives_list) == 0:
+        elif len(storage_controller_names_list) != 0 and len(system_drives_list) == 0:
 
             storage_summary_status = "All storage controllers (%s) are in good condition (No system drives found)" % (
                 ", ".join(storage_controller_names_list))

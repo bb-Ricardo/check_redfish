@@ -47,7 +47,7 @@ def get_single_system_procs(plugin_object, redfish_url):
     if processors_response.get("Members") is not None or processors_response.get(system_response_proc_key) is not None:
 
         num_procs = 0
-        for proc in processors_response.get("Members") or processors_response.get(system_response_proc_key):
+        for proc in processors_response.get("Members") or processors_response.get(system_response_proc_key) or list():
 
             if proc.get("@odata.context"):
                 proc_response = proc
@@ -152,7 +152,12 @@ def get_single_system_procs(plugin_object, redfish_url):
                                               "No processor data returned for API URL '%s'" %
                                               proc_response.get("@odata.id"))
 
-        if plugin_object.cli_args.detailed is False:
+        if num_procs == 0:
+            issue_text = f"Returned data from API URL '{processors_link}' contains no processor information"
+            plugin_object.inventory.add_issue(Processor, issue_text)
+            plugin_object.add_output_data("UNKNOWN", issue_text, summary=not plugin_object.cli_args.detailed)
+
+        elif plugin_object.cli_args.detailed is False:
             plugin_object.add_output_data("OK", "All processors (%d) are in good condition" % num_procs, summary=True)
     else:
         plugin_object.add_output_data("UNKNOWN", f"No processor data returned for API URL '{redfish_url}'")
