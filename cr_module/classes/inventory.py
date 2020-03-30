@@ -223,6 +223,7 @@ class LogicalDrive(InventoryItem):
 class StorageController(InventoryItem):
     inventory_item_name = "storage_controllers"
     valid_attributes = [
+       "backup_power_health",
        "backup_power_present",
        "cache_size_in_mb",
        "firmware",

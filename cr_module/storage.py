@@ -318,6 +318,7 @@ def get_storage_hpe(plugin_object, system):
                     firmware=grab(controller_response, "FirmwareVersion.Current.VersionString"),
                     serial=controller_response.get("SerialNumber"),
                     location=controller_response.get("Location"),
+                    backup_power_health=grab(controller_response, "CacheModuleStatus.Health"),
                     backup_power_present=backup_power_present,
                     cache_size_in_mb=controller_response.get("CacheMemorySizeMiB"),
                     system_ids=system_id
@@ -347,6 +348,25 @@ def get_storage_hpe(plugin_object, system):
                                               "No array controller data returned for API URL '%s'" %
                                               array_controller.get("@odata.id"))
 
+    # check controller batteries/Capacitors on iLO5 systems
+    if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 5":
+        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+
+            battery_status = grab(
+                plugin_object.rf.get(chassi), f"Oem.{plugin_object.rf.vendor_dict_key}.SmartStorageBattery"
+            ) or list()
+
+            for controller_battery in battery_status:
+                status_data = get_status_data(controller_battery.get("Status"))
+
+                status_text = f"SmartStorageBattery {controller_battery.get('Index')} " \
+                              f"(charge level: {controller_battery.get('ChargeLevelPercent')}%, " \
+                              f"capacity: {controller_battery.get('MaximumCapWatts')}W) " \
+                              f"status: {status_data.get('Health')}"
+
+                plugin_object.add_output_data("CRITICAL"
+                                              if status_data.get("Health") not in ["OK", "WARNING"] else
+                                              status_data.get("Health"), status_text)
     else:
         plugin_object.add_output_data("UNKNOWN", f"No array controller data returned for API URL '{redfish_url}'")
 
@@ -759,6 +779,7 @@ def get_storage_generic(plugin_object, system):
                     if grab(controller_oem_data, "CapacitanceStatus") is not None:
                         cap_model = controller_oem_data.get("CapacitanceName")
                         cap_status = get_status_data(controller_oem_data.get("CapacitanceStatus")).get("Health")
+                        controller_inventory.backup_power_health = cap_status
                         cap_fault_details = controller_oem_data.get("CapacitanceStatus").get("FaultDetails")
 
                         cap_status_text = f"Controller capacitor ({cap_model}) status: {cap_status}"
