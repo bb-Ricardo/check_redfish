@@ -174,12 +174,12 @@ you can use warning and critical with following commands:
 
 **--mel** (values are passed as "days")<br>
 define after how many days event log entries which have a != OK severity shouldn't
-be alerted anymore. On HPE systems it is not possible to set management event log entries
+be alerted anymore. On most systems it is not possible to set management event log entries
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
 
-**--sel** (values are passed as "days")<br>
-works the same way as stated above for HPE systems just for SEL on Huawei systems
+**--sel** (values are passed as "days") (HUAWEI only)<br>
+works the same way as stated above for just for SEL on Huawei systems
 
 Example: ```--mel --critical 1 --warning 3```
 
@@ -223,7 +223,6 @@ the plugin would be finished after 28 seconds.
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
 * On all systems the nic status is reported unreliable
-* On Huawei systems the command **--mel** is not implemented
 * For **--storage** components which report a Status.Health as **None**
 will be treated as **OK** if Status.State is set to **Enabled**
 
@@ -261,6 +260,7 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
 
 ### Cisco
+* Cisco C220M5SX (CIMC Version 3.1(3a))
 * Cisco C240M5SX (CIMC Version 3.1(3a))
 
 ## License

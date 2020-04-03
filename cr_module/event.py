@@ -8,6 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.common import grab
+from cr_module.classes import plugin_status_types
 
 import datetime
 
@@ -38,6 +39,73 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
                     break
 
     return redfish_url
+
+
+def collect_log_entries(plugin_object, entry_url, limit_of_returned_items=None):
+
+    collected_log_entries_list = list()
+
+    # just to make sure to stop if for some reason we get unlimited nextLink
+    current_iteration = 0
+    while current_iteration <= 500:
+
+        if entry_url is None:
+            break
+
+        current_iteration += 1
+
+        event_data = plugin_object.rf.get(f"{entry_url}{plugin_object.rf.vendor_data.expand_string}")
+
+        collected_log_entries_list.extend(event_data.get("Members"))
+
+        if limit_of_returned_items is not None and len(collected_log_entries_list) >= limit_of_returned_items:
+            break
+
+        if event_data.get("Members@odata.nextLink") is not None and len(
+                collected_log_entries_list) != event_data.get("Members@odata.count"):
+            entry_url = event_data.get("Members@odata.nextLink")
+        else:
+            break
+
+    return collected_log_entries_list
+
+
+def get_log_entry_time(entry_date=None):
+
+    # set to unix time 0 if no entry was passed on
+    if entry_date is None:
+        entry_date = "1970-01-01T00:00:00-00:00"
+
+    # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
+    # from:
+    #   2019-11-01T15:03:32-05:00
+    # to:
+    #   2019-11-01T15:03:32-0500
+
+    entry_date_object = None
+    try:
+        entry_date_object = datetime.datetime.strptime(entry_date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+    except Exception:
+        pass
+
+    # parse time zone unaware entry dates and add this local time zone
+    if entry_date_object is None:
+
+        local_timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
+
+        # HP event log time format
+        if "T" in entry_date:
+            string_format = "%Y-%m-%dT%H:%M:%SZ"
+        else:
+            string_format = "%Y-%m-%d %H:%M:%S"
+
+        try:
+            entry_date_object = datetime.datetime.strptime(entry_date, string_format)
+            entry_date_object = entry_date_object.replace(tzinfo=local_timezone)
+        except Exception:
+            pass
+
+    return entry_date_object
 
 
 def get_event_log(plugin_object, event_type):
@@ -128,15 +196,14 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
         if plugin_object.cli_args.critical:
             date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin_object.rf.get(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
+    event_entries = collect_log_entries(plugin_object, redfish_path)
 
-    if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
+    if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
                                       summary=not plugin_object.cli_args.detailed)
         return
 
     # reverse list from newest to oldest entry
-    event_entries = event_data.get("Members")
     event_entries.reverse()
 
     num_entry = 0
@@ -147,22 +214,15 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
-        message = event_entry.get("Message")
-
         num_entry += 1
 
+        message = event_entry.get("Message")
         severity = event_entry.get("Severity")
         if severity is not None:
             severity = severity.upper()
-        date = event_entry.get("Created")
-        repaired = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Repaired")
-
-        if repaired is None:
-            repaired = False
-
-        # take care of date = None
-        if date is None:
-            date = "1970-01-01T00:00:00Z"
+        date = event_entry.get("Created") or "1970-01-01T00:00:00Z"
+        entry_date = get_log_entry_time(date)
+        repaired = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Repaired") or False
 
         status = "OK"
 
@@ -172,13 +232,13 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
             elif severity != "OK" and repaired is False:
                 status = "CRITICAL"
         else:
-            entry_data = datetime.datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ")
 
             if plugin_object.cli_args.critical and date_critical is not None:
-                if entry_data > date_critical and severity != "OK":
+                if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
                     status = "CRITICAL"
             if plugin_object.cli_args.warning and date_warning is not None:
-                if entry_data > date_warning and status != "CRITICAL" and severity != "OK":
+                if entry_date > date_warning.astimezone(entry_date.tzinfo) \
+                        and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
         plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
@@ -196,7 +256,7 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
 
 def get_event_log_generic(plugin_object, event_type, redfish_path):
 
-    limit_of_returned_items = plugin_object.cli_args.max
+    num_entry = 0
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
@@ -212,14 +272,12 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_data = plugin_object.rf.get(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
+    event_entries = collect_log_entries(plugin_object, redfish_path)
 
-    if event_data.get("Members") is None or len(event_data.get("Members")) == 0:
+    if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
                                       summary=not plugin_object.cli_args.detailed)
         return
-
-    event_entries = event_data.get("Members")
 
     assoc_id_status = dict()
 
@@ -227,10 +285,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     if plugin_object.rf.vendor == "Lenovo":
         event_entries.reverse()
 
-    num_entry = 0
     for event_entry_item in event_entries:
 
-        if event_entry_item.get("Id"):
+        if event_entry_item.get("Id") is not None:
             event_entry = event_entry_item
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
@@ -250,11 +307,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         if severity in ["NORMAL", "INFORMATIONAL"]:
             severity = "OK"
 
-        date = event_entry.get("Created")
-
-        # take care of date = None
-        if date is None:
-            date = "1970-01-01T00:00:00-00:00"
+        date = event_entry.get("Created") or "1970-01-01T00:00:00-00:00"
 
         status = "OK"
 
@@ -279,17 +332,8 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
                 assoc_id_status[assoc_id] = "cleared"
 
         if (date_critical is not None or date_warning is not None) and severity is not None:
-            # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
-            # from:
-            #   2019-11-01T15:03:32-05:00
-            # to:
-            #   2019-11-01T15:03:32-0500
 
-            entry_date = None
-            try:
-                entry_date = datetime.datetime.strptime(date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
-            except Exception:
-                pass
+            entry_date = get_log_entry_time(date)
 
             if entry_date is not None and date_critical is not None:
                 if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
@@ -302,100 +346,56 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
 
         # obey max results returned
-        if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
+        if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
     return
 
 
 def get_event_log_huawei(plugin_object, event_type, system_manager_id):
 
-    def collect_log_entries(entry_url):
-
-        collected_log_entries_list = list()
-
-        while True:
-
-            event_data = plugin_object.rf.get(entry_url)
-
-            collected_log_entries_list.extend(event_data.get("Members"))
-
-            if limit_of_returned_items is not None and len(collected_log_entries_list) >= limit_of_returned_items:
-                break
-
-            if event_data.get("Members@odata.nextLink") is not None and len(
-                    collected_log_entries_list) != event_data.get("Members@odata.count"):
-                entry_url = event_data.get("Members@odata.nextLink")
-            else:
-                break
-
-        return collected_log_entries_list
-
-    limit_of_returned_items = plugin_object.cli_args.max
     num_entry = 0
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
-    # noinspection PyUnusedLocal
     log_entries = list()
 
     if event_type == "System":
         redfish_url = f"{system_manager_id}/LogServices/Log1/Entries/"
 
-        log_entries = collect_log_entries(redfish_url)
+        log_entries = collect_log_entries(plugin_object, redfish_url)
     else:
 
-        """
-        This is currently only a start of implementation. Will be finished once we
-        have an example of how the different LogServices Entries look like.
-        """
-
-        # leave here and tell user about missing implementation
-        plugin_object.add_output_data("UNKNOWN",
-                                      f"Command to check {event_type} Event Log not implemented for this vendor",
-                                      summary=not plugin_object.cli_args.detailed)
-        return
-
-        # noinspection PyUnreachableCode
-        """
-        # set fix to max 50 (ugly, needs to be re-factored)
-        if limit_of_returned_items is not None and limit_of_returned_items > 50:
-            limit_of_returned_items = 50
-        else:
-            limit_of_returned_items = 50
-
-        redfish_url = f"{system_manager_id}"
-
-        manager_data = plugin_object.rf.get(redfish_url)
+        manager_data = plugin_object.rf.get(system_manager_id)
 
         if len(manager_data.get("LogServices")) == 0:
-            plugin_object.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{redfish_url}'",
-                                          summary=not args.detailed)
+            plugin_object.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{system_manager_id}'",
+                                          summary=not plugin_object.cli_args.detailed)
             return
 
-        log_services_data = plugin_object.rf.get(manager_data.get("LogServices").get("@odata.id"))
+        log_services_data = plugin_object.rf.get(grab(manager_data, "LogServices/@odata.id", separator="/")) or dict()
 
-        while True:
+        # this should loop over following LogServices
+        # https://device_ip/redfish/v1/Managers/1/LogServices/OperateLog/Entries
+        # https://device_ip/redfish/v1/Managers/1/LogServices/RunLog/Entries
+        # https://device_ip/redfish/v1/Managers/1/LogServices/SecurityLog/Entries
 
-            # this should loop over following LogServices
-            # https://device_ip/redfish/v1/Managers/1/LogServices/OperateLog/Entries
-            # https://device_ip/redfish/v1/Managers/1/LogServices/RunLog/Entries
-            # https://device_ip/redfish/v1/Managers/1/LogServices/SecurityLog/Entries
-
-            for manager_log_service in log_services_data.get("Members"):
-                log_entries.extend(manager_log_service.get("@odata.id") + "/Entries")
-
-            if limit_of_returned_items is not None and len(log_entries) >= limit_of_returned_items:
-                break
-        """
+        for manager_log_service in log_services_data.get("Members") or list():
+            log_entries.extend(collect_log_entries(plugin_object, manager_log_service.get("@odata.id") + "/Entries"))
 
     if plugin_object.cli_args.warning:
         date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
+    if event_type == "Manager":
+        log_entries = sorted(log_entries, key=lambda i: i['Created'], reverse=True)
+
     for log_entry in log_entries:
 
-        event_entry = plugin_object.rf.get(log_entry.get("@odata.id"))
+        if log_entry.get("Id") is None:
+            event_entry = plugin_object.rf.get(log_entry.get("@odata.id"))
+        else:
+            event_entry = log_entry
 
         num_entry += 1
 
@@ -412,37 +412,54 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         forever.
         """
 
-        severity = event_entry.get("Severity").upper()
+        severity = event_entry.get("Severity")
         message = event_entry.get("Message")
         date = event_entry.get("Created")
-        # event_id = event_entry.get("EventId")
-        # message_id = event_entry.get("MessageId")
-
-        # take care of date = None
-        if date is None:
-            date = "1970-01-01T00:00:00-00:00"
-
+        entry_date = get_log_entry_time(date)
+        log_name = event_entry.get("Name")
+        source = ""
         status = "OK"
 
-        # convert time zone offset from valid ISO 8601 format to python implemented datetime TZ offset
-        # from:
-        #   2019-11-01T15:03:32-05:00
-        # to:
-        #   2019-11-01T15:03:32-0500
+        if severity is not None:
+            severity = severity.upper()
+        else:
+            severity = "OK"
 
-        entry_data = datetime.datetime.strptime(date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+        # get log source information
+        if event_type == "System":
+            log_name = "%s/%s" % (event_entry.get("EntryType"), event_entry.get("EventType"))
+            source = "[%s]" % grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Level")
+        elif log_name == "Operate Log":
+            oem_data = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}")
+            if oem_data is not None:
+                source = "[%s/%s/%s]" % \
+                         (oem_data.get("Interface"), oem_data.get("User"), oem_data.get("Address"))
 
+        elif log_name == "Run Log":
+            alert_level = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Level")
+            source = f"[{alert_level}]"
+            if alert_level == "WARN":
+                severity = "WARNING"
+            if alert_level == "CRIT":
+                severity = "CRITICAL"
+
+        elif log_name == "Security Log":
+            oem_data = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}")
+            if oem_data is not None:
+                source = "%s/%s" % (oem_data.get("Host"), oem_data.get("Interface"))
+
+        # check for WARNING and CRITICAL
         if date_critical is not None:
-            if entry_data > date_critical.astimezone(entry_data.tzinfo) and severity != "OK":
-                status = "CRITICAL"
+            if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
+                status = "CRITICAL" if severity not in list(plugin_status_types.keys()) else severity
         if date_warning is not None:
-            if entry_data > date_warning.astimezone(entry_data.tzinfo) and status != "CRITICAL" and severity != "OK":
-                status = "WARNING"
+            if entry_date > date_warning.astimezone(entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
+                status = "WARNING" if severity not in list(plugin_status_types.keys()) else severity
 
-        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_log_output_data(status, f"{date}: {log_name}: {source}: {message}")
 
         # obey max results returned
-        if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
+        if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
 
     return
