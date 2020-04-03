@@ -286,7 +286,7 @@ def get_storage_hpe(plugin_object, system):
         return
 
     # unhealthy
-    redfish_url = f"{system}/SmartStorage/ArrayControllers/?$expand=."
+    redfish_url = f"{system}/SmartStorage/ArrayControllers{plugin_object.rf.vendor_data.expand_string}"
 
     system_drives_list = list()
     array_controllers_response = plugin_object.rf.get(redfish_url)
@@ -348,6 +348,10 @@ def get_storage_hpe(plugin_object, system):
                                               "No array controller data returned for API URL '%s'" %
                                               array_controller.get("@odata.id"))
 
+    else:
+        plugin_object.add_output_data("UNKNOWN", f"No array controller data returned for API URL '{redfish_url}'")
+        return
+
     # check controller batteries/Capacitors on iLO5 systems
     if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 5":
         for chassi in plugin_object.rf.get_system_properties("chassis") or list():
@@ -367,8 +371,6 @@ def get_storage_hpe(plugin_object, system):
                 plugin_object.add_output_data("CRITICAL"
                                               if status_data.get("Health") not in ["OK", "WARNING"] else
                                               status_data.get("Health"), status_text)
-    else:
-        plugin_object.add_output_data("UNKNOWN", f"No array controller data returned for API URL '{redfish_url}'")
 
     return
 
@@ -985,7 +987,10 @@ def get_storage_generic(plugin_object, system):
     # check drives in chassi links
     for chassi in plugin_object.rf.get_system_properties("chassis") or list():
         for chassi_drive in grab(plugin_object.rf.get(chassi), f"Links.Drives") or list():
-            drive_path = chassi_drive.get("@odata.id")
+            if isinstance(chassi_drive, dict):
+                drive_path = chassi_drive.get("@odata.id")
+            else:
+                drive_path = chassi_drive
             if drive_path is not None and drive_path not in system_drives_list:
                 controller_inventory = StorageController(id=0)
                 get_drive(drive_path)
