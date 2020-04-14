@@ -41,29 +41,35 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
     return redfish_url
 
 
-def collect_log_entries(plugin_object, entry_url, limit_of_returned_items=None):
+def collect_log_entries(plugin_object, entry_path, limit_of_returned_items=None):
 
+    collected_entry_path_list = list()
     collected_log_entries_list = list()
 
     # just to make sure to stop if for some reason we get unlimited nextLink
     current_iteration = 0
     while current_iteration <= 500:
 
-        if entry_url is None:
+        if entry_path is None or entry_path in collected_entry_path_list:
             break
 
         current_iteration += 1
 
-        event_data = plugin_object.rf.get(f"{entry_url}{plugin_object.rf.vendor_data.expand_string}")
+        expand_string = plugin_object.rf.vendor_data.expand_string
+        if "?" in entry_path:
+            expand_string = expand_string.replace("?","&",1)
+
+        event_data = plugin_object.rf.get(f"{entry_path}{expand_string}")
 
         collected_log_entries_list.extend(event_data.get("Members"))
+        collected_entry_path_list.append(entry_path)
 
         if limit_of_returned_items is not None and len(collected_log_entries_list) >= limit_of_returned_items:
             break
 
         if event_data.get("Members@odata.nextLink") is not None and len(
                 collected_log_entries_list) != event_data.get("Members@odata.count"):
-            entry_url = event_data.get("Members@odata.nextLink")
+            entry_path = event_data.get("Members@odata.nextLink")
         else:
             break
 
@@ -280,6 +286,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         return
 
     assoc_id_status = dict()
+    processed_ids = list()
 
     # reverse list from newest to oldest entry
     if plugin_object.rf.vendor == "Lenovo":
@@ -291,6 +298,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
             event_entry = event_entry_item
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
+
+        if event_entry_item.get("Id") in processed_ids:
+            continue
 
         message = event_entry.get("Message")
 
@@ -345,6 +355,8 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
 
         plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
 
+        processed_ids.append(event_entry_item.get("Id"))
+
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
@@ -360,7 +372,7 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
     log_entries = list()
 
     if event_type == "System":
-        redfish_url = f"{system_manager_id}/LogServices/Log1/Entries/"
+        redfish_url = f"{system_manager_id}/LogServices/Log1/Entries"
 
         log_entries = collect_log_entries(plugin_object, redfish_url)
     else:

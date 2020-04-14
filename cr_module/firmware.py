@@ -294,7 +294,7 @@ def get_firmware_info_generic(plugin_object):
                                       summary=not plugin_object.cli_args.detailed)
         return
 
-    redfish_url = f"/redfish/v1/UpdateService/FirmwareInventory/{plugin_object.rf.vendor_data.expand_string}"
+    redfish_url = f"/redfish/v1/UpdateService/FirmwareInventory{plugin_object.rf.vendor_data.expand_string}"
 
     firmware_response = plugin_object.rf.get(redfish_url)
 

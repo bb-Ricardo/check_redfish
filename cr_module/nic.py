@@ -157,7 +157,7 @@ def get_single_system_nics(plugin_object, redfish_url):
 
     system_id = redfish_url.rstrip("/").split("/")[-1]
 
-    redfish_url = f"{redfish_url}/EthernetInterfaces/{plugin_object.rf.vendor_data.expand_string}"
+    redfish_url = f"{redfish_url}/EthernetInterfaces{plugin_object.rf.vendor_data.expand_string}"
 
     nics_response = plugin_object.rf.get_view(redfish_url)
     data_members = nics_response.get("EthernetInterfaces") or nics_response.get("Members")
