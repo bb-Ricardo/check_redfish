@@ -7,9 +7,10 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import Manager, NIC
+from cr_module.classes.inventory import Manager, NetworkPort
 from cr_module.common import get_status_data, grab
 from cr_module.firmware import get_firmware_info_fujitsu
+from cr_module.nic import get_interface_ip_addresses, format_interface_addresses
 
 
 def get_bmc_info(plugin_object):
@@ -126,37 +127,20 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
                 status_data = get_status_data(manager_nic.get("Status"))
 
-                def get_ip_addresses(protocol_type):
-
-                    list_of_addresses = list()
-
-                    ip_addresses = grab(manager_nic, protocol_type)
-
-                    # Cisco
-                    if isinstance(ip_addresses, dict):
-                        if ip_addresses.get("Address") is not None:
-                            list_of_addresses.append(ip_addresses.get("Address"))
-
-                    if isinstance(ip_addresses, list):
-                        for ip_address in ip_addresses:
-                            if ip_address.get("Address") is not None:
-                                list_of_addresses.append(ip_address.get("Address"))
-
-                    list_of_addresses = list(set(list_of_addresses))
-
-                    return [address for address in list_of_addresses if address not in ['::', '0.0.0.0']]
-
-                # get and sanitize MAC address
-                mac_address = manager_nic.get("PermanentMACAddress")
-                if mac_address is not None:
-                    mac_address = mac_address.upper()
-
                 if plugin_object.rf.vendor == "Dell":
                     interface_id = manager_nic.get("Id")
                 else:
                     interface_id = "{}:{}".format(manager_inventory.id, manager_nic.get("Id"))
 
-                network_inventory = NIC(
+                vlan_id = grab(manager_nic, "VLAN.VLANId")
+                if vlan_id is None:
+                    vlan_id = grab(manager_nic, "VLANId")
+
+                vlan_enabled = grab(manager_nic, "VLAN.VLANEnable")
+                if vlan_enabled is None:
+                    vlan_enabled = grab(manager_nic, "VLANEnable")
+
+                network_inventory = NetworkPort(
                     id=interface_id,
                     name=manager_nic.get("Name"),
                     health_status=status_data.get("Health"),
@@ -165,20 +149,28 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                     autoneg=manager_nic.get("AutoNeg"),
                     full_duplex=manager_nic.get("FullDuplex"),
                     hostname=manager_nic.get("HostName"),
-                    mac_address=mac_address,
+                    addresses=format_interface_addresses(manager_nic.get("PermanentMACAddress")),
                     manager_ids=manager_inventory.id,
                     system_ids=manager_inventory.system_ids,
                     chassi_ids=manager_inventory.chassi_ids,
-                    ipv4_addresses=get_ip_addresses("IPv4Addresses"),
-                    ipv6_addresses=get_ip_addresses("IPv6Addresses"),
+                    ipv4_addresses=get_interface_ip_addresses(manager_nic, "IPv4Addresses"),
+                    ipv6_addresses=get_interface_ip_addresses(manager_nic, "IPv6Addresses"),
                     link_type="Ethernet",
-                    link_status=manager_nic.get("LinkStatus")
+                    link_status=f"{manager_nic.get('LinkStatus') or ''}".replace("Link", ""),
+                    vlan_id=vlan_id,
+                    vlan_enabled=vlan_enabled,
                 )
 
                 if plugin_object.cli_args.verbose:
                     network_inventory.source_data = manager_nic
 
                 plugin_object.inventory.add(network_inventory)
+
+                # if we are connected wie via interface IP address then we can assume the link is up
+                if network_inventory.link_status is None:
+                    for address in network_inventory.ipv4_addresses + network_inventory.ipv6_addresses:
+                        if address in plugin_object.cli_args.host:
+                            network_inventory.link_status = "Up"
 
                 if plugin_object.rf.vendor == "Cisco" and manager_nic.get("InterfaceEnabled") is True:
                     network_inventory.operation_status = "Enabled"

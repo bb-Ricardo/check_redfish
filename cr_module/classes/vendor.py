@@ -67,6 +67,10 @@ class VendorHPEData(VendorGeneric):
                 "Properties": ["Members AS EthernetInterfaces"]
             },
             {
+                "From": f"/Systems/1/BaseNetworkAdapters/{expand_string}",
+                "Properties": ["Members AS NetworkAdapters"]
+            },
+            {
                 "From": f"/Chassis/1/Power/{expand_string}",
                 "Properties": ["PowerSupplies", "Redundancy AS PowerRedundancy"]
             },

@@ -15,7 +15,7 @@ import sys
 from cr_module.classes import plugin_status_types
 
 # inventory definition
-inventory_layout_version_string = "0.1.1"
+inventory_layout_version_string = "0.2.0"
 
 
 # noinspection PyBroadException
@@ -34,7 +34,7 @@ class InventoryItem(object):
         for attribute in self.valid_attributes:
             value = None
             # references with ids are always lists
-            if attribute.endswith("_ids") or attribute in ["licenses", "ipv4_addresses", "ipv6_addresses"]:
+            if attribute.endswith("_ids") or attribute in ["licenses", "ipv4_addresses", "ipv6_addresses", "addresses"]:
                 value = list()
 
             super().__setattr__(attribute, value)
@@ -44,6 +44,9 @@ class InventoryItem(object):
 
     def update(self, data_key, data_value, append=False):
 
+        if data_value is None:
+            return
+
         #
         current_data_value = getattr(self, data_key)
 
@@ -51,6 +54,10 @@ class InventoryItem(object):
             if isinstance(data_value, (str, int, float)):
                 if data_value not in current_data_value:
                     current_data_value.append(data_value)
+            elif isinstance(data_value, list):
+                for this_data_value in data_value:
+                    if this_data_value not in current_data_value and this_data_value is not None:
+                        current_data_value.append(this_data_value)
             else:
                 current_data_value.extend(data_value)
             data_value = current_data_value
@@ -375,9 +382,31 @@ class Fan(InventoryItem):
     ]
 
 
-class NIC(InventoryItem):
-    inventory_item_name = "nics"
+class NetworkAdapter(InventoryItem):
+    inventory_item_name = "network_adapters"
     valid_attributes = [
+        "chassi_ids",
+        "firmware",
+        "health_status",
+        "id",
+        "manager_ids",
+        "manufacturer",
+        "model",
+        "name",
+        "num_ports",
+        "operation_status",
+        "part_number",
+        "port_ids",
+        "serial",
+        "system_ids"
+    ]
+
+
+class NetworkPort(InventoryItem):
+    inventory_item_name = "network_port"
+    valid_attributes = [
+        "adapter_id",
+        "addresses",
         "autoneg",
         "capable_speed",
         "chassi_ids",
@@ -390,12 +419,14 @@ class NIC(InventoryItem):
         "ipv6_addresses",
         "link_status",
         "link_type",
-        "mac_address",
         "manager_ids",
         "name",
         "operation_status",
+        "os_name",
         "port_name",
-        "system_ids"
+        "system_ids",
+        "vlan_enabled",
+        "vlan_id"
     ]
 
 
@@ -500,7 +531,8 @@ class Inventory(object):
         for inv_item in self.base_structure[object_type.inventory_item_name]:
             if inv_item.id == object_type.id:
 
-                print(f"Object id '{object_type.id}' already used", file=sys.stderr)
+                print(f"Object id '{object_type.id}' for '{object_type.__class__.__name__}' already used",
+                      file=sys.stderr)
 
         self.base_structure[object_type.inventory_item_name].append(object_type)
 

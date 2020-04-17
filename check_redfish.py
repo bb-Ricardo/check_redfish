@@ -26,7 +26,6 @@ __license__ = "MIT"
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
-from cr_module.common import grab
 from cr_module.classes.plugin import PluginData
 from cr_module.power import get_single_chassi_power
 from cr_module.temp import get_single_chassi_temp
@@ -34,7 +33,7 @@ from cr_module.fan import get_single_chassi_fan
 from cr_module.system_chassi import get_system_info
 from cr_module.proc import get_single_system_procs
 from cr_module.mem import get_single_system_mem
-from cr_module.nic import get_single_system_nics, get_system_nics_fujitsu
+from cr_module.nic import get_network_interfaces
 from cr_module.storage import get_storage
 from cr_module.bmc import get_bmc_info
 from cr_module.firmware import get_firmware_info
@@ -139,48 +138,40 @@ def parse_command_line():
 
 def get_chassi_data(plugin_object, data_type=None):
 
-    if data_type is None or data_type not in ["power", "temp", "fan"]:
-        raise Exception("Unknown data_type not set for get_chassi_data(): %s", type)
+    chassis = plugin_object.rf.get_system_properties("chassis") or list()
 
-    chassis = plugin_object.rf.get_system_properties("chassis")
-
-    if chassis is None or len(chassis) == 0:
+    if len(chassis) == 0:
         plugin_object.add_output_data("UNKNOWN", "No 'chassis' property found in root path '/redfish/v1'")
         return
 
     for chassi in chassis:
         if data_type == "power":
             get_single_chassi_power(plugin_object, chassi)
-        if data_type == "temp":
+        elif data_type == "temp":
             get_single_chassi_temp(plugin_object, chassi)
-        if data_type == "fan":
+        elif data_type == "fan":
             get_single_chassi_fan(plugin_object, chassi)
+        else:
+            raise Exception("Unknown data_type not set for get_chassi_data(): %s", data_type)
 
     return
 
 
 def get_system_data(plugin_object, data_type):
 
-    if data_type is None or data_type not in ["procs", "mem", "nics"]:
-        plugin_object.add_output_data("UNKNOWN", "Internal ERROR, data_type not set for get_system_data()")
-        return
+    systems = plugin_object.rf.get_system_properties("systems") or list()
 
-    systems = plugin_object.rf.get_system_properties("systems")
-
-    if systems is None or len(systems) == 0:
-        plugin.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+    if len(systems) == 0:
+        plugin_object.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
         return
 
     for system in systems:
         if data_type == "procs":
             get_single_system_procs(plugin_object, system)
-        if data_type == "mem":
+        elif data_type == "mem":
             get_single_system_mem(plugin_object, system)
-        if data_type == "nics":
-            if plugin.rf.vendor == "Fujitsu":
-                get_system_nics_fujitsu(plugin_object, system)
-            else:
-                get_single_system_nics(plugin_object, system)
+        else:
+            raise Exception("Unknown data_type not set for get_system_data (): %s", data_type)
 
     return
 
@@ -207,7 +198,7 @@ if __name__ == "__main__":
     if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data(plugin, "fan")
     if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data(plugin, "procs")
     if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data(plugin, "mem")
-    if any(x in args.requested_query for x in ['nic', 'all']):      get_system_data(plugin, "nics")
+    if any(x in args.requested_query for x in ['nic', 'all']):      get_network_interfaces(plugin)
     if any(x in args.requested_query for x in ['storage', 'all']):  get_storage(plugin)
     if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info(plugin)
     if any(x in args.requested_query for x in ['info', 'all']):     get_system_info(plugin)
