@@ -59,6 +59,10 @@ def collect_log_entries(plugin_object, entry_path, limit_of_returned_items=None)
         if "?" in entry_path:
             expand_string = expand_string.replace("?","&",1)
 
+        # disable expand for Dell
+        if plugin_object.rf.vendor == "Dell":
+            expand_string = ""
+
         event_data = plugin_object.rf.get(f"{entry_path}{expand_string}")
 
         collected_log_entries_list.extend(event_data.get("Members"))
@@ -266,6 +270,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
+    max_entries = None
 
     # define locations for known vendors
     if plugin_object.rf.vendor == "Dell":
@@ -278,7 +283,11 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_entries = collect_log_entries(plugin_object, redfish_path)
+    # on dell systems max entries need to limited during request
+    if plugin_object.rf.vendor == "Dell":
+        max_entries = plugin_object.cli_args.max
+
+    event_entries = collect_log_entries(plugin_object, redfish_path, max_entries)
 
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
