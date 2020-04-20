@@ -98,13 +98,14 @@ def get_single_chassi_power(plugin_object, redfish_url):
             printed_status = health
             printed_model = ""
 
-            if health is None:
+            if operational_status == "Absent":
                 printed_status = operational_status
-                if operational_status == "Absent":
-                    health = "OK"
-                    ps_absent += 1
-                if operational_status == "Enabled":
-                    health = "OK"
+                health = "OK"
+                ps_absent += 1
+
+            if health is None and operational_status == "Enabled":
+                printed_status = operational_status
+                health = "OK"
 
             if model is not None:
                 printed_model = "(%s) " % model.strip()
