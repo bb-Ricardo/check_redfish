@@ -139,7 +139,7 @@ class VendorFujitsuData(VendorGeneric):
     expand_string = "?$expand=Members"
 
     manager_event_log_location = "managers"
-    system_event_log_location = "systems"
+    system_event_log_location = "managers"
 
     manager_event_log_entries_path = "{system_manager_id}/LogServices/InternalEventLog/Entries/"
     system_event_log_entries_path = "{system_manager_id}/LogServices/SystemEventLog/Entries/"
