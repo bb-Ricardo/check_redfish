@@ -1,7 +1,8 @@
 # check_redfish.py
 
-This is a monitoring plugin to check components and
+This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 ## Requirements
 * python >= 3.6
@@ -18,13 +19,10 @@ yum install python36-pip
 
 * download and install plugin
 ```
-cd /tmp
+cd /usr/lib64/nagios/plugins/
 git clone https://github.com/bb-Ricardo/check_redfish.git
 cd check_redfish
 pip3 install -r requirements.txt || pip install -r requirements.txt
-install -m 755 check_redfish.py -D /usr/lib64/nagios/plugins/check_redfish.py
-cd /tmp
-rm -rf /tmp/check_redfish
 ```
 
 ### Icinga2
@@ -38,14 +36,15 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [-c CRITICAL] [-v] [-d] [-m MAX] [-r RETRIES]
                         [-t TIMEOUT] [--storage] [--proc] [--memory] [--power]
                         [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware]
-                        [--sel] [--mel]
+                        [--sel] [--mel] [--all] [-i]
 
-This is a monitoring plugin to check components and
+This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
+It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 0.0.11 (2020-02-11)
+Version: 1.0.0 (2020-04-23)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -69,7 +68,9 @@ optional arguments:
                         set warning value
   -c CRITICAL, --critical CRITICAL
                         set critical value
-  -v, --verbose         this will add all requests and responses to output
+  -v, --verbose         this will add all https requests and responses to
+                        output, also adds inventory source data to all
+                        inventory objects
   -d, --detailed        always print detailed result
   -m MAX, --max MAX     set maximum of returned items for --sel or --mel
   -r RETRIES, --retries RETRIES
@@ -78,7 +79,7 @@ optional arguments:
                         set number of request timeout per try/retry (default:
                         7)
 
-query status/health informations (at least one is required):
+query status/health information (at least one is required):
   --storage             request storage health
   --proc                request processor health
   --memory              request memory health
@@ -86,19 +87,24 @@ query status/health informations (at least one is required):
   --temp                request temperature sensors status
   --fan                 request fan status
   --nic                 request network interface status
-  --bmc                 request bmc infos and status
-  --info                request system informations
-  --firmware            request firmware informations
+  --bmc                 request bmc info and status
+  --info                request system information
+  --firmware            request firmware information
   --sel                 request System Log status
   --mel                 request Management Processor Log status
+  --all                 request all of the above information at once.
+
+query inventory information (no health check):
+  -i, --inventory       return inventory in json format instead of regular
+                        plugin output
 
 ```
 
 ## General usage
-multiple request commands can be combined.
+multiple request commands can be combined. Or use `--all` to query all system information at once
 
 ### Lets start with an example
-```/usr/lib64/nagios/plugins/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
+```/usr/lib64/nagios/plugins/check_redfish/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
 * request BMC: 10.0.0.23
 * use credentials from file: /etc/icinga2/ilo_credentials
 * query health of: storage, power
@@ -141,7 +147,7 @@ BMC is expired a new session and session file will be created.
 To actually benefit from this feature you need to set the user session timeout in
 the BMC to a higher value then your default check interval!
 
-If your default check interval is 5 minutes then the session timout in the BMC
+If your default check interval is 5 minutes then the session timeout in the BMC
 should be at least 6 minutes!
 
 #### Session file name and location
@@ -160,25 +166,25 @@ results in following session file:
 
 ```/var/plugin/tmp/my-hostname.session```
 
-### WARNING and CRITICAL
+### WARNING and CRITICAL (health checks only)
 you can use warning and critical with following commands:
 
 **--mel** (values are passed as "days")<br>
 define after how many days event log entries which have a != OK severity shouldn't
-be alerted anymore. On HPE systems it is not possible to set management event log entries
+be alerted anymore. On most systems it is not possible to set management event log entries
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
 
-**--sel** (values are passed as "days")<br>
-works the same way as stated above for HPE systems just for SEL on Huawei systems
+**--sel** (values are passed as "days") (HUAWEI only)<br>
+works the same way as stated above for just for SEL on Huawei systems
 
 Example: ```--mel --critical 1 --warning 3```
 
 * Entries with a != OK severity which are not older then 24 hours are reported as CRITICAL
 * Entries with a != OK severity which are not older then 72 hours are reported as WARNING
-* Any entries with a != OK severity which are older then 72 hours will be roprted as OK
+* Any entries with a != OK severity which are older then 72 hours will be reported as OK
 
-### Detailed
+### Detailed (health checks only)
 Health status by default will be reported as a summary:
 
 ```[OK]: All power supplies (2) are in good condition|'ps_1'=122 'ps_2'=109```
@@ -191,9 +197,10 @@ If multiline output by default is preferred the option ```--detailed``` needs to
 
 ### Debugging
 Use option ```--verbose``` to check for connection problems.
-All redfish requests and responses will be printed.
+All redfish https requests and responses will be printed.
 
-### Max option
+
+### Max option (health checks only)
 This option can be used to limit the results output for event log entries requested
 by **--mel** and **--sel**
 
@@ -209,13 +216,98 @@ the plugin would be finished after 28 seconds.
 
 ```(1 + 3) * 7 = 28```
 
+## Inventory data
+This plugin is able to return a (almost) complete inventory of the queried system.
+Just add the command option ```--inventory``` or ```-i``` to get the inventory
+in a JSON format.
+
+**IMPORTANT**<br>
+This is the first official version and might still change later on. If you encounter problems or have
+suggestions for changes/improvements then please create a GitHub issue.
+
+
+### Example of power supply inventory (```--power --inventory```)
+```
+{
+    "inventory": {
+        "chassis": [],
+        "fans": [],
+        "firmware": [],
+        "logical_drives": [],
+        "managers": [],
+        "memories": [],
+        "meta": {
+            "WARNING": "THIS is an alpha version of this implementation and possible changes might occur without notice",
+            "data_retrieval_issues": [],
+            "duration_of_data_collection_in_seconds": 0.048623,
+            "host_that_collected_inventory": "inventory-collector.example.com",
+            "inventory_layout_version": "0.2.0",
+            "script_version": "1.0.0",
+            "start_of_data_collection": "2020-04-23T15:12:16+02:00"
+        },
+        "network_adapters": [],
+        "network_port": [],
+        "physical_drives": [],
+        "power_supplies": [
+            {
+                "bay": 1,
+                "capacity_in_watt": 500,
+                "chassi_ids": [
+                    1
+                ],
+                "firmware": "1.03",
+                "health_status": "OK",
+                "id": "0",
+                "input_voltage": 224,
+                "last_power_output": 110,
+                "model": "865408-B21",
+                "name": "HpeServerPowerSupply",
+                "operation_status": "Enabled",
+                "part_number": "XXXXXX-001",
+                "serial": "XXXXXXX",
+                "type": "AC",
+                "vendor": "CHCNY"
+            },
+            {
+                "bay": 2,
+                "capacity_in_watt": 500,
+                "chassi_ids": [
+                    1
+                ],
+                "firmware": "1.03",
+                "health_status": "OK",
+                "id": "1",
+                "input_voltage": 228,
+                "last_power_output": 110,
+                "model": "865408-B21",
+                "name": "HpeServerPowerSupply",
+                "operation_status": "Enabled",
+                "part_number": "XXXXXX-001",
+                "serial": "ZZZZZZZZ",
+                "type": "AC",
+                "vendor": "CHCNY"
+            }
+        ],
+        "processors": [],
+        "storage_controllers": [],
+        "storage_enclosures": [],
+        "systems": [],
+        "temperatures": []
+    }
+}
+```
+
+### Verbose output
+In cause you need more information or want to debug the data you can add the verbose
+option. This will also add the `source_data` attribute for each inventory item.
+
+### Inventory attributes
+You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L181)
+
 ## Known limitations
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
-* On HPE systems the nic status is reported unreliable
-* On Lenovo systems the commands **--mel** and **--sel** are not implemented due to
-issues with timeouts
-* On Huawei systems the command **--mel** is not implemented
+* On almost all systems the nic status is reported unreliable
 * For **--storage** components which report a Status.Health as **None**
 will be treated as **OK** if Status.State is set to **Enabled**
 
@@ -225,6 +317,8 @@ This plugin is currently tested with following systems
 ### Hewlett Packard Enterprise
 Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ProLiant BL460c Gen8
+* ProLiant BL460c Gen9
+* ProLiant BL460c Gen10
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10
@@ -239,15 +333,20 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ThinkSystem SR650 (BMC Version 2.12)
 
 ### Dell
-* PowerEdge R630 (iDRAC Version 2.70.70.70)
-* PowerEdge R740 (iDRAC Version 3.32.32.32)
-* PowerEdge R930 (iDRAC Version 2.70.70.70)
+* PowerEdge R630  (iDRAC 8 Version 2.70.70.70)
+* PowerEdge R740  (iDRAC 9 Version 3.32.32.32)
+* PowerEdge R7515 (iDRAC 9 Version 4.10.10.10)
+* PowerEdge R930  (iDRAC 8 Version 2.70.70.70)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
 
 ### Fujitsu
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
+
+### Cisco
+* Cisco C220M5SX (CIMC Version 3.1(3a))
+* Cisco C240M5SX (CIMC Version 3.1(3a))
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
