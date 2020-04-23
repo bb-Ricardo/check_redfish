@@ -19,13 +19,10 @@ yum install python36-pip
 
 * download and install plugin
 ```
-cd /tmp
+cd /usr/lib64/nagios/plugins/
 git clone https://github.com/bb-Ricardo/check_redfish.git
 cd check_redfish
 pip3 install -r requirements.txt || pip install -r requirements.txt
-install -m 755 check_redfish.py -D /usr/lib64/nagios/plugins/check_redfish.py
-cd /tmp
-rm -rf /tmp/check_redfish
 ```
 
 ### Icinga2
@@ -47,7 +44,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 0.0.11 (2020-02-11)
+Version: 1.0.0 (2020-04-23)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -107,7 +104,7 @@ query inventory information (no health check):
 multiple request commands can be combined. Or use `--all` to query all system information at once
 
 ### Lets start with an example
-```/usr/lib64/nagios/plugins/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
+```/usr/lib64/nagios/plugins/check_redfish/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
 * request BMC: 10.0.0.23
 * use credentials from file: /etc/icinga2/ilo_credentials
 * query health of: storage, power
@@ -201,7 +198,7 @@ If multiline output by default is preferred the option ```--detailed``` needs to
 ### Debugging
 Use option ```--verbose``` to check for connection problems.
 All redfish https requests and responses will be printed.
-This will also add the `source_data` attribute for each inventory object.
+
 
 ### Max option (health checks only)
 This option can be used to limit the results output for event log entries requested
@@ -219,10 +216,98 @@ the plugin would be finished after 28 seconds.
 
 ```(1 + 3) * 7 = 28```
 
+## Inventory data
+This plugin is able to return a (almost) complete inventory of the queried system.
+Just add the command option ```--inventory``` or ```-i``` to get the inventory
+in a JSON format.
+
+**IMPORTANT**<br>
+This is the first official version and might still change later on. If you encounter problems or have
+suggestions for changes/improvements then please create a GitHub issue.
+
+
+### Example of power supply inventory (```--power --inventory```)
+```
+{
+    "inventory": {
+        "chassis": [],
+        "fans": [],
+        "firmware": [],
+        "logical_drives": [],
+        "managers": [],
+        "memories": [],
+        "meta": {
+            "WARNING": "THIS is an alpha version of this implementation and possible changes might occur without notice",
+            "data_retrieval_issues": [],
+            "duration_of_data_collection_in_seconds": 0.048623,
+            "host_that_collected_inventory": "inventory-collector.example.com",
+            "inventory_layout_version": "0.2.0",
+            "script_version": "1.0.0",
+            "start_of_data_collection": "2020-04-23T15:12:16+02:00"
+        },
+        "network_adapters": [],
+        "network_port": [],
+        "physical_drives": [],
+        "power_supplies": [
+            {
+                "bay": 1,
+                "capacity_in_watt": 500,
+                "chassi_ids": [
+                    1
+                ],
+                "firmware": "1.03",
+                "health_status": "OK",
+                "id": "0",
+                "input_voltage": 224,
+                "last_power_output": 110,
+                "model": "865408-B21",
+                "name": "HpeServerPowerSupply",
+                "operation_status": "Enabled",
+                "part_number": "XXXXXX-001",
+                "serial": "XXXXXXX",
+                "type": "AC",
+                "vendor": "CHCNY"
+            },
+            {
+                "bay": 2,
+                "capacity_in_watt": 500,
+                "chassi_ids": [
+                    1
+                ],
+                "firmware": "1.03",
+                "health_status": "OK",
+                "id": "1",
+                "input_voltage": 228,
+                "last_power_output": 110,
+                "model": "865408-B21",
+                "name": "HpeServerPowerSupply",
+                "operation_status": "Enabled",
+                "part_number": "XXXXXX-001",
+                "serial": "ZZZZZZZZ",
+                "type": "AC",
+                "vendor": "CHCNY"
+            }
+        ],
+        "processors": [],
+        "storage_controllers": [],
+        "storage_enclosures": [],
+        "systems": [],
+        "temperatures": []
+    }
+}
+```
+
+### Verbose output
+In cause you need more information or want to debug the data you can add the verbose
+option. This will also add the `source_data` attribute for each inventory item.
+
+### Inventory attributes
+You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L181)
+
 ## Known limitations
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands
 **--mel** and **--sel**
-* On all systems the nic status is reported unreliable
+* On almost all systems the nic status is reported unreliable
 * For **--storage** components which report a Status.Health as **None**
 will be treated as **OK** if Status.State is set to **Enabled**
 
