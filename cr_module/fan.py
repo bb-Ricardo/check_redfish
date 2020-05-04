@@ -33,6 +33,10 @@ def get_single_chassi_fan(plugin_object, redfish_url):
             if member_id is None:
                 member_id = name
 
+            # This helps on systems where the same MemberId could be assigned to multiple instances
+            if grab(fan, "SensorNumber") is not None:
+                member_id = f"{member_id}.{grab(fan, 'SensorNumber')}"
+
             physical_context = fan.get("PhysicalContext")
 
             oem_data = grab(fan, f"Oem.{plugin_object.rf.vendor_dict_key}")
