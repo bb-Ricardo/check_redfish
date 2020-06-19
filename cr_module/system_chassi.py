@@ -106,7 +106,7 @@ def get_single_system_info(plugin_object, redfish_url):
         if plugin_object.rf.vendor == "Fujitsu":
             sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
 
-            if sd_card.get("Inserted") is True:
+            if sd_card.get("Inserted") is True and sd_card.get("Mounted") is True:
                 sd_card_status = sd_card.get("Status")
                 sd_card_capacity = sd_card.get("CapacityMB")
                 sd_card_free_space = sd_card.get("FreeSpaceMB")
