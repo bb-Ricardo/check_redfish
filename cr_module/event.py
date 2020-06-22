@@ -326,7 +326,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         if severity in ["NORMAL", "INFORMATIONAL"]:
             severity = "OK"
 
-        date = event_entry.get("Created") or "1970-01-01T00:00:00-00:00"
+        date = event_entry.get("Created", "1970-01-01T00:00:00-00:00")
 
         status = "OK"
 
@@ -340,6 +340,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
             # found an old message that has been cleared
             if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
                 message += " (severity '%s' cleared)" % severity
+            # Fujitsu uncleared messages
+            elif plugin_object.rf.vendor == "Fujitsu" and event_entry.get("MessageId") == "0x180055":
+               message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
             elif severity is not None:
                 if severity == "WARNING":
                     status = severity
