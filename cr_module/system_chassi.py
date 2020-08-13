@@ -43,7 +43,10 @@ def get_single_system_info(plugin_object, redfish_url):
     model = system_response.get("Model")
     # Huawei system
     if plugin_object.rf.vendor == "Huawei":
-        model = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.ProductName")
+        huawei_model = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.ProductName")
+
+        if huawei_model is not None:
+            model = huawei_model
 
     # get memory size
     mem_size = grab(system_response, "MemorySummary.TotalSystemMemoryGiB")
