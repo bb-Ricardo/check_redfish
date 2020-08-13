@@ -391,7 +391,7 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
 
         manager_data = plugin_object.rf.get(system_manager_id)
 
-        if len(manager_data.get("LogServices")) == 0:
+        if manager_data.get("LogServices") is None or len(manager_data.get("LogServices")) == 0:
             plugin_object.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{system_manager_id}'",
                                           summary=not plugin_object.cli_args.detailed)
             return
