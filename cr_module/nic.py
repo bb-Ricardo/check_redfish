@@ -525,7 +525,7 @@ def get_system_nics(plugin_object, redfish_url):
             plugin_status = "OK"
 
         adapter_name = network_adapter.model \
-            if len(network_adapter.model or '') > len(network_adapter.name or '') else network_adapter.name
+            if len(str(network_adapter.model) or '') > len(str(network_adapter.name) or '') else network_adapter.name
 
         if plugin_object.rf.vendor in ["Huawei", "Cisco", "Dell"] and \
                 not all(v is None for v in [network_adapter.model, network_adapter.manufacturer]):
