@@ -94,9 +94,44 @@ def get_single_system_info(plugin_object, redfish_url):
                   f"Serial: {system_inventory.serial} - " \
                   f"Power: {system_inventory.power_state} - Name: {host_name}"
 
-    plugin_object.add_output_data(
-        "CRITICAL" if system_inventory.health_status not in ["OK", "WARNING"] else system_inventory.health_status,
-        status_text, summary=not plugin_object.cli_args.detailed)
+    system_health_print_status = \
+        "CRITICAL" if system_inventory.health_status not in ["OK", "WARNING"] else system_inventory.health_status
+
+    plugin_object.add_output_data(system_health_print_status, status_text, summary=not plugin_object.cli_args.detailed)
+
+    # add DellSensorCollection if present
+    if plugin_object.rf.vendor == "Dell":
+
+        dell_sensor_collection = \
+            grab(system_response, f"Links.Oem.{plugin_object.rf.vendor_dict_key}.DellSensorCollection")
+
+        if dell_sensor_collection is not None and dell_sensor_collection.get("@odata.id") is not None:
+            collection_response = plugin_object.rf.get(dell_sensor_collection.get("@odata.id"))
+
+            if collection_response is not None and (
+                collection_response.get("Members") is None or len(collection_response.get("Members")) > 0):
+
+                for dell_sensor in collection_response.get("Members"):
+
+                    this_sensor_status = "OK"
+
+                    if dell_sensor.get('EnabledState') == "Enabled":
+                        if "Warning" in dell_sensor.get('HealthState'):
+                            this_sensor_status = "WARNING"
+                        elif dell_sensor.get('HealthState') != "OK":
+                            this_sensor_status = "CRITICAL"
+
+                    plugin_object.add_output_data(this_sensor_status, 'Sensor "%s": %s (%s/%s)' % (
+                        dell_sensor.get('ElementName'),
+                        dell_sensor.get('HealthState'),
+                        dell_sensor.get('EnabledState'),
+                        dell_sensor.get('CurrentState')
+                    ))
+
+            if plugin_object.cli_args.detailed is False:
+                plugin_object.add_output_data(system_health_print_status,
+                    f"{status_text} - %d health sensors are in 'OK' state" % (len(collection_response.get("Members"))),
+                    summary=True)
 
     if plugin_object.cli_args.detailed is True:
 
