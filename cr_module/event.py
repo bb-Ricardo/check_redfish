@@ -41,7 +41,7 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
     return redfish_url
 
 
-def collect_log_entries(plugin_object, entry_path, limit_of_returned_items=None):
+def old_collect_log_entries(plugin_object, entry_path, limit_of_returned_items=None):
 
     collected_entry_path_list = list()
     collected_log_entries_list = list()
@@ -206,7 +206,7 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
         if plugin_object.cli_args.critical:
             date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    event_entries = collect_log_entries(plugin_object, redfish_path)
+    event_entries = plugin_object.rf.get(redfish_path).get("Members")
 
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
@@ -287,8 +287,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     if plugin_object.rf.vendor == "Dell":
         max_entries = plugin_object.cli_args.max
 
-    event_entries = collect_log_entries(plugin_object, redfish_path, max_entries)
+    event_entries = plugin_object.rf.get(redfish_path, max_members=max_entries).get("Members")
 
+    import pprint
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
                                       summary=not plugin_object.cli_args.detailed)
@@ -308,6 +309,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
+#        pprint.pprint(event_entry)
         if event_entry_item.get("Id") in processed_ids:
             continue
 
@@ -342,7 +344,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
                 message += " (severity '%s' cleared)" % severity
             # Fujitsu uncleared messages
             elif plugin_object.rf.vendor == "Fujitsu" and event_entry.get("MessageId") == "0x180055":
-               message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
+                message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
             elif severity is not None:
                 if severity == "WARNING":
                     status = severity
@@ -386,7 +388,8 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
     if event_type == "System":
         redfish_url = f"{system_manager_id}/LogServices/Log1/Entries"
 
-        log_entries = collect_log_entries(plugin_object, redfish_url)
+        #log_entries = collect_log_entries(plugin_object, redfish_url)
+        log_entries = plugin_object.rf.get(redfish_url).get("Members")
     else:
 
         manager_data = plugin_object.rf.get(system_manager_id)
@@ -404,7 +407,8 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         # https://device_ip/redfish/v1/Managers/1/LogServices/SecurityLog/Entries
 
         for manager_log_service in log_services_data.get("Members") or list():
-            log_entries.extend(collect_log_entries(plugin_object, manager_log_service.get("@odata.id") + "/Entries"))
+            #log_entries.extend(collect_log_entries(plugin_object, manager_log_service.get("@odata.id") + "/Entries"))
+            log_entries.extend(plugin_object.rf.get(manager_log_service.get("@odata.id") + "/Entries").get("Members"))
 
     if plugin_object.cli_args.warning:
         date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))

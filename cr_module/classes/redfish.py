@@ -296,7 +296,7 @@ class RedfishConnection:
             self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host,
                                "CRITICAL")
 
-    def get(self, redfish_path):
+    def get(self, redfish_path, max_members=None):
 
         if self.__cached_data.get(redfish_path) is None:
 
@@ -320,6 +320,44 @@ class RedfishConnection:
                 redfish_response_json_data = redfish_response.dict
             except Exception:
                 redfish_response_json_data = dict({"Members": list()})
+
+            # retrieve all members from resource
+            if redfish_response_json_data.get("Members") is not None:
+                num_members = len(redfish_response_json_data.get("Members"))
+                if num_members > 0 and redfish_response_json_data.get("Members@odata.nextLink") is not None and \
+                        num_members != redfish_response_json_data.get("Members@odata.count"):
+
+                    # disable expand for Dell
+                    expand_string = self.vendor_data.expand_string if not self.vendor == "Dell" else ""
+                    this_response = redfish_response_json_data
+
+                    collected_entry_path_list = list()
+
+                    # just to make sure to stop if for some reason we get unlimited nextLink
+                    current_iteration = 0
+                    while current_iteration <= 500:
+
+                        entry_path = this_response.get("Members@odata.nextLink")
+
+                        if entry_path is None or len(entry_path) == 0 or entry_path in collected_entry_path_list:
+                            break
+
+                        current_iteration += 1
+
+                        if "?" in entry_path:
+                            expand_string = expand_string.replace("?", "&", 1)
+
+                        this_response = self._rf_get(f"{entry_path}{expand_string}").dict
+
+                        collected_entry_path_list.append(entry_path)
+
+                        if len(this_response.get("Members")) == 0:
+                            break
+                        else:
+                            redfish_response_json_data["Members"] + this_response.get("Members")
+
+                        if max_members is not None and len(redfish_response_json_data.get("Members")) >= max_members:
+                            break
 
             if self.cli_args.verbose:
                 pprint.pprint(redfish_response_json_data, stream=sys.stderr)
