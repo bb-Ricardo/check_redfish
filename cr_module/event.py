@@ -289,7 +289,6 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
 
     event_entries = plugin_object.rf.get(redfish_path, max_members=max_entries).get("Members")
 
-    import pprint
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
                                       summary=not plugin_object.cli_args.detailed)
@@ -309,7 +308,6 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
-#        pprint.pprint(event_entry)
         if event_entry_item.get("Id") in processed_ids:
             continue
 
@@ -388,7 +386,6 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
     if event_type == "System":
         redfish_url = f"{system_manager_id}/LogServices/Log1/Entries"
 
-        #log_entries = collect_log_entries(plugin_object, redfish_url)
         log_entries = plugin_object.rf.get(redfish_url).get("Members")
     else:
 
@@ -407,7 +404,6 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         # https://device_ip/redfish/v1/Managers/1/LogServices/SecurityLog/Entries
 
         for manager_log_service in log_services_data.get("Members") or list():
-            #log_entries.extend(collect_log_entries(plugin_object, manager_log_service.get("@odata.id") + "/Entries"))
             log_entries.extend(plugin_object.rf.get(manager_log_service.get("@odata.id") + "/Entries").get("Members"))
 
     if plugin_object.cli_args.warning:

@@ -123,7 +123,7 @@ class VendorHuaweiData(VendorGeneric):
     name = "Huawei"
     # currently $expand is only support from 5.62 on and newer.
     # using this on older versions will break the plugin
-    #expand_string = "?$expand=.%28$levels=1%29"
+    # expand_string = "?$expand=.%28$levels=1%29"
 
     manager_event_log_location = "managers"
     system_event_log_location = "systems"

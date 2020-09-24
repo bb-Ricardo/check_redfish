@@ -108,10 +108,10 @@ def get_single_system_info(plugin_object, redfish_url):
         if dell_sensor_collection is not None and dell_sensor_collection.get("@odata.id") is not None:
             collection_response = plugin_object.rf.get(dell_sensor_collection.get("@odata.id"))
 
+            num_members = 0
             if collection_response is not None and (
-                collection_response.get("Members") is None or len(collection_response.get("Members")) > 0):
+                    collection_response.get("Members") is None or len(collection_response.get("Members")) > 0):
 
-                num_members = 0
                 for dell_sensor in collection_response.get("Members"):
 
                     if "DIMM" in dell_sensor.get('ElementName'):
@@ -136,7 +136,8 @@ def get_single_system_info(plugin_object, redfish_url):
 
             if plugin_object.cli_args.detailed is False:
                 plugin_object.add_output_data(system_health_print_status,
-                    f"{status_text} - {num_members} health sensors are in 'OK' state", summary=True)
+                                              f"{status_text} - {num_members} health sensors are in 'OK' state",
+                                              summary=True)
 
     if plugin_object.cli_args.detailed is True:
 
