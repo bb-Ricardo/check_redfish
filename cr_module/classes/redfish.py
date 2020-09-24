@@ -354,7 +354,7 @@ class RedfishConnection:
                         if len(this_response.get("Members")) == 0:
                             break
                         else:
-                            redfish_response_json_data["Members"] + this_response.get("Members")
+                            redfish_response_json_data["Members"].extend(this_response.get("Members"))
 
                         if max_members is not None and len(redfish_response_json_data.get("Members")) >= max_members:
                             break
