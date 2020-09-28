@@ -32,11 +32,11 @@ Command definitions and a service config example for Icinga2 can be found in [co
 ```
 usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--sessionfile SESSIONFILE]
-                        [--sessionfiledir SESSIONFILEDIR] [-h] [-w WARNING]
-                        [-c CRITICAL] [-v] [-d] [-m MAX] [-r RETRIES]
-                        [-t TIMEOUT] [--storage] [--proc] [--memory] [--power]
-                        [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware]
-                        [--sel] [--mel] [--all] [-i]
+                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h]
+                        [-w WARNING] [-c CRITICAL] [-v] [-d] [-m MAX]
+                        [-r RETRIES] [-t TIMEOUT] [--storage] [--proc]
+                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
+                        [--info] [--firmware] [--sel] [--mel] [--all] [-i]
 
 This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
@@ -61,6 +61,8 @@ authentication arguments:
                         define name of session file
   --sessionfiledir SESSIONFILEDIR
                         define directory where the plugin saves session files
+  --nosession           Don't establish a persistent session and log out after
+                        check is finished
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -150,12 +152,16 @@ the BMC to a higher value then your default check interval!
 If your default check interval is 5 minutes then the session timeout in the BMC
 should be at least 6 minutes!
 
+#### No Session
+If no session is required (i.e.: testing, inventory collection) then a `--nosession` can
+be added to close session on the BMC properly.
+
 #### Session file name and location
 Per default a session file will be crated in the *system/user default temp path*.
 These defaults can be changed with following options:
 
-Use ```--sessionfiledir```to define where the session files should be stored
-Use ```--sessionfile``` to specify the name of the session file for this particular system
+Use ```--sessionfiledir```to define where the session files should be stored.
+Use ```--sessionfile``` to specify the name of the session file for this particular system.
 
 #### Example
 options like this:
@@ -315,7 +321,7 @@ will be treated as **OK** if Status.State is set to **Enabled**
 This plugin is currently tested with following systems
 
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
+Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
@@ -333,18 +339,26 @@ Almost all Server which have iLO4 (2.50) or iLO5 (1.20) should work
 * ThinkSystem SR650 (BMC Version 2.12)
 
 ### Dell
-* PowerEdge R630  (iDRAC 8 Version 2.70.70.70)
-* PowerEdge R740  (iDRAC 9 Version 3.32.32.32)
-* PowerEdge R7515 (iDRAC 9 Version 4.10.10.10)
-* PowerEdge R930  (iDRAC 8 Version 2.70.70.70)
+* PowerEdge R630   (iDRAC 8 Version 2.70.70.70)
+* PowerEdge R640   (iDrac 9 Version 4.22.00.00)
+* PowerEdge R740   (iDRAC 9 Version 3.32.32.32)
+* PowerEdge R740xd (iDRAC 9 Version 4.00.00.00)
+* PowerEdge R7515  (iDRAC 9 Version 4.10.10.10)
+* PowerEdge R840   (iDRAC 9 Version 4.22.00.00)
+* PowerEdge R930   (iDRAC 8 Version 2.70.70.70)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
+* X8600 Blade     (iBMC Version 3.04)
 
 ### Fujitsu
+iRMC S5 Firmware 2.60 till 2.63 has a minor bug, avoid usage!
+* PRIMERGY RX2530 M5 (iRMC Version 2.50P)
+* PRIMERGY RX2540 M4 (iRMC Version 2.50P)
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
 
 ### Cisco
+* Cisco C220M4SX (CIMC Version 4.1(2a))
 * Cisco C220M5SX (CIMC Version 3.1(3a))
 * Cisco C240M5SX (CIMC Version 3.1(3a))
 
