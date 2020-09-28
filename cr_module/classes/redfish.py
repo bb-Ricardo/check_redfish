@@ -286,7 +286,6 @@ class RedfishConnection:
         if self.connection is not None:
             self.connection.system_properties = None
             if self.cli_args.nosession is False:
-                print("BAM")
                 self.save_session_to_file()
 
         return
@@ -372,7 +371,9 @@ class RedfishConnection:
             if redfish_response_json_data.get("error"):
                 error = redfish_response_json_data.get("error").get("@Message.ExtendedInfo")
                 self.exit_on_error(
-                    "got error '%s' for API path '%s'" % (error[0].get("MessageId"), error[0].get("MessageArgs")))
+                    "got error '%s/%s' for API path '%s'" %
+                    (error[0].get("MessageId"), error[0].get("Message"), redfish_path)
+                )
 
             self.__cached_data[redfish_path] = redfish_response_json_data
 
