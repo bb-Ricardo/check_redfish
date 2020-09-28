@@ -189,6 +189,9 @@ class PluginData:
 
     def do_exit(self):
 
+        if self.cli_args.nosession is True:
+            self.rf.terminate_session()
+
         # return inventory and exit with 0
         if self.cli_args.inventory is True and self.inventory is not None:
             print(self.inventory.to_json())

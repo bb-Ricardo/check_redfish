@@ -51,8 +51,9 @@ class RedfishConnection:
 
         self.cli_args = cli_args
 
-        self.session_file_path = self.get_session_file_name()
-        self.restore_session_from_file()
+        if self.cli_args.nosession is False:
+            self.session_file_path = self.get_session_file_name()
+            self.restore_session_from_file()
 
         self.init_connection()
 
@@ -284,9 +285,15 @@ class RedfishConnection:
 
         if self.connection is not None:
             self.connection.system_properties = None
-            self.save_session_to_file()
+            if self.cli_args.nosession is False:
+                print("BAM")
+                self.save_session_to_file()
 
         return
+
+    def terminate_session(self):
+
+        self.connection.logout()
 
     def _rf_get(self, redfish_path):
 
@@ -512,7 +519,8 @@ class RedfishConnection:
                 system_properties[root_object.lower()].append(entity.get("@odata.id"))
 
         self.connection.system_properties = system_properties
-        self.save_session_to_file()
+        if self.cli_args.nosession is False:
+            self.save_session_to_file()
 
         return
 
