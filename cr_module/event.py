@@ -41,45 +41,6 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
     return redfish_url
 
 
-def old_collect_log_entries(plugin_object, entry_path, limit_of_returned_items=None):
-
-    collected_entry_path_list = list()
-    collected_log_entries_list = list()
-
-    # just to make sure to stop if for some reason we get unlimited nextLink
-    current_iteration = 0
-    while current_iteration <= 500:
-
-        if entry_path is None or entry_path in collected_entry_path_list:
-            break
-
-        current_iteration += 1
-
-        expand_string = plugin_object.rf.vendor_data.expand_string
-        if "?" in entry_path:
-            expand_string = expand_string.replace("?","&",1)
-
-        # disable expand for Dell
-        if plugin_object.rf.vendor == "Dell":
-            expand_string = ""
-
-        event_data = plugin_object.rf.get(f"{entry_path}{expand_string}")
-
-        collected_log_entries_list.extend(event_data.get("Members"))
-        collected_entry_path_list.append(entry_path)
-
-        if limit_of_returned_items is not None and len(collected_log_entries_list) >= limit_of_returned_items:
-            break
-
-        if event_data.get("Members@odata.nextLink") is not None and len(
-                collected_log_entries_list) != event_data.get("Members@odata.count"):
-            entry_path = event_data.get("Members@odata.nextLink")
-        else:
-            break
-
-    return collected_log_entries_list
-
-
 def get_log_entry_time(entry_date=None):
 
     # set to unix time 0 if no entry was passed on
@@ -283,7 +244,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    # on dell systems max entries need to limited during request
+    # on dell systems max entries need to be limited during request
     if plugin_object.rf.vendor == "Dell":
         max_entries = plugin_object.cli_args.max
 
@@ -340,13 +301,14 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
             # found an old message that has been cleared
             if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
                 message += " (severity '%s' cleared)" % severity
+                severity = "OK"
             # Fujitsu uncleared messages
             elif plugin_object.rf.vendor == "Fujitsu" and event_entry.get("MessageId") == "0x180055":
                 message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
             elif severity is not None:
-                if severity == "WARNING":
+                if severity == "WARNING" and date_warning is None:
                     status = severity
-                elif severity != "OK":
+                elif severity != "OK" and date_critical is None:
                     status = "CRITICAL"
 
             # keep track of messages that clear an older message
@@ -372,6 +334,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
+
     return
 
 

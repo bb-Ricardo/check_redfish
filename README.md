@@ -175,14 +175,11 @@ results in following session file:
 ### WARNING and CRITICAL (health checks only)
 you can use warning and critical with following commands:
 
-**--mel** (values are passed as "days")<br>
+**--mel** and **--sel** (values are passed as "days")<br>
 define after how many days event log entries which have a != OK severity shouldn't
 be alerted anymore. On most systems it is not possible to set management event log entries
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
-
-**--sel** (values are passed as "days") (HUAWEI only)<br>
-works the same way as stated above for just for SEL on Huawei systems
 
 Example: ```--mel --critical 1 --warning 3```
 
