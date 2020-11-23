@@ -102,6 +102,23 @@ def get_single_system_info(plugin_object, redfish_url):
     # add DellSensorCollection if present
     if plugin_object.rf.vendor == "Dell":
 
+        dell_empty_slots = list()
+
+        dell_slot_collection = \
+            grab(system_response, f"Links.Oem.{plugin_object.rf.vendor_dict_key}.DellSlotCollection")
+
+        # collect info about empty slots
+        if dell_slot_collection is not None and dell_slot_collection.get("@odata.id") is not None:
+            collection_response = plugin_object.rf.get(dell_slot_collection.get("@odata.id"))
+
+            if collection_response is not None and (
+                    collection_response.get("Members") is None or len(collection_response.get("Members")) > 0):
+
+                for dell_slot in collection_response.get("Members"):
+
+                    if dell_slot.get("EmptySlot") is True:
+                        dell_empty_slots.append(dell_slot.get("Id"))
+
         dell_sensor_collection = \
             grab(system_response, f"Links.Oem.{plugin_object.rf.vendor_dict_key}.DellSensorCollection")
 
@@ -114,7 +131,8 @@ def get_single_system_info(plugin_object, redfish_url):
 
                 for dell_sensor in collection_response.get("Members"):
 
-                    if "DIMM" in dell_sensor.get('ElementName'):
+                    # skip if sensor slot is empty
+                    if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
 
                     num_members += 1
