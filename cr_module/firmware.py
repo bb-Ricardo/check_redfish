@@ -37,6 +37,7 @@ def get_firmware_info(plugin_object):
 
     # return gathered firmware information
     firmware_health_summary = "OK"
+    firmware_status_entries = list()
     for firmware_inventory in plugin_object.inventory.get(Firmware):
 
         firmware_health = "OK"
@@ -64,14 +65,20 @@ def get_firmware_info(plugin_object):
         if firmware_inventory.location is not None:
             location = f" ({firmware_inventory.location})"
 
-        if plugin_object.cli_args.detailed is True:
-            plugin_object.add_output_data(firmware_health,
-                                          f"{name}{firmware_id}{location}: {firmware_inventory.version}")
+        firmware_status_entries.append({
+            "health": firmware_health,
+            "firmware": f"{name}{firmware_id}{location}: {firmware_inventory.version}"
+        })
 
+    summary_text = f"Found %d firmware entries." % len(plugin_object.inventory.get(Firmware))
     if plugin_object.cli_args.detailed is False:
-        plugin_object.add_output_data(firmware_health_summary,
-                                      "Found %d firmware entries. Use '--detailed' option to display them." %
-                                      len(plugin_object.inventory.get(Firmware)), summary=True)
+        summary_text += f" Use '--detailed' option to display them."
+
+    plugin_object.add_output_data(firmware_health_summary, summary_text, summary=not plugin_object.cli_args.detailed)
+
+    if plugin_object.cli_args.detailed is True:
+        for entry in firmware_status_entries:
+            plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
 
     return
 
