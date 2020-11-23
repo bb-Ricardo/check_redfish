@@ -15,7 +15,7 @@ import sys
 from cr_module.classes import plugin_status_types
 
 # inventory definition
-inventory_layout_version_string = "1.0.0"
+inventory_layout_version_string = "1.1.0"
 
 
 # noinspection PyBroadException
