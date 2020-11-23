@@ -32,7 +32,7 @@ class PluginData:
         self.cli_args = cli_args
         self.rf = RedfishConnection(cli_args)
 
-        self.inventory = Inventory(plugin_version)
+        self.inventory = Inventory(plugin_version, cli_args.inventory_id)
 
     def set_current_command(self, current_command=None):
 

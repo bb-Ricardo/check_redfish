@@ -51,12 +51,12 @@ def parse_command_line():
 
     # define command line options
     parser = ArgumentParser(
-        description=description + "\nVersion: " + __version__ + " (" + __version_date__ + ")",
+        description=f"{description}\nVersion: {__version__} ({__version_date__})",
         formatter_class=RawDescriptionHelpFormatter, add_help=False)
 
     group = parser.add_argument_group(title="mandatory arguments")
     group.add_argument("-H", "--host",
-                       help="define the host to request. To change the port just add ':portnumber' to this parameter.")
+                       help="define the host to request. To change the port just add ':portnumber' to this parameter")
 
     group = parser.add_argument_group(title="authentication arguments")
     group.add_argument("-u", "--username", help="the login user name")
@@ -82,9 +82,9 @@ def parse_command_line():
     group.add_argument("-m", "--max", type=int,
                        help="set maximum of returned items for --sel or --mel")
     group.add_argument("-r", "--retries", type=int, default=default_conn_max_retries,
-                       help="set number of maximum retries (default: %d)" % default_conn_max_retries)
+                       help=f"set number of maximum retries (default: {default_conn_max_retries})")
     group.add_argument("-t", "--timeout", type=int, default=default_conn_timeout,
-                       help="set number of request timeout per try/retry (default: %d)" % default_conn_timeout)
+                       help=f"set number of request timeout per try/retry (default: {default_conn_timeout})")
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health information (at least one is required)")
@@ -113,12 +113,14 @@ def parse_command_line():
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
                        help="request Management Processor Log status")
     group.add_argument("--all", dest="requested_query", action='append_const', const="all",
-                       help="request all of the above information at once.")
+                       help="request all of the above information at once")
 
     # inventory
     group = parser.add_argument_group(title="query inventory information (no health check)")
     group.add_argument("-i", "--inventory", action='store_true',
                        help="return inventory in json format instead of regular plugin output")
+    group.add_argument("--inventory_id",
+                       help="set an ID which can be used to identify this host in the destination inventory")
 
     result = parser.parse_args()
 
@@ -133,7 +135,7 @@ def parse_command_line():
     # need to check this our self otherwise it's not
     # possible to put the help command into a arguments group
     if result.host is None:
-        parser.error("no remote host defined")
+        parser.error("No remote host defined")
 
     return result
 

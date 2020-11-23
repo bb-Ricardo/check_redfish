@@ -15,7 +15,7 @@ import sys
 from cr_module.classes import plugin_status_types
 
 # inventory definition
-inventory_layout_version_string = "0.2.0"
+inventory_layout_version_string = "1.0.0"
 
 
 # noinspection PyBroadException
@@ -508,8 +508,9 @@ class Inventory(object):
     inventory_start = None
     data_retrieval_issues = list()
     plugin_version = None
+    inventory_id = None
 
-    def __init__(self, plugin_version):
+    def __init__(self, plugin_version, inventory_id):
         for inventory_sub_class in InventoryItem.__subclasses__():
             if inventory_sub_class.inventory_item_name is None:
                 raise AttributeError("The 'inventory_item_name' attribute for class '%s' is undefined." %
@@ -520,6 +521,7 @@ class Inventory(object):
         # set metadata
         self.inventory_start = datetime.datetime.utcnow()
         self.plugin_version = plugin_version
+        self.inventory_id = inventory_id
 
     def add(self, object_type):
 
@@ -589,7 +591,8 @@ class Inventory(object):
             "inventory_layout_version": inventory_layout_version_string,
             "data_retrieval_issues": self.data_retrieval_issues,
             "host_that_collected_inventory": os.uname()[1],
-            "script_version": self.plugin_version
+            "script_version": self.plugin_version,
+            "inventory_id": self.inventory_id
         }
 
         output = {"inventory": inventory_content}
