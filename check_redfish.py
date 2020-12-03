@@ -121,6 +121,8 @@ def parse_command_line():
                        help="return inventory in json format instead of regular plugin output")
     group.add_argument("--inventory_id",
                        help="set an ID which can be used to identify this host in the destination inventory")
+    group.add_argument("--inventory_file",
+                       help="set file to write the inventory output to. Otherwise stdout will be used.")
 
     result = parser.parse_args()
 

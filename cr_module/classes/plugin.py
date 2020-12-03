@@ -7,6 +7,8 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import os
+
 from cr_module.classes import plugin_status_types
 from cr_module.classes.redfish import RedfishConnection
 from cr_module.classes.inventory import Inventory
@@ -17,6 +19,7 @@ class PluginData:
     rf = None
     inventory = None
     cli_args = None
+    inventory_file = None
 
     __perf_data = list()
     __output_data = dict()
@@ -30,9 +33,54 @@ class PluginData:
             raise Exception("No args passed to RedfishConnection()")
 
         self.cli_args = cli_args
+        self._validate_inventory_file()
         self.rf = RedfishConnection(cli_args)
 
         self.inventory = Inventory(plugin_version, cli_args.inventory_id)
+
+    def _validate_inventory_file(self):
+
+        file_name = self.cli_args.inventory_file
+        if file_name is None:
+            return
+
+        # will only work on POSIX systems
+        # normalize file path
+        if file_name[0] != os.sep:
+            file_name = os.path.join(os.getcwd(), file_name)
+
+        file_name = os.path.normpath(file_name)
+        dir_name = os.path.dirname(file_name)
+
+        # check if directory is a file
+        if os.path.isfile(dir_name):
+            self.exit_on_error(f"The inventory file destination '{dir_name}' seems to be file.")
+        if os.path.isdir(file_name):
+            self.exit_on_error(f"The inventory file destination '{file_name}' seems to be directory.")
+
+        # check if directory exists
+        if not os.path.exists(dir_name):
+            # try to create directory
+            try:
+                os.makedirs(dir_name, 0o700)
+            except OSError:
+                self.exit_on_error(f"Unable to create inventory file directory: {dir_name}.")
+            except Exception as e:
+                self.exit_on_error(f"Unknown exception while creating inventory file directory {dir_name}: {e}")
+
+        # check if directory is writable
+        if not os.access(dir_name, os.X_OK | os.W_OK):
+            self.exit_on_error(f"Error writing to inventory file directory: {dir_name}")
+
+        if os.path.exists(file_name) and not os.access(file_name, os.W_OK):
+            self.exit_on_error(f"Got no permission to write to existing inventory file: {file_name}")
+
+        self.inventory_file = file_name
+
+    def exit_on_error(self, text):
+
+        self.add_output_data("UNKNOWN", text, summary=not self.cli_args.detailed)
+        self.do_exit()
 
     def set_current_command(self, current_command=None):
 
@@ -194,8 +242,23 @@ class PluginData:
 
         # return inventory and exit with 0
         if self.cli_args.inventory is True and self.inventory is not None:
-            print(self.inventory.to_json())
-            exit(0)
+            inventory_json = self.inventory.to_json()
+            if self.inventory_file is not None:
+
+                try:
+                    with open(self.inventory_file, 'w') as writer:
+                        writer.write(inventory_json)
+                except Exception as e:
+                    self.set_status("UNKNOWN")
+                    return_text = f"Unable to write to inventory file: {e}"
+                else:
+                    return_text = "Successfully written inventory file"
+
+                print(f"[{self.__return_status}]: {return_text}")
+                exit(self.get_return_status(True))
+            else:
+                print(inventory_json)
+                exit(0)
 
         print(self.return_output_data())
 

@@ -38,6 +38,7 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
                         [--info] [--firmware] [--sel] [--mel] [--all] [-i]
                         [--inventory_id INVENTORY_ID]
+                        [--inventory_file INVENTORY_FILE]
 
 This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
@@ -103,6 +104,9 @@ query inventory information (no health check):
   --inventory_id INVENTORY_ID
                         set an ID which can be used to identify this host in
                         the destination inventory
+  --inventory_file INVENTORY_FILE
+                        set file to write the inventory output to. Otherwise
+                        stdout will be used.
 
 ```
 
