@@ -249,13 +249,18 @@ class PluginData:
                     with open(self.inventory_file, 'w') as writer:
                         writer.write(inventory_json)
                 except Exception as e:
-                    self.set_status("UNKNOWN")
-                    return_text = f"Unable to write to inventory file: {e}"
+                    self.set_state("UNKNOWN")
+                    return_text = f"[UNKNOWN]: Unable to write to inventory file: {e}"
+                    return_state = self.get_return_status(True)
                 else:
-                    return_text = "Successfully written inventory file"
+                    return_state = 0
+                    return_text = "[OK]: Successfully written inventory file"
 
-                print(f"[{self.__return_status}]: {return_text}")
-                exit(self.get_return_status(True))
+                    if self.get_return_status() == "UNKNOWN":
+                        return_text += " but iventory data might be incomplete"
+
+                print(return_text)
+                exit(return_state)
             else:
                 print(inventory_json)
                 exit(0)
