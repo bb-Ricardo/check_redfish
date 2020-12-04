@@ -199,7 +199,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                 duplex = autoneg = None
                 if network_inventory.full_duplex is not None:
                     duplex = "full" if network_inventory.full_duplex is True else "half"
-                    if nic_status == "OK" and duplex == "half":
+                    if nic_status == "OK" and duplex == "half" and network_inventory.current_speed is not None:
                         nic_status = "WARNING"
                         duplex += f" ({nic_status})"
 
