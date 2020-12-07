@@ -135,6 +135,10 @@ def get_single_system_info(plugin_object, redfish_url):
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
 
+                    # skip DIMM status for systems without DELL slot collection
+                    if dell_slot_collection is None and "DIMM" in dell_sensor.get('ElementName'):
+                        continue
+
                     num_members += 1
 
                     this_sensor_status = "OK"
