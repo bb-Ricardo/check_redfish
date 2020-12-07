@@ -98,6 +98,22 @@
                 "--warning": {
                     "description": "Warning threshold for certain checks. See documentation",
                     "value": "$redfish_warning$"
+                },
+                "--all": {
+                    "description": "request data from all components",
+                    "set_if": "$redfish_all$"
+                },
+                "--inventory": {
+                    "description": "request only inventory data from system",
+                    "set_if": "$redfish_inventory$"
+                },
+                "--inventory_id": {
+                    "description": "the object identifier in the destination inventory system",
+                    "value": "$redfish_inventory_id$"
+                },
+                "--inventory_file": {
+                    "description": "the inventory file to write inventory JSON data to",
+                    "value": "$redfish_inventory_file$"
                 }
             },
             "command": "check_redfish.py",

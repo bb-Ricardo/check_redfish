@@ -249,7 +249,7 @@ def get_storage_hpe(plugin_object, system):
             enclosure_inventory.system_ids = system_id
 
             # set relation between disk drives and enclosures
-            for drive in plugin_object.inventory.base_structure.get("physical_drives"):
+            for drive in plugin_object.inventory.base_structure.get("physical_drive"):
 
                 # get list of drives for each enclosure
                 if drive.location is not None and enclosure_inventory.location is not None and \
