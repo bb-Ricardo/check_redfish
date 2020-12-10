@@ -165,9 +165,8 @@ def get_single_system_info(plugin_object, redfish_url):
 
         # add ILO data
         if plugin_object.rf.vendor == "HPE":
-            plugin_object.add_output_data("OK", "%s - FW: %s" %
-                                          (plugin_object.rf.vendor_data.ilo_version,
-                                           plugin_object.rf.vendor_data.ilo_firmware_version))
+            plugin_object.add_output_data("OK", f"{plugin_object.rf.vendor_data.ilo_version} - "
+                                                f"FW: {plugin_object.rf.vendor_data.ilo_firmware_version}")
         # add SDCard status
         if plugin_object.rf.vendor == "Fujitsu":
             sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")

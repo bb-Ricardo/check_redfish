@@ -30,10 +30,8 @@ class VendorHPEData(VendorGeneric):
 
     name = "HPE"
 
-    ilo_hostname = None
     ilo_version = None
     ilo_firmware_version = None
-    ilo_health = None
 
     expand_string = "?$expand=."
 

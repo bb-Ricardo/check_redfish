@@ -449,22 +449,20 @@ class RedfishConnection:
                 manager_data = grab(self.connection.root, f"Oem.{vendor_string}.Manager.0")
 
                 if manager_data is not None:
-                    self.vendor_data.ilo_hostname = manager_data.get("HostName")
                     self.vendor_data.ilo_version = manager_data.get("ManagerType")
                     if self.vendor_data.ilo_version is None:
                         # Fix for iLO 5 version >2.3.0
-                        moniker_data = grab(self.connection.root, f"Oem.{vendor_string}.Moniker")
-                        self.vendor_data.ilo_version = moniker_data.get("PRODGEN")
-                  
+                        self.vendor_data.ilo_version = \
+                            grab(self.connection.root, f"Oem.{vendor_string}.Moniker.PRODGEN")
+
                     self.vendor_data.ilo_firmware_version = manager_data.get("ManagerFirmwareVersion")
                     if self.vendor_data.ilo_firmware_version is None:
                         # Fix for iLO 5 version >2.3.0
-                        self.vendor_data.ilo_firmware_version = manager_data.get("Languages").pop().get("Version")
-                    
-                    if None in [self.vendor_data.ilo_hostname, self.vendor_data.ilo_version,
-                                self.vendor_data.ilo_firmware_version]:
-                            self.exit_on_error("Cannot determine HPE iLO version information.")
-                    
+                        self.vendor_data.ilo_firmware_version = grab(manager_data, "Languages.0.Version")
+
+                    if self.vendor_data.ilo_version is None:
+                        self.exit_on_error("Cannot determine HPE iLO version information.")
+
                     if self.vendor_data.ilo_version.lower() == "ilo 5":
                         self.vendor_data.view_supported = True
 
