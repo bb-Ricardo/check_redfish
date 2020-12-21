@@ -41,6 +41,7 @@ def get_single_system_info(plugin_object, redfish_url):
 
     # get model data
     model = system_response.get("Model")
+
     # Huawei system
     if plugin_object.rf.vendor == "Huawei":
         huawei_model = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.ProductName")
