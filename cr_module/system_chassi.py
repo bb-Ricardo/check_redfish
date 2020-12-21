@@ -107,7 +107,9 @@ def get_single_system_info(plugin_object, redfish_url):
         dell_slot_collection = \
             grab(system_response, f"Links.Oem.{plugin_object.rf.vendor_dict_key}.DellSlotCollection")
 
-        # collect info about empty slots
+        # Tests against i38 show that dell_slot_collection is empty. However, four DIMMs are empty.
+        # This means that dell_empty_slots is empty while there are some DIMMs empty.
+        # Collect info about empty slots
         if dell_slot_collection is not None and dell_slot_collection.get("@odata.id") is not None:
             collection_response = plugin_object.rf.get(dell_slot_collection.get("@odata.id"))
 
@@ -121,7 +123,6 @@ def get_single_system_info(plugin_object, redfish_url):
 
         dell_sensor_collection = \
             grab(system_response, f"Links.Oem.{plugin_object.rf.vendor_dict_key}.DellSensorCollection")
-
         if dell_sensor_collection is not None and dell_sensor_collection.get("@odata.id") is not None:
             collection_response = plugin_object.rf.get(dell_sensor_collection.get("@odata.id"))
 
@@ -133,6 +134,10 @@ def get_single_system_info(plugin_object, redfish_url):
 
                     # skip if sensor slot is empty
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
+                        continue
+
+                    # This part of code is added to skip empty slot
+                    if dell_sensor.get('CurrentState') != "Presence Detected" and "DIMM" in dell_sensor.get('ElementName'):
                         continue
 
                     num_members += 1
