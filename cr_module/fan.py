@@ -113,14 +113,12 @@ def get_single_chassi_fan(plugin_object, redfish_url):
 
         default_text = f"All fans ({fan_num}) are in good condition"
     else:
-        plugin_object.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
+        plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
 
     # get FanRedundancy status
-    fan_redundancies = plugin_object.rf.get_view(redfish_url).get("FanRedundancy")
-    if fan_redundancies is None:
-        fan_redundancies = plugin_object.rf.get_view(redfish_url).get("Redundancy")
+    fan_redundancies = thermal_data.get("FanRedundancy") or thermal_data.get("Redundancy")
 
-    if fan_redundancies:
+    if fan_redundancies is not None:
         status_text = ""
         for fan_redundancy in fan_redundancies:
 

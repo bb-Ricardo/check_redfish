@@ -368,16 +368,19 @@ class RedfishConnection:
             if self.cli_args.verbose:
                 pprint.pprint(redfish_response_json_data, stream=sys.stderr)
 
-            if redfish_response_json_data.get("error"):
-                error = redfish_response_json_data.get("error").get("@Message.ExtendedInfo")
-                self.exit_on_error(
-                    "got error '%s/%s' for API path '%s'" %
-                    (error[0].get("MessageId"), error[0].get("Message"), redfish_path)
-                )
-
             self.__cached_data[redfish_path] = redfish_response_json_data
 
         return self.__cached_data.get(redfish_path)
+
+    @staticmethod
+    def get_error(redfish_data, redfish_url):
+
+        return_data = None
+        if isinstance(redfish_data, dict) and redfish_data.get("error"):
+            error = grab(redfish_data, "error/@Message.ExtendedInfo/0", separator="/")
+            return_data = "got '%s/%s' for API path '%s'" % (error.get("MessageId"), error.get("Message"), redfish_url)
+
+        return return_data
 
     def _rf_post(self, redfish_path, body):
 

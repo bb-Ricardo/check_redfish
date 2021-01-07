@@ -22,7 +22,7 @@ def get_firmware_info(plugin_object):
         system_ids = plugin_object.rf.get_system_properties("systems")
 
         if system_ids is None or len(system_ids) == 0:
-            plugin_object.add_output_data("UNKNOWN", f"No 'systems' property found in root path '/redfish/v1'")
+            plugin_object.inventory.add_issue(Firmware, "No 'systems' property found in root path '/redfish/v1'")
             return
 
         for system_id in system_ids:
@@ -108,6 +108,9 @@ def get_firmware_info_hpe_ilo4(plugin_object, system_id):
                 firmware_inventory.source_data = firmware_entry_object
 
             plugin_object.inventory.add(firmware_inventory)
+
+    if firmware_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
 
     return
 
@@ -295,10 +298,9 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
 def get_firmware_info_generic(plugin_object):
 
     if plugin_object.rf.connection.root.get("UpdateService") is None:
-        plugin_object.add_output_data("UNKNOWN",
-                                      "URL '/redfish/v1/UpdateService' unavailable. "
-                                      "Unable to retrieve firmware information.",
-                                      summary=not plugin_object.cli_args.detailed)
+        plugin_object.inventory.add_issue(Firmware,
+                                          "URL '/redfish/v1/UpdateService' unavailable. "
+                                          "Unable to retrieve firmware information.")
         return
 
     redfish_url = f"/redfish/v1/UpdateService/FirmwareInventory{plugin_object.rf.vendor_data.expand_string}"
@@ -365,6 +367,9 @@ def get_firmware_info_generic(plugin_object):
             firmware_inventory.source_data = firmware_entry
 
         plugin_object.inventory.add(firmware_inventory)
+
+    if firmware_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
 
     return
 

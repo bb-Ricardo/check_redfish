@@ -16,7 +16,7 @@ def get_network_interfaces(plugin_object):
     systems = plugin_object.rf.get_system_properties("systems") or list()
 
     if len(systems) == 0:
-        plugin_object.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+        plugin_object.inventory.add_issue(NetworkAdapter, "No 'systems' property found in root path '/redfish/v1'")
         return
 
     for system in systems:
@@ -96,6 +96,10 @@ def get_system_nics(plugin_object, redfish_url):
         # query data
         if port_response is None and redfish_path is not None:
             port_response = plugin_object.rf.get_view(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
+
+            if port_response.get("error"):
+                plugin_object.add_data_retrieval_error(NetworkPort, port_response, redfish_path)
+                return NetworkPort()
 
         if port_response is None:
             return NetworkPort()
@@ -185,6 +189,10 @@ def get_system_nics(plugin_object, redfish_url):
         if function_response is None and redfish_path is not None:
             function_response = plugin_object.rf.get_view(f"{redfish_path}{plugin_object.rf.vendor_data.expand_string}")
 
+            if function_response.get("error"):
+                plugin_object.add_data_retrieval_error(NetworkPort, function_response, redfish_path)
+                return
+
         port_inventory = None
         if function_response is not None:
             physical_port_path = grab(function_response, "Links.PhysicalPortAssignment") or \
@@ -262,6 +270,10 @@ def get_system_nics(plugin_object, redfish_url):
     if plugin_object.rf.vendor == "HPE":
         system_response = plugin_object.rf.get(redfish_url)
 
+        if system_response.get("error"):
+            plugin_object.add_data_retrieval_error(NetworkAdapter, system_response, redfish_url)
+            return
+
         ethernet_interfaces_path = grab(system_response,
                                         f"Oem/{plugin_object.rf.vendor_dict_key}/Links/EthernetInterfaces/@odata.id",
                                         separator="/")
@@ -269,11 +281,16 @@ def get_system_nics(plugin_object, redfish_url):
                                     f"Oem/{plugin_object.rf.vendor_dict_key}/Links/NetworkAdapters/@odata.id",
                                     separator="/")
     else:
+        # assume default urls
         ethernet_interfaces_path = f"{redfish_url}/EthernetInterfaces"
         network_adapter_path = f"{redfish_url}/NetworkInterfaces"
 
     network_adapter_response = \
         plugin_object.rf.get_view(f"{network_adapter_path}{plugin_object.rf.vendor_data.expand_string}")
+
+    if network_adapter_response.get("error"):
+        plugin_object.add_data_retrieval_error(NetworkAdapter, network_adapter_response, network_adapter_path)
+        return
 
     # HPE specific
     if network_adapter_response.get("NetworkAdapters") is not None:
@@ -289,6 +306,10 @@ def get_system_nics(plugin_object, redfish_url):
                 nic_member = adapter
             else:
                 nic_member = plugin_object.rf.get(adapter.get("@odata.id"))
+
+                if nic_member.get("error"):
+                    plugin_object.add_data_retrieval_error(NetworkAdapter, nic_member, adapter.get("@odata.id"))
+                    continue
 
             adapter_path = grab(nic_member, "Links/NetworkAdapter/@odata.id", separator="/") or \
                 grab(nic_member, "Links.NetworkAdapter.0")
@@ -313,6 +334,10 @@ def get_system_nics(plugin_object, redfish_url):
                 num_ports = len(nic_member.get("PhysicalPorts") or list())
             else:
                 adapter_response = plugin_object.rf.get(adapter_path)
+
+                if adapter_response.get("error"):
+                    plugin_object.add_data_retrieval_error(NetworkAdapter, adapter_response, adapter_path)
+                    continue
 
                 source_data = adapter_response
 
@@ -418,6 +443,10 @@ def get_system_nics(plugin_object, redfish_url):
         ethernet_interface_response = \
             plugin_object.rf.get_view(f"{ethernet_interfaces_path}{plugin_object.rf.vendor_data.expand_string}")
 
+        if ethernet_interface_response.get("error"):
+            plugin_object.add_data_retrieval_error(NetworkPort, ethernet_interface_response, ethernet_interfaces_path)
+            return
+
         # HPE specific
         if ethernet_interface_response.get("EthernetInterfaces") is not None:
             ethernet_interface_members = ethernet_interface_response.get("EthernetInterfaces")
@@ -432,6 +461,11 @@ def get_system_nics(plugin_object, redfish_url):
                     interface_member = interface
                 else:
                     interface_member = plugin_object.rf.get(interface.get("@odata.id"))
+
+                    if interface_member.get("error"):
+                        plugin_object.add_data_retrieval_error(NetworkPort, interface_member,
+                                                               interface.get("@odata.id"))
+                        continue
 
                 if interface_member.get("Id"):
 
@@ -544,11 +578,11 @@ def get_system_nics(plugin_object, redfish_url):
         if network_port.adapter_id is None:
             add_port_status(network_port)
 
-    if num_ports == 0:
-        plugin_object.add_output_data("UNKNOWN", f"No network adapter or interface data "
-                                                 f"returned for API URL '{network_adapter_path}'")
-
-    plugin_object.add_output_data("OK", f"All network adapter ({num_adapters}) and "
-                                        f"ports ({num_ports}) are in good condition", summary=True)
+    if num_adapters == 0:
+        plugin_object.inventory.add_issue(NetworkAdapter, f"No network adapter or interface data "
+                                                          f"returned for API URL '{network_adapter_path}'")
+    if num_adapters + num_ports > 0:
+        plugin_object.add_output_data("OK", f"All network adapter ({num_adapters}) and "
+                                            f"ports ({num_ports}) are in good condition", summary=True)
 
     return

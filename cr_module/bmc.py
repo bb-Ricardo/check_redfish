@@ -20,7 +20,7 @@ def get_bmc_info(plugin_object):
     managers = plugin_object.rf.get_system_properties("managers")
 
     if managers is None or len(managers) == 0:
-        plugin_object.add_output_data("UNKNOWN", "No 'managers' property found in root path '/redfish/v1'")
+        plugin_object.inventory.add_issue(Manager, "No 'managers' property found in root path '/redfish/v1'")
         return
 
     for manager in managers:
@@ -39,6 +39,10 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     """
 
     view_response = plugin_object.rf.get_view(f"{redfish_url}{plugin_object.rf.vendor_data.expand_string}")
+
+    if view_response.get("error"):
+        plugin_object.add_data_retrieval_error(Manager, view_response, redfish_url)
+        return
 
     # HPE iLO 5 view
     if view_response.get("ILO"):
@@ -113,6 +117,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
 
             status_text = f"{status_text} but no information about the BMC network interfaces found"
+
+            plugin_object.inventory.add_issue(NetworkPort, "No information about the BMC network interfaces found")
         else:
 
             # if args.detailed is False:

@@ -34,7 +34,11 @@ def get_storage(plugin_object):
 def get_storage_hpe(plugin_object, system):
     def get_disks(link, disk_type="DiskDrives"):
 
-        disks_response = plugin_object.rf.get("%s/%s/?$expand=." % (link, disk_type))
+        disks_response = plugin_object.rf.get(f"{link}/{disk_type}/?$expand=.")
+
+        if disks_response.get("error"):
+            plugin_object.add_data_retrieval_error(PhysicalDrive, disks_response, f"{link}/{disk_type}")
+            return
 
         if disks_response.get("Members") is None:
             if disk_type == "DiskDrives":
@@ -47,6 +51,9 @@ def get_storage_hpe(plugin_object, system):
                 disk_response = disk
             else:
                 disk_response = plugin_object.rf.get(disk.get("@odata.id"))
+                if disk_response.get("error"):
+                    plugin_object.add_data_retrieval_error(PhysicalDrive, disk_response, disk.get("@odata.id"))
+                    continue
 
             # skip already processed disks
             if disk_response.get("@odata.id") in system_drives_list:
@@ -138,7 +145,11 @@ def get_storage_hpe(plugin_object, system):
 
     def get_logical_drives(link):
 
-        ld_response = plugin_object.rf.get("%s/LogicalDrives/?$expand=." % link)
+        ld_response = plugin_object.rf.get(f"{link}/LogicalDrives/?$expand=.")
+
+        if ld_response.get("error"):
+            plugin_object.add_data_retrieval_error(LogicalDrive, ld_response, f"{link}")
+            return
 
         if ld_response.get("Members") is None:
             plugin_object.add_output_data("OK", "no logical drives found for this Controller")
@@ -150,6 +161,10 @@ def get_storage_hpe(plugin_object, system):
                 logical_drive_response = logical_drive
             else:
                 logical_drive_response = plugin_object.rf.get(logical_drive.get("@odata.id"))
+                if logical_drive_response.get("error"):
+                    plugin_object.add_data_retrieval_error(LogicalDrive, logical_drive_response,
+                                                           logical_drive.get("@odata.id"))
+                    continue
 
             status_data = get_status_data(logical_drive_response.get("Status"))
 
@@ -182,6 +197,9 @@ def get_storage_hpe(plugin_object, system):
             if data_drives_link is not None:
                 data_drives_response = plugin_object.rf.get(data_drives_link)
 
+                if data_drives_response.get("error"):
+                    plugin_object.add_data_retrieval_error(PhysicalDrive, data_drives_response, data_drives_link)
+
                 for data_drive in data_drives_response.get("Members"):
                     data_drive_id = ("{}:{}".format(
                         controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
@@ -206,7 +224,11 @@ def get_storage_hpe(plugin_object, system):
 
     def get_enclosures(link):
 
-        enclosures_response = plugin_object.rf.get("%s/StorageEnclosures/?$expand=." % link)
+        enclosures_response = plugin_object.rf.get(f"{link}/StorageEnclosures/?$expand=.")
+
+        if enclosures_response.get("error"):
+            plugin_object.add_data_retrieval_error(StorageEnclosure, enclosures_response, f"{link}/StorageEnclosures")
+            return
 
         if enclosures_response.get("Members") is None:
             plugin_object.add_output_data("OK", "no storage enclosures found for this Controller")
@@ -218,6 +240,11 @@ def get_storage_hpe(plugin_object, system):
                 enclosure_response = enclosure
             else:
                 enclosure_response = plugin_object.rf.get(enclosure.get("@odata.id"))
+
+                if enclosures_response.get("error"):
+                    plugin_object.add_data_retrieval_error(StorageEnclosure, enclosures_response,
+                                                           enclosure.get("@odata.id"))
+                    continue
 
             status_data = get_status_data(enclosure_response.get("Status"))
 
@@ -278,6 +305,10 @@ def get_storage_hpe(plugin_object, system):
 
     storage_response = plugin_object.rf.get(redfish_url)
 
+    if storage_response.get("error"):
+        plugin_object.add_data_retrieval_error(StorageController, storage_response, redfish_url)
+        return
+
     storage_status = get_status_data(storage_response.get("Status"))
     status = storage_status.get("Health")
 
@@ -291,6 +322,10 @@ def get_storage_hpe(plugin_object, system):
     system_drives_list = list()
     array_controllers_response = plugin_object.rf.get(redfish_url)
 
+    if array_controllers_response.get("error"):
+        plugin_object.add_data_retrieval_error(StorageController, array_controllers_response, redfish_url)
+        return
+
     if array_controllers_response.get("Members"):
 
         for array_controller in array_controllers_response.get("Members"):
@@ -299,6 +334,11 @@ def get_storage_hpe(plugin_object, system):
                 controller_response = array_controller
             else:
                 controller_response = plugin_object.rf.get(array_controller.get("@odata.id"))
+
+                if controller_response.get("error"):
+                    plugin_object.add_data_retrieval_error(StorageController, controller_response,
+                                                           array_controller.get("@odata.id"))
+                    continue
 
             if controller_response.get("Id"):
 
@@ -382,6 +422,10 @@ def get_storage_generic(plugin_object, system):
             return
 
         drive_response = plugin_object.rf.get(drive_link)
+
+        if drive_response.get("error"):
+            plugin_object.add_data_retrieval_error(PhysicalDrive, drive_response, drive_link)
+            return
 
         if drive_response.get("Name") is None:
             plugin_object.add_output_data("UNKNOWN", f"Unable to retrieve disk info: {drive_link}")
@@ -482,10 +526,9 @@ def get_storage_generic(plugin_object, system):
         if pd_inventory.health_status is not None:
             drives_status_list.append(pd_inventory.health_status)
 
+        size_string = "0GiB"
         if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
             size_string = "%0.2fGiB" % (pd_inventory.size_in_byte / (1000 ** 3))
-        else:
-            size_string = "0GiB"
 
         status_text = f"Physical Drive {pd_inventory.name} {location_string}({pd_inventory.model} / " \
                       f"{pd_inventory.type} / " \
@@ -501,12 +544,20 @@ def get_storage_generic(plugin_object, system):
 
         volumes_response = plugin_object.rf.get(volumes_link)
 
+        if volumes_response.get("error"):
+            plugin_object.add_data_retrieval_error(LogicalDrive, volumes_response, volumes_link)
+            return
+
         if len(volumes_response.get("Members")) == 0:
             return
 
         for volume_member in volumes_response.get("Members"):
 
             volume_data = plugin_object.rf.get(volume_member.get("@odata.id"))
+
+            if volume_data.get("error"):
+                plugin_object.add_data_retrieval_error(LogicalDrive, volume_data, volume_member.get("@odata.id"))
+                continue
 
             if volume_data.get("Name") is None:
                 continue
@@ -600,6 +651,10 @@ def get_storage_generic(plugin_object, system):
 
         enclosure_response = plugin_object.rf.get(enclosure_link)
 
+        if enclosure_response.get("error"):
+            plugin_object.add_data_retrieval_error(StorageEnclosure, enclosure_response, enclosure_link)
+            return
+
         if enclosure_response.get("Name") is None:
             plugin_object.add_output_data("UNKNOWN", f"Unable to retrieve enclosure info: {enclosure_link}")
             return
@@ -684,6 +739,10 @@ def get_storage_generic(plugin_object, system):
     if storage_link is not None:
         storage_response = plugin_object.rf.get(f"{storage_link}{plugin_object.rf.vendor_data.expand_string}")
 
+        if storage_response.get("error"):
+            plugin_object.add_data_retrieval_error(StorageController, storage_response, storage_link)
+            return
+
     system_drives_list = list()
     drives_status_list = list()
     storage_controller_names_list = list()
@@ -700,6 +759,11 @@ def get_storage_generic(plugin_object, system):
                 controller_response = storage_member
             else:
                 controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
+
+                if controller_response.get("error"):
+                    plugin_object.add_data_retrieval_error(StorageController, controller_response,
+                                                           storage_member.get("@odata.id"))
+                    continue
 
             if controller_response.get("StorageControllers"):
 
@@ -855,6 +919,10 @@ def get_storage_generic(plugin_object, system):
         simple_storage_response = plugin_object.rf.get(
             f"{simple_storage_link}{plugin_object.rf.vendor_data.expand_string}")
 
+        if simple_storage_response.get("error"):
+            plugin_object.add_data_retrieval_error(StorageController, simple_storage_response, simple_storage_link)
+            return
+
         if simple_storage_response.get("Members") is not None and len(simple_storage_response.get("Members")) > 0:
 
             for simple_storage_member in simple_storage_response.get("Members"):
@@ -863,6 +931,11 @@ def get_storage_generic(plugin_object, system):
                     simple_storage_controller_response = simple_storage_member
                 else:
                     simple_storage_controller_response = plugin_object.rf.get(simple_storage_member.get("@odata.id"))
+
+                    if simple_storage_controller_response.get("error"):
+                        plugin_object.add_data_retrieval_error(StorageController, simple_storage_controller_response,
+                                                               simple_storage_member.get("@odata.id"))
+                        continue
 
                 # this controller has already been checked
                 if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list or \

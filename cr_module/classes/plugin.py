@@ -95,7 +95,8 @@ class PluginData:
             return
 
         if state not in list(plugin_status_types.keys()):
-            raise Exception(f"Status '{state}' is invalid")
+            raise Exception(f"Status '{state}' is invalid, needs to be one of these: %s" %
+                            list(plugin_status_types.keys()))
 
         if plugin_status_types[state] > plugin_status_types[self.__return_status]:
             self.__return_status = state
@@ -169,6 +170,17 @@ class PluginData:
             perf_string += ";%s" % str(critical)
 
         self.__perf_data.append(perf_string)
+
+    def add_data_retrieval_error(self, class_name, redfish_data=None, redfish_url=None):
+
+        if isinstance(redfish_url, str):
+            redfish_url = redfish_url.replace("//", "/")
+
+        retrieval_error = self.rf.get_error(redfish_data, redfish_url)
+        if retrieval_error is not None:
+            retrieval_error = f"No {class_name.inventory_item_name} data returned for API URL '{redfish_url}'"
+
+        self.inventory.add_issue(class_name, retrieval_error)
 
     def return_output_data(self):
 
@@ -264,6 +276,11 @@ class PluginData:
             else:
                 print(inventory_json)
                 exit(0)
+
+        # add all retrieval issues to output
+        for item_name, issues in self.inventory.get_issues().items():
+            if len(self.inventory.get(item_name)) == 0:
+                self.add_output_data("UNKNOWN", "Request error: %s" % ", ".join(issues))
 
         print(self.return_output_data())
 

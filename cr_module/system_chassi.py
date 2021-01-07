@@ -14,10 +14,10 @@ from cr_module.common import get_status_data, grab
 def get_system_info(plugin_object):
     plugin_object.set_current_command("System Info")
 
-    systems = plugin_object.rf.get_system_properties("systems")
+    systems = plugin_object.rf.get_system_properties("systems") or list()
 
-    if systems is None or len(systems) == 0:
-        plugin_object.add_output_data("UNKNOWN", "No 'systems' property found in root path '/redfish/v1'")
+    if len(systems) == 0:
+        plugin_object.inventory.add_issue(System, "No 'systems' property found in root path '/redfish/v1'")
         return
 
     for system in systems:
@@ -36,7 +36,10 @@ def get_single_system_info(plugin_object, redfish_url):
     system_response = plugin_object.rf.get(redfish_url)
 
     if system_response is None:
-        plugin_object.add_output_data("UNKNOWN", f"No system information data returned for API URL '{redfish_url}'")
+        plugin_object.inventory.add_issue(System, f"No system information data returned for API URL '{redfish_url}'")
+        return
+    elif system_response.get("error"):
+        plugin_object.add_data_retrieval_error(System, system_response, redfish_url)
         return
 
     # get model data
@@ -186,6 +189,13 @@ def get_single_system_info(plugin_object, redfish_url):
 
 def get_single_chassi_info(plugin_object, redfish_url):
     chassi_response = plugin_object.rf.get(redfish_url)
+
+    if chassi_response is None:
+        plugin_object.inventory.add_issue(Chassi, f"No chassi information data returned for API URL '{redfish_url}'")
+        return
+    elif chassi_response.get("error"):
+        plugin_object.add_data_retrieval_error(Chassi, chassi_response, redfish_url)
+        return
 
     # get status data
     status_data = get_status_data(chassi_response.get("Status"))

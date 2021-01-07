@@ -117,7 +117,7 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
-        plugin_object.add_output_data("UNKNOWN", f"No thermal data returned for API URL '{redfish_url}'")
+        plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)
 
     plugin_object.add_output_data("OK", default_text, summary=True)
 

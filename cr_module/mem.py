@@ -44,7 +44,6 @@ def get_single_system_mem(plugin_object, redfish_url):
     if memory_path_dict.get(system_response_memory_key) is None:
         issue_text = f"Returned data from API URL '{redfish_url}' has no attribute '{system_response_memory_key}'"
         plugin_object.inventory.add_issue(Memory, issue_text)
-        plugin_object.add_output_data("UNKNOWN", issue_text)
         return
 
     redfish_url = memory_path_dict.get(system_response_memory_key).get(
@@ -141,7 +140,7 @@ def get_single_system_mem(plugin_object, redfish_url):
                                               "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
 
     if num_dimms == 0:
-        plugin_object.add_output_data("UNKNOWN", f"No memory data returned for API URL '{redfish_url}'")
+        plugin_object.add_data_retrieval_error(Memory, memory_response, redfish_url)
     else:
         plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
                     size_sum / 1024), summary=True)

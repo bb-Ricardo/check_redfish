@@ -13,6 +13,7 @@ import json
 import sys
 
 from cr_module.classes import plugin_status_types
+from cr_module.common import grab
 
 # inventory definition
 inventory_layout_version_string = "1.2.0"
@@ -506,7 +507,7 @@ class Inventory(object):
     """
     base_structure = dict()
     inventory_start = None
-    data_retrieval_issues = list()
+    data_retrieval_issues = dict()
     plugin_version = None
     inventory_id = None
 
@@ -563,18 +564,37 @@ class Inventory(object):
             raise AttributeError("'%s' object must be a sub class of '%s'." %
                                  (class_name.__name__, InventoryItem.__name__))
 
-        self.data_retrieval_issues.append(f"{class_name.inventory_item_name}: {issue}")
+        current_issues = self.data_retrieval_issues.get(class_name.inventory_item_name, list())
+        current_issues.append(f"{issue}")
+        self.data_retrieval_issues[class_name.inventory_item_name] = current_issues
+
+    def get_issues(self, class_name=None):
+
+        if class_name is not None:
+            if class_name not in InventoryItem.__subclasses__():
+                raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                     (class_name.__name__, InventoryItem.__name__))
+
+            return self.data_retrieval_issues.get(class_name.inventory_item_name, list())
+        else:
+            return self.data_retrieval_issues
 
     def get(self, class_name):
 
-        if class_name not in InventoryItem.__subclasses__():
-            raise AttributeError("'%s' object must be a sub class of '%s'." %
-                                 (class_name.__name__, InventoryItem.__name__))
+        if isinstance(class_name, str):
+            if class_name not in [x.inventory_item_name for x in InventoryItem.__subclasses__()]:
+                raise AttributeError(f"'{class_name}' must be a sub class of {InventoryItem.__name__}")
 
-        if self.base_structure[class_name.inventory_item_name] is None:
-            return list()
+            inventory_key = class_name
 
-        return self.base_structure[class_name.inventory_item_name]
+        else:
+            if class_name not in InventoryItem.__subclasses__():
+                raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                     (class_name.__name__, InventoryItem.__name__))
+            else:
+                inventory_key = class_name.inventory_item_name
+
+        return self.base_structure.get(inventory_key, list())
 
     def to_json(self):
         inventory_content = self.base_structure
