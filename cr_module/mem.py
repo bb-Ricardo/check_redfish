@@ -16,12 +16,18 @@ def get_single_system_mem(plugin_object, redfish_url):
 
     systems_response = plugin_object.rf.get(redfish_url)
 
+    if systems_response.get("error"):
+        plugin_object.add_data_retrieval_error(Memory, systems_response, redfish_url)
+        return
+
+    system_id = systems_response.get("Id")
+
     if systems_response.get("MemorySummary"):
 
         memory_status = get_status_data(grab(systems_response, "MemorySummary.Status"))
 
         # DELL is HealthRollUp not HealthRollup
-        # Fujitsu is just Health an not HealthRollup
+        # Fujitsu is just Health and not HealthRollup
         health = memory_status.get("HealthRollup") or memory_status.get("Health")
 
         if health == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
@@ -32,7 +38,7 @@ def get_single_system_mem(plugin_object, redfish_url):
                 total_mem = total_mem * 1024 ** 3 / 1000 ** 3
 
             plugin_object.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
-                                          total_mem, summary=True)
+                                          total_mem, summary=True, location=f"System {system_id}")
             return
 
     system_response_memory_key = "Memory"
@@ -51,6 +57,10 @@ def get_single_system_mem(plugin_object, redfish_url):
 
     memory_response = plugin_object.rf.get_view(redfish_url)
 
+    if memory_response.get("error"):
+        plugin_object.add_data_retrieval_error(Memory, memory_response, redfish_url)
+        return
+
     num_dimms = 0
     size_sum = 0
 
@@ -62,6 +72,10 @@ def get_single_system_mem(plugin_object, redfish_url):
                 mem_module_response = mem_module
             else:
                 mem_module_response = plugin_object.rf.get(mem_module.get("@odata.id"))
+
+                if mem_module_response.get("error"):
+                    plugin_object.add_data_retrieval_error(Memory, mem_module_response, redfish_url)
+                    continue
 
             if mem_module_response.get("Id"):
 
@@ -108,7 +122,7 @@ def get_single_system_mem(plugin_object, redfish_url):
                     part_number=mem_module_response.get("PartNumber"),
                     type=mem_module_response.get("MemoryDeviceType") or mem_module_response.get("MemoryType"),
                     base_type=mem_module_response.get("BaseModuleType"),
-                    system_ids=systems_response.get("Id")
+                    system_ids=system_id
                 )
 
                 if plugin_object.cli_args.verbose:
@@ -133,17 +147,19 @@ def get_single_system_mem(plugin_object, redfish_url):
                             mem_inventory.size_in_mb / 1024)
 
                 plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
-                                              status_text)
+                                              status_text, location=f"System {system_id}")
 
             else:
                 plugin_object.add_output_data("UNKNOWN",
-                                              "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"))
+                                              "No memory data returned for API URL '%s'" % mem_module.get("@odata.id"),
+                                              location=f"System {system_id}")
 
     if num_dimms == 0:
-        plugin_object.add_data_retrieval_error(Memory, memory_response, redfish_url)
+        issue_text = f"Returned data from API URL '{redfish_url}' contains no processor information"
+        plugin_object.inventory.add_issue(Memory, issue_text)
     else:
         plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                    size_sum / 1024), summary=True)
+                    size_sum / 1024), summary=True, location=f"System {system_id}")
 
     return
 

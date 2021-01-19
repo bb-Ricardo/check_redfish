@@ -129,6 +129,10 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
 
         manager_response = plugin_object.rf.get(manager_ids[0])
 
+        if manager_response.get("error"):
+            plugin_object.add_data_retrieval_error(Firmware, manager_response, manager_ids[0])
+            return
+
         # get configuration
         irmc_configuration_link = grab(manager_response,
                                        f"Oem/{plugin_object.rf.vendor_dict_key}/iRMCConfiguration/@odata.id",
@@ -138,10 +142,16 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
         if irmc_configuration_link is not None:
             irmc_configuration = plugin_object.rf.get(irmc_configuration_link)
 
+            if irmc_configuration.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, irmc_configuration, irmc_configuration_link)
+
         irmc_firmware_information = None
         firmware_information_link = grab(irmc_configuration, f"FWUpdate/@odata.id", separator="/")
         if firmware_information_link is not None:
             irmc_firmware_information = plugin_object.rf.get(firmware_information_link)
+
+            if irmc_firmware_information.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, irmc_firmware_information, irmc_configuration_link)
 
         if irmc_firmware_information is not None:
             for bmc_fw_bank in ["iRMCFwImageHigh", "iRMCFwImageLow"]:
@@ -175,35 +185,46 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
         for chassi_id in chassi_ids:
             power_data = plugin_object.rf.get(f"{chassi_id}/Power")
 
-            if power_data.get("PowerSupplies") is not None and len(power_data.get("PowerSupplies")) > 0:
+            if power_data.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, power_data, f"{chassi_id}/Power")
 
-                for ps_data in power_data.get("PowerSupplies"):
-                    ps_manufacturer = ps_data.get("Manufacturer")
-                    ps_location = ps_data.get("Name")
-                    ps_model = ps_data.get("Model")
-                    ps_fw_version = ps_data.get("FirmwareVersion")
+            for ps_data in power_data.get("PowerSupplies", list()):
+                ps_manufacturer = ps_data.get("Manufacturer")
+                ps_location = ps_data.get("Name")
+                ps_model = ps_data.get("Model")
+                ps_fw_version = ps_data.get("FirmwareVersion")
 
-                    firmware_entries.append({
-                        "id": f"{ps_location}",
-                        "name": f"Power Supply {ps_manufacturer} {ps_model}",
-                        "version": f"{ps_fw_version}",
-                        "location": f"{ps_location}"
-                    })
+                firmware_entries.append({
+                    "id": f"{ps_location}",
+                    "name": f"Power Supply {ps_manufacturer} {ps_model}",
+                    "version": f"{ps_fw_version}",
+                    "location": f"{ps_location}"
+                })
 
     # get hard drive firmware
     redfish_url = f"{system_id}/Storage" + "%s" % plugin_object.rf.vendor_data.expand_string
 
     storage_response = plugin_object.rf.get(redfish_url)
 
-    for storage_member in storage_response.get("Members"):
+    if storage_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, storage_response, redfish_url)
+
+    for storage_member in storage_response.get("Members", list()):
 
         if storage_member.get("@odata.context"):
             controller_response = storage_member
         else:
             controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
+            if controller_response.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, controller_response, storage_member.get("@odata.id"))
+                continue
 
         for controller_drive in controller_response.get("Drives"):
             drive_response = plugin_object.rf.get(controller_drive.get("@odata.id"))
+
+            if drive_response.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, drive_response, controller_drive.get("@odata.id"))
+                continue
 
             if drive_response.get("Name") is not None:
                 drive_name = drive_response.get("Name")
@@ -225,6 +246,9 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
 
     firmware_response = plugin_object.rf.get(redfish_url)
 
+    if firmware_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+
     # get BIOS
     if firmware_response.get("SystemBIOS"):
         firmware_entries.append({
@@ -244,43 +268,42 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
             component_type = value.get("@odata.id").rstrip("/").split("/")[-1]
             component_fw_data = plugin_object.rf.get(value.get("@odata.id"))
 
-            if component_fw_data.get("Ports") is not None and len(component_fw_data.get("Ports")) > 0:
+            if component_fw_data.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, component_fw_data, value.get("@odata.id"))
 
-                component_id = 0
-                for component_entry in component_fw_data.get("Ports"):
-                    component_id += 1
+            component_id = 0
+            for component_entry in component_fw_data.get("Ports", list()):
+                component_id += 1
 
-                    component_name = component_entry.get("AdapterName")
-                    component_location = component_entry.get("ModuleName")
-                    component_bios_version = component_entry.get("BiosVersion")
-                    component_fw_version = component_entry.get("FirmwareVersion")
-                    component_slot = component_entry.get("SlotId")
-                    component_port = component_entry.get("PortId")
+                component_name = component_entry.get("AdapterName")
+                component_location = component_entry.get("ModuleName")
+                component_bios_version = component_entry.get("BiosVersion")
+                component_fw_version = component_entry.get("FirmwareVersion")
+                component_slot = component_entry.get("SlotId")
+                component_port = component_entry.get("PortId")
 
-                    firmware_entries.append({
-                        "id": f"{component_type}_Port_{component_id}",
-                        "name": f"{component_name}",
-                        "version": f"{component_fw_version} (BIOS: {component_bios_version})",
-                        "location": f"{component_location} {component_slot}/{component_port}"
-                    })
+                firmware_entries.append({
+                    "id": f"{component_type}_Port_{component_id}",
+                    "name": f"{component_name}",
+                    "version": f"{component_fw_version} (BIOS: {component_bios_version})",
+                    "location": f"{component_location} {component_slot}/{component_port}"
+                })
 
-            if component_fw_data.get("Adapters") is not None and len(component_fw_data.get("Adapters")) > 0:
+            component_id = 0
+            for component_entry in component_fw_data.get("Adapters", list()):
+                component_id += 1
 
-                component_id = 0
-                for component_entry in component_fw_data.get("Adapters"):
-                    component_id += 1
+                component_name = component_entry.get("ModuleName")
+                component_pci_segment = component_entry.get("PciSegment")
+                component_bios_version = component_entry.get("BiosVersion")
+                component_fw_version = component_entry.get("FirmwareVersion")
 
-                    component_name = component_entry.get("ModuleName")
-                    component_pci_segment = component_entry.get("PciSegment")
-                    component_bios_version = component_entry.get("BiosVersion")
-                    component_fw_version = component_entry.get("FirmwareVersion")
-
-                    firmware_entries.append({
-                        "id": f"{component_type}_Adapter_{component_id}",
-                        "name": f"{component_name} controller",
-                        "version": f"{component_fw_version} (BIOS: {component_bios_version})",
-                        "location": f"{system_id_num}:{component_pci_segment}"
-                    })
+                firmware_entries.append({
+                    "id": f"{component_type}_Adapter_{component_id}",
+                    "name": f"{component_name} controller",
+                    "version": f"{component_fw_version} (BIOS: {component_bios_version})",
+                    "location": f"{system_id_num}:{component_pci_segment}"
+                })
 
     # add firmware entry to inventory
     for fw_entry in firmware_entries:
@@ -307,11 +330,17 @@ def get_firmware_info_generic(plugin_object):
 
     firmware_response = plugin_object.rf.get(redfish_url)
 
+    if firmware_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+
     # older Cisco CIMC versions reported Firmware inventory in a different fashion
     if plugin_object.rf.vendor == "Cisco":
         if firmware_response.get("@odata.id") is None:
             redfish_url = f"/redfish/v1/UpdateService/{plugin_object.rf.vendor_data.expand_string}"
             firmware_response = plugin_object.rf.get(redfish_url)
+            if firmware_response.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+
         if firmware_response.get("FirmwareInventory") is not None:
             firmware_response["Members"] = firmware_response.get("FirmwareInventory")
 
@@ -321,6 +350,10 @@ def get_firmware_info_generic(plugin_object):
             firmware_entry = firmware_member
         else:
             firmware_entry = plugin_object.rf.get(firmware_member.get("@odata.id"))
+
+            if firmware_entry.get("error"):
+                plugin_object.add_data_retrieval_error(Firmware, firmware_entry, firmware_member.get("@odata.id"))
+                continue
 
         # get name and id
         component_name = firmware_entry.get("Name")
@@ -367,9 +400,6 @@ def get_firmware_info_generic(plugin_object):
             firmware_inventory.source_data = firmware_entry
 
         plugin_object.inventory.add(firmware_inventory)
-
-    if firmware_response.get("error"):
-        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
 
     return
 

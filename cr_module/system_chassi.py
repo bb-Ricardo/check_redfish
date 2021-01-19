@@ -7,6 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+from cr_module.classes import plugin_status_types
 from cr_module.classes.inventory import System, Chassi
 from cr_module.common import get_status_data, grab
 
@@ -34,6 +35,8 @@ def get_system_info(plugin_object):
 
 def get_single_system_info(plugin_object, redfish_url):
     system_response = plugin_object.rf.get(redfish_url)
+
+    system_id = redfish_url.rstrip("/").split("/")[-1]
 
     if system_response is None:
         plugin_object.inventory.add_issue(System, f"No system information data returned for API URL '{redfish_url}'")
@@ -100,9 +103,8 @@ def get_single_system_info(plugin_object, redfish_url):
     system_health_print_status = \
         "CRITICAL" if system_inventory.health_status not in ["OK", "WARNING"] else system_inventory.health_status
 
-    plugin_object.add_output_data(system_health_print_status, status_text, summary=not plugin_object.cli_args.detailed)
-
     # add DellSensorCollection if present
+    dell_sensors = list()
     if plugin_object.rf.vendor == "Dell":
 
         dell_empty_slots = list()
@@ -138,31 +140,54 @@ def get_single_system_info(plugin_object, redfish_url):
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
 
-                    # skip DIMM status for systems without DELL slot collection
-                    if dell_slot_collection is None and "DIMM" in dell_sensor.get('ElementName'):
-                        continue
+                    # skip unknown DIMM and CPU status for systems without DELL slot collection
+                    if dell_slot_collection is None:
+                        if dell_sensor.get('CurrentState') == dell_sensor.get('HealthState') and \
+                                dell_sensor.get('HealthState').upper() == "UNKNOWN":
+                            continue
 
                     num_members += 1
 
                     this_sensor_status = "OK"
 
                     if dell_sensor.get('EnabledState') == "Enabled":
-                        if "Warning" in dell_sensor.get('HealthState'):
+                        if "WARNING" in dell_sensor.get('HealthState').upper():
                             this_sensor_status = "WARNING"
                         elif dell_sensor.get('HealthState') != "OK":
                             this_sensor_status = "CRITICAL"
 
-                    plugin_object.add_output_data(this_sensor_status, 'Sensor "%s": %s (%s/%s)' % (
+                    dell_sensors.append({this_sensor_status: 'Sensor "%s": %s (%s/%s)' % (
                         dell_sensor.get('ElementName'),
                         dell_sensor.get('HealthState'),
                         dell_sensor.get('EnabledState'),
                         dell_sensor.get('CurrentState')
-                    ))
+                    )})
+
+        # get the most severe state from system and sensors
+        if len(dell_sensors) > 0:
+            dell_sensor_states = [k for d in dell_sensors for k in d]
+            system_health_print_status = \
+                plugin_object.return_highest_status(dell_sensor_states + [system_health_print_status])
 
             if plugin_object.cli_args.detailed is False:
-                plugin_object.add_output_data(system_health_print_status,
-                                              f"{status_text} - {num_members} health sensors are in 'OK' state",
-                                              summary=True)
+                dell_sensor_text = list()
+                for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
+                    state_count = dell_sensor_states.count(status_type_name)
+                    if state_count == 1:
+                        dell_sensor_text.append(f"{state_count} health sensor in '{status_type_name}' state")
+                    elif state_count > 1:
+                        dell_sensor_text.append(f"{state_count} health sensors are in '{status_type_name}' state")
+
+                status_text += " - " + ", ".join(dell_sensor_text)
+
+    plugin_object.add_output_data(system_health_print_status, status_text,
+                                  summary=not plugin_object.cli_args.detailed,
+                                  location=f"System {system_id}")
+
+    if plugin_object.cli_args.detailed is True and plugin_object.rf.vendor == "Dell" and len(dell_sensors) > 0:
+        for dell_sensor in dell_sensors:
+            for status, sensor in dell_sensor.items():
+                plugin_object.add_output_data(status, sensor, location=f"System {system_id}")
 
     if plugin_object.cli_args.detailed is True:
 
@@ -170,7 +195,8 @@ def get_single_system_info(plugin_object, redfish_url):
         if plugin_object.rf.vendor == "HPE":
             plugin_object.add_output_data("OK", "%s - FW: %s" %
                                           (plugin_object.rf.vendor_data.ilo_version,
-                                           plugin_object.rf.vendor_data.ilo_firmware_version))
+                                           plugin_object.rf.vendor_data.ilo_firmware_version),
+                                          location=f"System {system_id}")
         # add SDCard status
         if plugin_object.rf.vendor == "Fujitsu":
             sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
@@ -182,7 +208,7 @@ def get_single_system_info(plugin_object, redfish_url):
 
                 status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
                 plugin_object.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status,
-                                              status_text)
+                                              status_text, location=f"System {system_id}")
 
     return
 

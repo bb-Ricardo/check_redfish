@@ -537,7 +537,7 @@ def get_system_nics(plugin_object, redfish_url):
         status_text += f"link: {port_inventory_item.link_status}"
 
         plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
-                                      status_text)
+                                      status_text, location=f"System {system_id}")
 
     adapter_inventory = plugin_object.inventory.get(NetworkAdapter)
     port_inventory = plugin_object.inventory.get(NetworkPort)
@@ -568,7 +568,7 @@ def get_system_nics(plugin_object, redfish_url):
         status_text = f"Adapter {adapter_name} (FW: {network_adapter.firmware}) status: {adapter_status}"
 
         plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
-                                      status_text)
+                                      status_text, location=f"System {system_id}")
 
         for network_port in port_inventory:
             if str(network_port.adapter_id) == str(network_adapter.id):
@@ -583,6 +583,7 @@ def get_system_nics(plugin_object, redfish_url):
                                                           f"returned for API URL '{network_adapter_path}'")
     if num_adapters + num_ports > 0:
         plugin_object.add_output_data("OK", f"All network adapter ({num_adapters}) and "
-                                            f"ports ({num_ports}) are in good condition", summary=True)
+                                            f"ports ({num_ports}) are in good condition",
+                                      summary=True, location=f"System {system_id}")
 
     return

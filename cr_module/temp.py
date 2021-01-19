@@ -21,6 +21,10 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
     thermal_data = plugin_object.rf.get_view(redfish_url)
 
+    if thermal_data.get("error"):
+        plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)
+        return
+
     default_text = ""
     temp_num = 0
     if "Temperatures" in thermal_data:
@@ -110,16 +114,18 @@ def get_single_chassi_temp(plugin_object, redfish_url):
             status_text = f"Temp sensor {temp_inventory.name} status is: " \
                           f"{status} (%.1f °C) (max: {critical_temp_text} °C)" % current_temp
 
-            plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text)
+            plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
+                                          location=f"Chassi {chassi_id}")
 
             plugin_object.add_perf_data(f"temp_{temp_inventory.name}", float(current_temp), warning=warning_temp,
-                                        critical=critical_temp)
+                                        critical=critical_temp, location=f"Chassi {chassi_id}")
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"
     else:
-        plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)
+        default_text = "no temp sensors detected"
+        plugin_object.inventory.add_issue(Temperature, f"No temp sensor data returned for API URL '{redfish_url}'")
 
-    plugin_object.add_output_data("OK", default_text, summary=True)
+    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
     return
 

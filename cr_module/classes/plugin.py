@@ -24,6 +24,7 @@ class PluginData:
     __perf_data = list()
     __output_data = dict()
     __log_output_data = dict()
+    __summary_data = dict()
     __return_status = "OK"
     __current_command = "global"
 
@@ -82,10 +83,7 @@ class PluginData:
         self.add_output_data("UNKNOWN", text, summary=not self.cli_args.detailed)
         self.do_exit()
 
-    def set_current_command(self, current_command=None):
-
-        if current_command is None:
-            raise Exception("current_command not set")
+    def set_current_command(self, current_command):
 
         self.__current_command = current_command
 
@@ -101,39 +99,49 @@ class PluginData:
         if plugin_status_types[state] > plugin_status_types[self.__return_status]:
             self.__return_status = state
 
-    def add_output_data(self, state=None, text=None, summary=False):
+    @staticmethod
+    def return_highest_status(status_list):
 
-        if state is None:
-            raise Exception("state not set")
+        if not isinstance(status_list, list):
+            raise ValueError("'status_list' must be of type list")
 
-        if text is None:
-            raise Exception("text not set")
+        status_list = list(set(status_list))
+        if None in status_list:
+            status_list.remove(None)
+
+        if len(status_list) == 0:
+            return
+
+        status_list = list(set(status_list))
+
+        return_status = status_list[0]
+
+        for status in status_list:
+            if status is None:
+                continue
+
+            if plugin_status_types[status] > plugin_status_types[return_status]:
+                return_status = status
+
+        return return_status
+
+    def add_output_data(self, state, text, summary=False, location=None):
 
         self.set_status(state)
 
+        status_data_entry = {
+            "state": state,
+            "text": text,
+            "location": location,
+            "summary": summary
+        }
+
         if self.__output_data.get(self.__current_command) is None:
-            self.__output_data[self.__current_command] = dict()
-            self.__output_data[self.__current_command]["issues_found"] = False
+            self.__output_data[self.__current_command] = list()
 
-        if summary is True:
-            self.__output_data[self.__current_command]["summary"] = text
-            self.__output_data[self.__current_command]["summary_state"] = state
-        else:
-            if self.__output_data[self.__current_command].get(state) is None:
-                self.__output_data[self.__current_command][state] = list()
+        self.__output_data[self.__current_command].append(status_data_entry)
 
-            if state != "OK":
-                self.__output_data[self.__current_command]["issues_found"] = True
-
-            self.__output_data[self.__current_command][state].append(text)
-
-    def add_log_output_data(self, state=None, text=None):
-
-        if state is None:
-            raise Exception("state not set")
-
-        if text is None:
-            raise Exception("text not set")
+    def add_log_output_data(self, state, text):
 
         self.set_status(state)
 
@@ -147,17 +155,11 @@ class PluginData:
             }
         )
 
-    def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None):
-
-        if name is None:
-            raise Exception("option name for perf data not set")
-
-        if value is None:
-            raise Exception("option name for perf data not set")
+    def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None, location=None):
 
         perf_string = "'%s'=%s" % (name.replace(" ", "_"), value)
 
-        if perf_uom:
+        if perf_uom is not None:
             perf_string += perf_uom
 
         if critical is not None and warning is None:
@@ -186,20 +188,53 @@ class PluginData:
 
         return_text = list()
 
-        for command, _ in self.__output_data.items():
+        for command in self.__output_data.keys():
 
-            if self.__output_data[command].get("issues_found") is False and self.cli_args.detailed is False:
-                return_text.append("[%s]: %s" % (
-                    self.__output_data[command].get("summary_state"), self.__output_data[command].get("summary")))
+            # get state of non summary entries
+            non_summary_states = [x.get("state") for x in self.__output_data[command] if x['summary'] is False]
+
+            if len(non_summary_states) == 0:
+                non_summary_states.append("OK")
+
+            if self.return_highest_status(non_summary_states) == "OK" and self.cli_args.detailed is False:
+                summary_locations = [x.get("location") for x in self.__output_data[command] if x['summary'] is True]
+                summary_return_status = self.return_highest_status(
+                    [x.get("state") for x in self.__output_data[command] if x['summary'] is True]
+                )
+
+                if None in summary_locations:
+                    summary_locations.remove(None)
+
+                summary_text_list = list()
+                if len(set(summary_locations)) > 1:
+                    for entry in [x for x in self.__output_data[command] if x['summary'] is True]:
+                        summary_text_list.append("%s: %s" % (entry.get("location"), entry.get("text")))
+                else:
+                    summary_text_list = [x.get("text") for x in self.__output_data[command] if x['summary'] is True]
+
+                return_text.append(f"[{summary_return_status}]: %s" % ", ".join(summary_text_list))
+
             else:
+                entry_locations = [x.get("location") for x in self.__output_data[command] if x['summary'] is False]
+
                 for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
 
-                    if self.__output_data[command].get(status_type_name) is None:
+                    entry_list = [x for x in self.__output_data[command]
+                                  if x['summary'] is False and x["state"] == status_type_name]
+
+                    if len(entry_list) == 0:
                         continue
 
-                    for data_output in self.__output_data[command].get(status_type_name):
-                        if status_type_name != "OK" or self.cli_args.detailed is True:
-                            return_text.append("[%s]: %s" % (status_type_name, data_output))
+                    if None in entry_locations:
+                        entry_locations.remove(None)
+
+                    for entry in entry_list:
+                        if entry.get("state") != "OK" or self.cli_args.detailed is True:
+                            entry_text = entry.get("text")
+                            if len(set(entry_locations)) > 1:
+                                entry_text = "%s: %s" % (entry.get("location"), entry_text)
+
+                            return_text.append("[%s]: %s" % (entry.get("state"), entry_text))
 
         # add data from log commands
         for command, log_entries in self.__log_output_data.items():
@@ -261,7 +296,7 @@ class PluginData:
                     with open(self.inventory_file, 'w') as writer:
                         writer.write(inventory_json)
                 except Exception as e:
-                    self.set_state("UNKNOWN")
+                    self.set_status("UNKNOWN")
                     return_text = f"[UNKNOWN]: Unable to write to inventory file: {e}"
                     return_state = self.get_return_status(True)
                 else:

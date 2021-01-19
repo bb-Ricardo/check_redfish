@@ -20,7 +20,10 @@ def get_single_chassi_fan(plugin_object, redfish_url):
 
     thermal_data = plugin_object.rf.get_view(redfish_url)
 
-    default_text = ""
+    if thermal_data.get("error"):
+        plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
+        return
+
     fan_num = 0
     if "Fans" in thermal_data:
         for fan in thermal_data.get("Fans"):
@@ -72,6 +75,7 @@ def get_single_chassi_fan(plugin_object, redfish_url):
             fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("RelatedItem"))
 
             perf_units = ""
+            text_speed = ""
 
             # DELL, Fujitsu, Huawei
             if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
@@ -89,7 +93,8 @@ def get_single_chassi_fan(plugin_object, redfish_url):
                     text_units = "%"
                     perf_units = "%"
 
-            text_speed = f" ({fan_inventory.reading}{text_units})"
+            if fan_inventory.reading is not None:
+                text_speed = f" ({fan_inventory.reading}{text_units})"
 
             plugin_object.inventory.add(fan_inventory)
 
@@ -101,19 +106,24 @@ def get_single_chassi_fan(plugin_object, redfish_url):
 
             fan_num += 1
 
-            status_text = f"Fan '{fan_inventory.name}'{text_speed} status is: {fan_status}"
+            fan_name = fan_inventory.name
+            if fan_name.lower().startswith("fan"):
+                fan_name = fan_name[3:].strip()
+
+            status_text = f"Fan '{fan_name}'{text_speed} status is: {fan_status}"
 
             plugin_object.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
-                                          status_text)
+                                          status_text,  location=f"Chassi {chassi_id}")
 
             if fan_inventory.reading is not None:
                 plugin_object.add_perf_data(f"Fan_{fan_inventory.name}", int(fan_inventory.reading),
                                             perf_uom=perf_units, warning=plugin_object.cli_args.warning,
-                                            critical=plugin_object.cli_args.critical)
+                                            critical=plugin_object.cli_args.critical, location=f"Chassi {chassi_id}")
 
         default_text = f"All fans ({fan_num}) are in good condition"
     else:
-        plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
+        default_text = "no FAN detected"
+        plugin_object.inventory.add_issue(Fan, f"No FAN data returned for API URL '{redfish_url}'")
 
     # get FanRedundancy status
     fan_redundancies = thermal_data.get("FanRedundancy") or thermal_data.get("Redundancy")
@@ -130,12 +140,12 @@ def get_single_chassi_fan(plugin_object, redfish_url):
                 status_text = "fan redundancy status is: %s" % fr_status.get("State")
 
                 plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text[0].upper() + status_text[1:])
+                                              status_text[0].upper() + status_text[1:], location=f"Chassi {chassi_id}")
 
         if len(status_text) != 0:
             default_text += f" and {status_text}"
 
-    plugin_object.add_output_data("OK", default_text, summary=True)
+    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
     return plugin_object
 

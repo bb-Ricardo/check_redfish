@@ -98,7 +98,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     else:
         bmc_status = "UNKNOWN"
 
-    plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text)
+    plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text,
+                                  location=f"Manager {manager_inventory.id}")
 
     # BMC Network interfaces
     manager_nic_response = None
@@ -109,8 +110,11 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     else:
         manager_nics_link = grab(manager_response, "EthernetInterfaces/@odata.id", separator="/")
         if manager_nics_link is not None:
-            manager_nic_response = plugin_object.rf.get(
-                f"{manager_nics_link}{plugin_object.rf.vendor_data.expand_string}")
+            redfish_url = f"{manager_nics_link}{plugin_object.rf.vendor_data.expand_string}"
+            manager_nic_response = plugin_object.rf.get(redfish_url)
+
+            if manager_nic_response.get("error"):
+                plugin_object.add_data_retrieval_error(NetworkPort, manager_nic_response, redfish_url)
 
     if manager_nic_response is not None:
 
@@ -130,6 +134,11 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                     manager_nic = manager_nic_member
                 else:
                     manager_nic = plugin_object.rf.get(manager_nic_member.get("@odata.id"))
+
+                    if manager_nic.get("error"):
+                        plugin_object.add_data_retrieval_error(NetworkPort, manager_nic,
+                                                               manager_nic_member.get("@odata.id"))
+                        continue
 
                 status_data = get_status_data(manager_nic.get("Status"))
 
@@ -217,7 +226,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                                    f"autoneg: {autoneg}, duplex: {duplex}) status: {nic_status}"
 
                 plugin_object.add_output_data("CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status,
-                                              nic_status_text)
+                                              nic_status_text, location=f"Manager {manager_inventory.id}")
 
     # get vendor information
     vendor_data = grab(manager_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
@@ -236,26 +245,28 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         fod_link = grab(vendor_data, "FoD/@odata.id", separator="/")
 
         if fod_link is not None:
-            fod_data = plugin_object.rf.get(f"{fod_link}/Keys{plugin_object.rf.vendor_data.expand_string}")
+            fod_url = f"{fod_link}/Keys{plugin_object.rf.vendor_data.expand_string}"
+            fod_data = plugin_object.rf.get(fod_url)
 
-            if fod_data.get("Members") is None or len(fod_data.get("Members")) > 0:
+            if fod_data.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, fod_data, fod_url)
 
-                for fod_member in fod_data.get("Members"):
-                    if manager_nic_member is not None and manager_nic_member.get("@odata.context"):
-                        licenses_data = fod_member
-                    else:
-                        licenses_data = plugin_object.rf.get(fod_member.get("@odata.id"))
+            for fod_member in fod_data.get("Members", list()):
+                if manager_nic_member is not None and manager_nic_member.get("@odata.context"):
+                    licenses_data = fod_member
+                else:
+                    licenses_data = plugin_object.rf.get(fod_member.get("@odata.id"))
 
-                    lic_status = licenses_data.get("Status")  # valid
-                    lic_expire_date = licenses_data.get("Expires")  # NO CONSTRAINTS
-                    lic_description = licenses_data.get("Description")
+                lic_status = licenses_data.get("Status")  # valid
+                lic_expire_date = licenses_data.get("Expires")  # NO CONSTRAINTS
+                lic_description = licenses_data.get("Description")
 
-                    license_string = f"{lic_description}"
-                    if lic_expire_date != "NO CONSTRAINTS":
-                        license_string += " (expires: {lic_expire_date}"
+                license_string = f"{lic_description}"
+                if lic_expire_date != "NO CONSTRAINTS":
+                    license_string += " (expires: {lic_expire_date}"
 
-                    license_string += f" Status: {lic_status}"
-                    bmc_licenses.append(license_string)
+                license_string += f" Status: {lic_status}"
+                bmc_licenses.append(license_string)
 
     elif plugin_object.rf.vendor == "Fujitsu":
 
@@ -266,10 +277,16 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if irmc_configuration_link is not None:
             irmc_configuration = plugin_object.rf.get(irmc_configuration_link)
 
+            if irmc_configuration.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, irmc_configuration, irmc_configuration_link)
+
         license_information = None
         license_information_link = grab(irmc_configuration, f"Licenses/@odata.id", separator="/")
         if license_information_link is not None:
             license_information = plugin_object.rf.get(license_information_link)
+
+            if license_information.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, license_information, license_information_link)
 
         if license_information is not None and license_information.get("Keys@odata.count") > 0:
             for bmc_license in license_information.get("Keys"):
@@ -282,12 +299,15 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if ibmc_license_link is not None and len(ibmc_license_link) > 0:
             ibmc_lic = plugin_object.rf.get(ibmc_license_link.get("@odata.id"))
 
+            if ibmc_lic.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, ibmc_lic, ibmc_license_link.get("@odata.id"))
+
             bmc_licenses.append("%s (%s)" % (ibmc_lic.get("InstalledStatus"), ibmc_lic.get("LicenseClass")))
 
     manager_inventory.licenses = bmc_licenses
 
     for bmc_license in bmc_licenses:
-        plugin_object.add_output_data("OK", f"License: {bmc_license}")
+        plugin_object.add_output_data("OK", f"License: {bmc_license}", location=f"Manager {manager_inventory.id}")
 
     # HP ILO specific stuff
     if plugin_object.rf.vendor == "HPE":
@@ -312,7 +332,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                 self_test_status_text = f"SelfTest {self_test_name} status: {self_test_status}"
 
             plugin_object.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status,
-                                          self_test_status_text)
+                                          self_test_status_text, location=f"Manager {manager_inventory.id}")
 
     # Lenovo specific stuff
     if plugin_object.rf.vendor == "Lenovo":
@@ -322,6 +342,9 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if redfish_chassi_url is not None:
             chassi_response = plugin_object.rf.get(redfish_chassi_url)
 
+            if chassi_response.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, chassi_response, redfish_chassi_url)
+
         located_data = grab(chassi_response, f"Oem.{plugin_object.rf.vendor_dict_key}.LocatedIn")
 
         if located_data is not None:
@@ -330,7 +353,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
             system_name_string = f"System name: {descriptive_name} ({rack})"
             if plugin_object.cli_args.detailed:
-                plugin_object.add_output_data("OK", system_name_string)
+                plugin_object.add_output_data("OK", system_name_string, location=f"Manager {manager_inventory.id}")
             else:
                 status_text += f" {system_name_string}"
 
@@ -339,7 +362,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
         for bmc_firmware in get_firmware_info_fujitsu(plugin_object, redfish_url, True):
             plugin_object.add_output_data("OK",
-                                          "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")))
+                                          "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")),
+                                          location=f"Manager {manager_inventory.id}")
 
     # get Huawei Server location data
     if plugin_object.rf.vendor == "Huawei":
@@ -349,12 +373,12 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
             location_string = f"Location: {ibmc_location}"
             if plugin_object.cli_args.detailed:
-                plugin_object.add_output_data("OK", location_string)
+                plugin_object.add_output_data("OK", location_string, location=f"Manager {manager_inventory.id}")
             else:
                 status_text += f" {location_string}"
 
     plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text,
-                                  summary=True)
+                                  summary=True, location=f"Manager {manager_inventory.id}")
 
     return
 
