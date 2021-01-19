@@ -160,6 +160,20 @@ class RedfishConnection:
 
         return sessionfilepath
 
+    def fix_session_file_mode(self):
+
+        desired_session_file_mode = 0o600
+        try:
+            session_file_mode = oct(os.stat(self.session_file_path).st_mode & 0o777)
+        except BaseException:
+            return
+
+        if session_file_mode != desired_session_file_mode:
+            try:
+                os.chmod(self.session_file_path, desired_session_file_mode)
+            except BaseException:
+                return
+
     def restore_session_from_file(self):
 
         if self.session_file_path is None:
@@ -194,6 +208,8 @@ class RedfishConnection:
             self.connection._timeout = self.cli_args.timeout
 
         self.session_was_restored = True
+
+        self.fix_session_file_mode()
 
         return
 
@@ -242,6 +258,8 @@ class RedfishConnection:
         # restore connection object
         self.connection._conn = connection_socket
         self.connection._conn_count = connection_socket_count
+
+        self.fix_session_file_mode()
 
         return
 
