@@ -838,7 +838,12 @@ def get_storage_generic(plugin_object, system):
                     if controller_inventory.health_status is not None:
                         storage_status_list.append(controller_inventory.health_status)
 
-                    storage_controller_names_list.append(f"{controller_inventory.name} {controller_inventory.model}")
+                    controller_name = controller_inventory.name
+                    if controller_inventory.name != controller_inventory.model:
+                        controller_name += f" {controller_inventory.model}"
+
+                    storage_controller_names_list.append(controller_name)
+
                     storage_controller_id_list.append(controller_response.get("@odata.id"))
 
                     if controller_inventory.location is None:
@@ -846,7 +851,7 @@ def get_storage_generic(plugin_object, system):
                     else:
                         location_string = f"{controller_inventory.location} "
 
-                    status_text = f"{controller_inventory.name} {controller_inventory.model} {location_string}" \
+                    status_text = f"{controller_name} {location_string}" \
                                   f"(FW: {controller_inventory.firmware}) " \
                                   f"status is: {controller_inventory.health_status}"
 
@@ -940,9 +945,18 @@ def get_storage_generic(plugin_object, system):
                         continue
 
                 # this controller has already been checked
+                skip_controller = False
                 if simple_storage_controller_response.get("@odata.id") in storage_controller_id_list or \
                         simple_storage_controller_response.get("Id") in \
                         [x.id for x in plugin_object.inventory.get(StorageController)]:
+                    skip_controller = True
+
+                if plugin_object.rf.vendor == "Dell":
+                    for storage_controller_item in plugin_object.inventory.get(StorageController):
+                        if storage_controller_item.id.startswith(simple_storage_controller_response.get("Id")):
+                            skip_controller = True
+
+                if skip_controller is True:
                     continue
 
                 status_data = get_status_data(simple_storage_controller_response.get("Status"))
@@ -967,14 +981,14 @@ def get_storage_generic(plugin_object, system):
                 if simple_storage_controller_response.get("Devices") is not None and len(
                         simple_storage_controller_response.get("Devices")) > 0:
 
-                    if controller_inventory.health_status is not None:
-                        storage_status_list.append(controller_inventory.health_status)
+                    status = get_component_status(controller_inventory.health_status)
 
-                    storage_controller_names_list.append(f"{controller_inventory.name}")
+                    storage_status_list.append(status)
+
+                    storage_controller_names_list.append(controller_inventory.name)
 
                     status_text = f"{controller_inventory.name} status: {controller_inventory.health_status}"
-                    plugin_object.add_output_data(get_component_status(controller_inventory), status_text,
-                                                  location=f"System {system_id}")
+                    plugin_object.add_output_data(status, status_text, location=f"System {system_id}")
 
                     disk_id = 0
                     enclosure_id = 0
@@ -1075,6 +1089,9 @@ def get_storage_generic(plugin_object, system):
     condensed_volume_status = plugin_object.return_highest_status(volume_status_list)
     condensed_enclosure_status = plugin_object.return_highest_status(enclosure_status_list)
 
+    # remove duplicate entries
+    storage_controller_names_list = list(set(storage_controller_names_list))
+
     if len(storage_controller_names_list) == 0 and len(system_drives_list) == 0:
         plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
                                       summary=not plugin_object.cli_args.detailed, location=f"System {system_id}")
@@ -1090,7 +1107,7 @@ def get_storage_generic(plugin_object, system):
         elif len(storage_controller_names_list) != 0 and len(system_drives_list) == 0:
 
             storage_summary_status = "All storage controllers (%s) are in good condition (No system drives found)" % (
-                ", ".join(storage_controller_names_list))
+                ", ".join(storage_controller_names_list)).replace(" Series Chipset Family", "")
 
             plugin_object.add_output_data(get_component_status(condensed_storage_status), storage_summary_status,
                                           summary=True, location=f"System {system_id}")
@@ -1100,7 +1117,7 @@ def get_storage_generic(plugin_object, system):
 
             if condensed_summary_status == "OK":
                 summary_status = "All storage controllers (%s), volumes and disk drives are in good condition" % (
-                    ", ".join(storage_controller_names_list))
+                    ", ".join(storage_controller_names_list)).replace(" Series Chipset Family", "")
             else:
                 summary_status = "One or more storage components report an issue"
 
