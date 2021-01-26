@@ -483,8 +483,13 @@ def get_storage_generic(plugin_object, system):
 
         physical_location = grab(drive_response, "PhysicalLocation.PartLocation")
         if bay is None and physical_location is not None:
-            if physical_location.get("LocationType") == "Slot":
+            if physical_location.get("LocationType") in ["Slot", "Bay"]:
                 bay = physical_location.get("LocationOrdinalValue")
+
+        location = \
+            grab(drive_response, "Location.0.Info") or \
+            grab(drive_response, "PhysicalLocation.0.Info") or \
+            grab(drive_response, "PhysicalLocation.Info")
 
         interface_speed = None
         if drive_response.get("NegotiatedSpeedGbs") is not None:
@@ -508,7 +513,7 @@ def get_storage_generic(plugin_object, system):
             manufacturer=drive_response.get("Manufacturer"),
             firmware=drive_response.get("FirmwareVersion") or drive_response.get("Revision"),
             serial=drive_response.get("SerialNumber"),
-            location=grab(drive_response, "Location.0.Info") or grab(drive_response, "PhysicalLocation.0.Info"),
+            location=location,
             type=drive_response.get("MediaType"),
             speed_in_rpm=drive_response.get("RotationalSpeedRpm") or drive_response.get("RotationSpeedRPM"),
             failure_predicted=drive_response.get("FailurePredicted"),
@@ -602,7 +607,7 @@ def get_storage_generic(plugin_object, system):
 
                 if plugin_object.rf.vendor in ["Fujitsu", "Lenovo"]:
                     raid_level = oem_data.get("RaidLevel")
-                    volume_name = oem_data.get("Name")
+                    volume_name = oem_data.get("Name") or name
 
                 if plugin_object.rf.vendor == "Cisco":
                     volume_state = oem_data.get("VolumeState")
@@ -795,6 +800,15 @@ def get_storage_generic(plugin_object, system):
                             backup_power_present = True
                         if controller_oem_data.get("BackupUnit") is not None:
                             backup_power_present = True
+                        if controller_oem_data.get("Battery") is not None:
+                            backup_power_present = True
+
+                    if plugin_object.rf.vendor == "Dell" and cache_size_in_mb is None:
+                        cache_size_in_mb = grab(controller_response,
+                                                f"Oem.{plugin_object.rf.vendor_dict_key}.DellController.CacheSizeInMB")
+
+                    if cache_size_in_mb is None:
+                        cache_size_in_mb = grab(storage_controller, f"CacheSummary.TotalCacheSizeMiB")
 
                     # Cisco
                     if controller_response.get("Id") is None:
@@ -863,7 +877,7 @@ def get_storage_generic(plugin_object, system):
                         cap_model = controller_oem_data.get("CapacitanceName")
                         cap_status = get_status_data(controller_oem_data.get("CapacitanceStatus")).get("Health")
                         controller_inventory.backup_power_health = cap_status
-                        cap_fault_details = controller_oem_data.get("CapacitanceStatus").get("FaultDetails")
+                        cap_fault_details = grab(controller_oem_data, "CapacitanceStatus.FaultDetails")
 
                         cap_status_text = f"Controller capacitor ({cap_model}) status: {cap_status}"
 
@@ -872,6 +886,42 @@ def get_storage_generic(plugin_object, system):
 
                         plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
                                                       cap_status_text, location=f"System {system_id}")
+
+                    # Lenovo
+                    if grab(controller_oem_data, "Battery") is not None:
+                        cap_model = grab(controller_oem_data, "Battery.ProductName")
+                        cap_manufacturer = grab(controller_oem_data, "Battery.Manufacturer")
+                        cap_status = grab(controller_oem_data, "Battery.OperationalStatus").replace("Operational", "OK")
+                        controller_inventory.backup_power_health = cap_status
+                        cap_full_capacity = grab(controller_oem_data, "Battery.DesignCapacity")
+                        cap_remain_capacity = grab(controller_oem_data, "Battery.RemainingCapacity")
+                        cap_voltage = float(int(grab(controller_oem_data, "Battery.VoltageMV")) / 1000)
+
+                        cap_percent = None
+                        if None not in [cap_full_capacity, cap_remain_capacity]:
+                            cap_percent = 100 / int(cap_full_capacity.replace("J", ""))  * \
+                                          int(cap_remain_capacity.replace("J", ""))
+
+                        status_text = f"Controller capacitor ({cap_manufacturer} {cap_model}) " \
+                                      f"(charge level: {cap_percent:.2f}%, " \
+                                      f"Voltage: {cap_voltage:.2f}V) " \
+                                      f"status: {cap_status}"
+
+                        plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
+                                                      status_text, location=f"System {system_id}")
+
+                    # Dell
+                    controller_oem_data = grab(controller_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
+                    if grab(controller_oem_data, "DellControllerBattery") is not None:
+                        cap_name = grab(controller_oem_data, "DellControllerBattery.Name")
+                        cap_status = grab(controller_oem_data, "DellControllerBattery.PrimaryStatus")
+                        controller_inventory.backup_power_health = cap_status
+
+                        status_text = f"{cap_name} Status: {cap_status}"
+
+                        plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
+                                                      status_text, location=f"System {system_id}")
+
             else:
                 status_data = get_status_data(controller_response.get("Status"))
                 controller_inventory = StorageController(

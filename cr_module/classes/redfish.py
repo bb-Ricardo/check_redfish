@@ -463,35 +463,41 @@ class RedfishConnection:
 
             self.vendor_dict_key = vendor_string
 
-            if vendor_string in ["Hpe", "Hp"]:
+        if vendor_string == "" and self.connection.root.get("Vendor") is not None:
 
-                self.vendor_data = VendorHPEData()
+            vendor_string = self.connection.root.get("Vendor")
 
-                manager_data = grab(self.connection.root, f"Oem.{vendor_string}.Manager.0")
+            self.vendor_dict_key = vendor_string
 
-                if manager_data is not None:
-                    self.vendor_data.ilo_hostname = manager_data.get("HostName")
-                    self.vendor_data.ilo_version = manager_data.get("ManagerType")
-                    self.vendor_data.ilo_firmware_version = manager_data.get("ManagerFirmwareVersion")
+        if vendor_string in ["Hpe", "Hp"]:
 
-                    if self.vendor_data.ilo_version.lower() == "ilo 5":
-                        self.vendor_data.view_supported = True
+            self.vendor_data = VendorHPEData()
 
-            if vendor_string in ["Lenovo"]:
+            manager_data = grab(self.connection.root, f"Oem.{vendor_string}.Manager.0")
 
-                self.vendor_data = VendorLenovoData()
+            if manager_data is not None:
+                self.vendor_data.ilo_hostname = manager_data.get("HostName")
+                self.vendor_data.ilo_version = manager_data.get("ManagerType")
+                self.vendor_data.ilo_firmware_version = manager_data.get("ManagerFirmwareVersion")
 
-            if vendor_string in ["Dell"]:
+                if self.vendor_data.ilo_version.lower() == "ilo 5":
+                    self.vendor_data.view_supported = True
 
-                self.vendor_data = VendorDellData()
+        if vendor_string in ["Lenovo"]:
 
-            if vendor_string in ["Huawei"]:
+            self.vendor_data = VendorLenovoData()
 
-                self.vendor_data = VendorHuaweiData()
+        if vendor_string in ["Dell"]:
 
-            if vendor_string in ["ts_fujitsu"]:
+            self.vendor_data = VendorDellData()
 
-                self.vendor_data = VendorFujitsuData()
+        if vendor_string in ["Huawei"]:
+
+            self.vendor_data = VendorHuaweiData()
+
+        if vendor_string in ["ts_fujitsu"]:
+
+            self.vendor_data = VendorFujitsuData()
 
         # Cisco does not provide a OEM property in root object
         if "CIMC" in str(self.get_system_properties("managers")):
