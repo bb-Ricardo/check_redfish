@@ -65,6 +65,7 @@ def get_firmware_info(plugin_object):
         if firmware_inventory.location is not None:
             location = f" ({firmware_inventory.location})"
 
+        name = name.replace("Firmware:", "")
         firmware_status_entries.append({
             "health": firmware_health,
             "firmware": f"{name}{firmware_id}{location}: {firmware_inventory.version}"
@@ -76,6 +77,7 @@ def get_firmware_info(plugin_object):
 
     plugin_object.add_output_data(firmware_health_summary, summary_text, summary=not plugin_object.cli_args.detailed)
 
+    firmware_status_entries = sorted(firmware_status_entries, key=lambda k: k["firmware"])
     if plugin_object.cli_args.detailed is True:
         for entry in firmware_status_entries:
             plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
