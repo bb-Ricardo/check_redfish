@@ -596,6 +596,14 @@ class Inventory(object):
 
         return self.base_structure.get(inventory_key, list())
 
+    def unset(self, class_name=None):
+
+        if class_name not in InventoryItem.__subclasses__():
+            raise AttributeError("'%s' object must be a sub class of '%s'." %
+                                 (class_name.__name__, InventoryItem.__name__))
+
+        self.base_structure[class_name.inventory_item_name] = list()
+
     def to_json(self):
         inventory_content = self.base_structure
 

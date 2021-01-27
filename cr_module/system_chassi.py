@@ -8,8 +8,53 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes import plugin_status_types
-from cr_module.classes.inventory import System, Chassi
+from cr_module.classes.inventory import System, Chassi, Fan, PowerSupply, Temperature, Memory, Processor
 from cr_module.common import get_status_data, grab
+from cr_module.power import get_single_chassi_power
+from cr_module.temp import get_single_chassi_temp
+from cr_module.fan import get_single_chassi_fan
+from cr_module.proc import get_single_system_procs
+from cr_module.mem import get_single_system_mem
+
+
+def get_chassi_data(plugin_object, data_type):
+
+    chassis = plugin_object.rf.get_system_properties("chassis") or list()
+
+    if len(chassis) == 0:
+        plugin_object.inventory.add_issue(data_type, "No 'chassis' property found in root path '/redfish/v1'")
+        return
+
+    for chassi in chassis:
+        if data_type == PowerSupply:
+            get_single_chassi_power(plugin_object, chassi)
+        elif data_type == Temperature:
+            get_single_chassi_temp(plugin_object, chassi)
+        elif data_type == Fan:
+            get_single_chassi_fan(plugin_object, chassi)
+        else:
+            raise AttributeError(f"Unknown data_type used for get_chassi_data(): {type(data_type)}")
+
+    return
+
+
+def get_system_data(plugin_object, data_type):
+
+    systems = plugin_object.rf.get_system_properties("systems") or list()
+
+    if len(systems) == 0:
+        plugin_object.inventory.add_issue(data_type, "No 'systems' property found in root path '/redfish/v1'")
+        return
+
+    for system in systems:
+        if data_type == Processor:
+            get_single_system_procs(plugin_object, system)
+        elif data_type == Memory:
+            get_single_system_mem(plugin_object, system)
+        else:
+            raise AttributeError("Unknown data_type not set for get_system_data(): %s", type(data_type))
+
+    return
 
 
 def get_system_info(plugin_object):

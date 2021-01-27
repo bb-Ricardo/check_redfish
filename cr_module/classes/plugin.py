@@ -27,6 +27,7 @@ class PluginData:
     __summary_data = dict()
     __return_status = "OK"
     __current_command = "global"
+    __in_firmware_collection_mode = False
 
     def __init__(self, cli_args=None, plugin_version=None):
 
@@ -38,6 +39,10 @@ class PluginData:
         self.rf = RedfishConnection(cli_args)
 
         self.inventory = Inventory(plugin_version, cli_args.inventory_id)
+
+    def in_firmware_collection_mode(self, enabled=False):
+
+        self.__in_firmware_collection_mode = True if enabled is True else False
 
     def _validate_inventory_file(self):
 
@@ -89,6 +94,9 @@ class PluginData:
 
     def set_status(self, state):
 
+        if self.__in_firmware_collection_mode is True:
+            return
+
         if self.__return_status == state:
             return
 
@@ -127,6 +135,9 @@ class PluginData:
 
     def add_output_data(self, state, text, summary=False, location=None):
 
+        if self.__in_firmware_collection_mode is True:
+            return
+
         self.set_status(state)
 
         status_data_entry = {
@@ -157,6 +168,9 @@ class PluginData:
 
     def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None, location=None):
 
+        if self.__in_firmware_collection_mode is True:
+            return
+
         perf_string = "'%s'=%s" % (name.replace(" ", "_"), value)
 
         if perf_uom is not None:
@@ -174,6 +188,9 @@ class PluginData:
         self.__perf_data.append(perf_string)
 
     def add_data_retrieval_error(self, class_name, redfish_data=None, redfish_url=None):
+
+        if self.__in_firmware_collection_mode is True:
+            return
 
         if isinstance(redfish_url, str):
             redfish_url = redfish_url.replace("//", "/")
@@ -304,7 +321,7 @@ class PluginData:
                     return_text = "[OK]: Successfully written inventory file"
 
                     if self.get_return_status() == "UNKNOWN":
-                        return_text += " but iventory data might be incomplete"
+                        return_text += " but inventory data might be incomplete"
 
                 print(return_text)
                 exit(return_state)
