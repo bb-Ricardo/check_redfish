@@ -74,7 +74,8 @@ def get_log_entry_time(entry_date=None):
             entry_date_object = datetime.datetime.strptime(entry_date, string_format)
             entry_date_object = entry_date_object.replace(tzinfo=local_timezone)
         except Exception:
-            pass
+            entry_date_object = datetime.datetime.strptime('1970-01-01T00:00:00Z', string_format)
+            entry_date_object = entry_date_object.replace(tzinfo=local_timezone)
 
     return entry_date_object
 
