@@ -40,6 +40,7 @@ class RedfishConnection:
     vendor_dict_key = None
     vendor_data = None
     cli_args = None
+    desired_session_file_mode = 0o600
 
     def __init__(self, cli_args=None):
 
@@ -117,7 +118,8 @@ class RedfishConnection:
 
     def get_session_file_name(self):
 
-        default_session_file_prefix = "check_redfish_"
+        os.getuid() # add this to the session file
+        default_session_file_prefix = "check_redfish"
         default_session_file_suffix = ".session"
 
         if self.cli_args.sessionfiledir:
@@ -145,12 +147,38 @@ class RedfishConnection:
             self.exit_on_error("Error writing to session file directory: %s" % session_file_dir)
 
         # get full path to session file
+        # also try to migrate from "older" session file naming schema
+        old_sessionfilename = None
         if self.cli_args.sessionfile:
             sessionfilename = self.cli_args.sessionfile
         else:
-            sessionfilename = default_session_file_prefix + self.cli_args.host
+            try:
+                current_user_id = os.getuid()
+            except Exception as e:
+                current_user_id = None
+
+            if current_user_id is not None:
+                sessionfilename = f"{default_session_file_prefix}_{current_user_id}_{self.cli_args.host}"
+                old_sessionfilename = f"{default_session_file_prefix}_{self.cli_args.host}"
+            else:
+                sessionfilename = f"{default_session_file_prefix}_{self.cli_args.host}"
 
         sessionfilepath = os.path.normpath(session_file_dir) + os.sep + sessionfilename + default_session_file_suffix
+
+        # try to migrate
+        if old_sessionfilename is not None:
+            old_sessionfilepath = os.path.normpath(session_file_dir) + os.sep + old_sessionfilename + \
+                                  default_session_file_suffix
+
+            if not os.path.exists(sessionfilepath) and os.path.exists(old_sessionfilepath):
+
+                # move session file
+                try:
+                    os.rename(old_sessionfilepath, sessionfilepath)
+
+                # fail silently and create a new file with a new session
+                except Exception as e:
+                    pass
 
         if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.R_OK):
             self.exit_on_error("Got no permission to read existing session file: %s" % sessionfilepath)
@@ -160,26 +188,18 @@ class RedfishConnection:
 
         return sessionfilepath
 
-    def fix_session_file_mode(self):
-
-        desired_session_file_mode = 0o600
-        try:
-            session_file_mode = oct(os.stat(self.session_file_path).st_mode & 0o777)
-        except BaseException:
-            return
-
-        if session_file_mode != desired_session_file_mode:
-            try:
-                os.chmod(self.session_file_path, desired_session_file_mode)
-            except BaseException:
-                return
-
     def restore_session_from_file(self):
 
         if self.session_file_path is None:
             raise Exception("sessionfilepath not set.")
 
         try:
+            # try to fix file mode before opening the file
+            session_file_mode = oct(os.stat(self.session_file_path).st_mode & 0o777)
+            if session_file_mode != self.desired_session_file_mode:
+                os.chmod(self.session_file_path, self.desired_session_file_mode)
+
+            # try opening the session file
             with open(self.session_file_path, 'rb') as pickled_session:
                 self.connection = pickle.load(pickled_session)
         except (FileNotFoundError, EOFError):
@@ -209,8 +229,6 @@ class RedfishConnection:
 
         self.session_was_restored = True
 
-        self.fix_session_file_mode()
-
         return
 
     def save_session_to_file(self):
@@ -233,9 +251,14 @@ class RedfishConnection:
         self.connection._conn = None
         self.connection._conn_count = 0
 
+        # create file handle file descriptor
+        umask_original = os.umask(0o777 ^ self.desired_session_file_mode)
+        session_file_handle = None
         try:
-            with open(self.session_file_path, 'wb') as pickled_session:
-                pickle.dump(self.connection, pickled_session)
+            session_file_handle = os.open(self.session_file_path,
+                                          os.O_WRONLY | os.O_CREAT,
+                                          self.desired_session_file_mode)
+
         except PermissionError as e:
             self.exit_on_error("Error opening session file to save session: %s" % str(e))
         except Exception as e:
@@ -251,6 +274,12 @@ class RedfishConnection:
 
             self.exit_on_error(
                 "Unknown exception while trying to save session to file %s: %s" % (self.session_file_path, str(e)))
+        finally:
+            os.umask(umask_original)
+
+        if session_file_handle is not None:
+            with os.fdopen(session_file_handle, 'wb') as pickled_session:
+                pickle.dump(self.connection, pickled_session)
 
         # set root attribute again
         self.connection.root = root_data
@@ -258,8 +287,6 @@ class RedfishConnection:
         # restore connection object
         self.connection._conn = connection_socket
         self.connection._conn_count = connection_socket_count
-
-        self.fix_session_file_mode()
 
         return
 

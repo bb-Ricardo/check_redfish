@@ -330,9 +330,10 @@ class PluginData:
                 exit(0)
 
         # add all retrieval issues to output
-        for item_name, issues in self.inventory.get_issues().items():
-            if len(self.inventory.get(item_name)) == 0:
-                self.add_output_data("UNKNOWN", "Request error: %s" % ", ".join(issues))
+        if self.inventory is not None:
+            for item_name, issues in self.inventory.get_issues().items():
+                if len(self.inventory.get(item_name)) == 0:
+                    self.add_output_data("UNKNOWN", "Request error: %s" % ", ".join(issues))
 
         print(self.return_output_data())
 
