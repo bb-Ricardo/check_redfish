@@ -244,6 +244,7 @@ def get_single_system_info(plugin_object, redfish_url):
                                           (plugin_object.rf.vendor_data.ilo_version,
                                            plugin_object.rf.vendor_data.ilo_firmware_version),
                                           location=f"System {system_id}")
+
         # add SDCard status
         if plugin_object.rf.vendor == "Fujitsu":
             sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
