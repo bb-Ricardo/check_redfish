@@ -68,7 +68,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         if manager_response.get("Status") is None:
             return
 
-    status_text = f"{bmc_model} (Firmware: {bmc_fw_version})"
+    status_text = f"BMC: {bmc_model} (Firmware: {bmc_fw_version})"
 
     # get status data
     status_data = get_status_data(manager_response.get("Status"))
@@ -97,9 +97,6 @@ def get_bmc_info_generic(plugin_object, redfish_url):
         bmc_status = "OK"
     else:
         bmc_status = "UNKNOWN"
-
-    plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text,
-                                  location=f"Manager {manager_inventory.id}")
 
     # BMC Network interfaces
     manager_nic_response = None
@@ -307,7 +304,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     manager_inventory.licenses = bmc_licenses
 
     for bmc_license in bmc_licenses:
-        plugin_object.add_output_data("OK", f"License: {bmc_license}", location=f"Manager {manager_inventory.id}")
+        plugin_object.add_output_data("OK", f"BMC License: {bmc_license}", location=f"Manager {manager_inventory.id}")
 
     # HP ILO specific stuff
     if plugin_object.rf.vendor == "HPE":
@@ -327,9 +324,9 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
             if self_test_notes is not None and len(self_test_notes) != 0:
                 self_test_notes = self_test_notes.strip()
-                self_test_status_text = f"SelfTest {self_test_name} ({self_test_notes}) status: {self_test_status}"
+                self_test_status_text = f"BMC SelfTest {self_test_name} ({self_test_notes}) status: {self_test_status}"
             else:
-                self_test_status_text = f"SelfTest {self_test_name} status: {self_test_status}"
+                self_test_status_text = f"BMC SelfTest {self_test_name} status: {self_test_status}"
 
             plugin_object.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status,
                                           self_test_status_text, location=f"Manager {manager_inventory.id}")
@@ -353,7 +350,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
             system_name_string = f"System name: {descriptive_name} ({rack})"
             if plugin_object.cli_args.detailed:
-                plugin_object.add_output_data("OK", system_name_string, location=f"Manager {manager_inventory.id}")
+                plugin_object.add_output_data("OK", f"BMC {system_name_string}",
+                                              location=f"Manager {manager_inventory.id}")
             else:
                 status_text += f" {system_name_string}"
 
@@ -361,8 +359,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     if plugin_object.rf.vendor == "Fujitsu":
 
         for bmc_firmware in get_firmware_info_fujitsu(plugin_object, redfish_url, True):
-            plugin_object.add_output_data("OK",
-                                          "Firmware: %s: %s" % (bmc_firmware.get("name"), bmc_firmware.get("version")),
+            plugin_object.add_output_data("OK", "BMC Firmware: %s: %s" %
+                                          (bmc_firmware.get("name"), bmc_firmware.get("version")),
                                           location=f"Manager {manager_inventory.id}")
 
     # get Huawei Server location data
@@ -373,7 +371,8 @@ def get_bmc_info_generic(plugin_object, redfish_url):
 
             location_string = f"Location: {ibmc_location}"
             if plugin_object.cli_args.detailed:
-                plugin_object.add_output_data("OK", location_string, location=f"Manager {manager_inventory.id}")
+                plugin_object.add_output_data("OK", f"BMC {location_string}",
+                                              location=f"Manager {manager_inventory.id}")
             else:
                 status_text += f" {location_string}"
 

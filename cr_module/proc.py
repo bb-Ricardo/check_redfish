@@ -167,7 +167,7 @@ def get_single_system_procs(plugin_object, redfish_url):
             issue_text = f"Returned data from API URL '{processors_link}' contains no processor information"
             plugin_object.inventory.add_issue(Processor, issue_text)
 
-        elif plugin_object.cli_args.detailed is False:
+        else:
             plugin_object.add_output_data("OK", "All processors (%d) are in good condition" % num_procs,
                                           summary=True, location=f"System {system_id}")
     else:

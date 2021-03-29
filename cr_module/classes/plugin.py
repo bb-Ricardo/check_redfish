@@ -14,6 +14,87 @@ from cr_module.classes.redfish import RedfishConnection
 from cr_module.classes.inventory import Inventory
 
 
+class PluginOutputDataEntry:
+
+    state = "OK"
+    command = None
+    text = None
+    location = None
+    is_summary = False
+    log_entry = False
+
+    def __init__(self, state="OK", command=None, text=None, location=None, is_summary=False, log_entry=False):
+
+        if state not in list(plugin_status_types.keys()):
+            raise Exception(f"Status '{state}' is invalid, needs to be one of these: %s" %
+                            list(plugin_status_types.keys()))
+
+        self.state = state
+        self.command = command
+        self.text = text
+        self.location = location
+        self.is_summary = is_summary
+        self.log_entry = log_entry
+
+    def output_text(self, add_location=False):
+
+        return_text = self.text
+        if add_location is True:
+            return_text = f"{self.location} : {return_text}"
+
+        return f"[{self.state}]: {return_text}"
+
+    def __repr__(self):
+        return self.__dict__
+
+
+class PluginOutputData:
+
+    __output_entries = list()
+
+    def append(self, entry):
+
+        if not isinstance(entry, PluginOutputDataEntry):
+            raise Exception(f"Output entry must be a \"PluginOutputDataEntry\" object.")
+
+        self.__output_entries.append(entry)
+
+    def get_commands(self):
+
+        return list(set([x.command for x in self.__output_entries]))
+
+    def get_locations(self, command, summary):
+
+        if not isinstance(summary, bool):
+            summary = False
+
+        locations = [x.location for x in self.__output_entries if x.is_summary is summary and x.command == command]
+
+        if None in locations:
+            locations.remove(None)
+
+        return list(set(locations))
+
+    def get_states(self, command, summary):
+
+        if not isinstance(summary, bool):
+            summary = False
+
+        states = [x.state for x in self.__output_entries if x.is_summary is summary and x.command == command]
+
+        if len(states) == 0:
+            states.append("OK")
+
+        return list(set(states))
+
+    def get_command_entries(self, command):
+
+        return [x for x in self.__output_entries if x.command == command]
+
+    def __repr__(self):
+        return [repr(x) for x in self.__output_entries]
+
+
 class PluginData:
 
     rf = None
@@ -22,9 +103,7 @@ class PluginData:
     inventory_file = None
 
     __perf_data = list()
-    __output_data = dict()
-    __log_output_data = dict()
-    __summary_data = dict()
+    __output_data = PluginOutputData()
     __return_status = "OK"
     __current_command = "global"
     __in_firmware_collection_mode = False
@@ -133,38 +212,17 @@ class PluginData:
 
         return return_status
 
-    def add_output_data(self, state, text, summary=False, location=None):
+    def add_output_data(self, state, text, summary=False, location=None, log_entry=False):
 
         if self.__in_firmware_collection_mode is True:
             return
 
         self.set_status(state)
 
-        status_data_entry = {
-            "state": state,
-            "text": text,
-            "location": location,
-            "summary": summary
-        }
-
-        if self.__output_data.get(self.__current_command) is None:
-            self.__output_data[self.__current_command] = list()
-
-        self.__output_data[self.__current_command].append(status_data_entry)
-
-    def add_log_output_data(self, state, text):
-
-        self.set_status(state)
-
-        if self.__log_output_data.get(self.__current_command) is None:
-            self.__log_output_data[self.__current_command] = list()
-
-        self.__log_output_data[self.__current_command].append(
-            {
-                "status": state,
-                "text": "[%s]: %s" % (state, text)
-            }
-        )
+        self.__output_data.append(PluginOutputDataEntry(state=state, command=self.__current_command,
+                                                        text=text, location=location, is_summary=summary,
+                                                        log_entry=log_entry
+                                                        ))
 
     def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None, location=None):
 
@@ -203,86 +261,73 @@ class PluginData:
 
     def return_output_data(self):
 
+        ordered_output_data = dict()
         return_text = list()
+        command_locations = dict()
+        command_summary_locations = dict()
+        problem_command = list()
 
-        for command in self.__output_data.keys():
+        for command in sorted(self.__output_data.get_commands()):
 
-            # get state of non summary entries
-            non_summary_states = [x.get("state") for x in self.__output_data[command] if x['summary'] is False]
+            command_locations[command] = self.__output_data.get_locations(command, summary=False)
+            command_summary_locations[command] = self.__output_data.get_locations(command, summary=True)
 
-            if len(non_summary_states) == 0:
-                non_summary_states.append("OK")
-
-            if self.return_highest_status(non_summary_states) == "OK" and self.cli_args.detailed is False:
-                summary_locations = [x.get("location") for x in self.__output_data[command] if x['summary'] is True]
-                summary_return_status = self.return_highest_status(
-                    [x.get("state") for x in self.__output_data[command] if x['summary'] is True]
-                )
-
-                if None in summary_locations:
-                    summary_locations.remove(None)
-
-                summary_text_list = list()
-                if len(set(summary_locations)) > 1:
-                    for entry in [x for x in self.__output_data[command] if x['summary'] is True]:
-                        summary_text_list.append("%s: %s" % (entry.get("location"), entry.get("text")))
-                else:
-                    summary_text_list = [x.get("text") for x in self.__output_data[command] if x['summary'] is True]
-
-                return_text.append(f"[{summary_return_status}]: %s" % ", ".join(summary_text_list))
-
-            else:
-                entry_locations = [x.get("location") for x in self.__output_data[command] if x['summary'] is False]
-
-                for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
-
-                    entry_list = [x for x in self.__output_data[command]
-                                  if x['summary'] is False and x["state"] == status_type_name]
-
-                    if len(entry_list) == 0:
-                        continue
-
-                    if None in entry_locations:
-                        entry_locations.remove(None)
-
-                    for entry in entry_list:
-                        if entry.get("state") != "OK" or self.cli_args.detailed is True:
-                            entry_text = entry.get("text")
-                            if len(set(entry_locations)) > 1:
-                                entry_text = "%s: %s" % (entry.get("location"), entry_text)
-
-                            return_text.append("[%s]: %s" % (entry.get("state"), entry_text))
-
-        # add data from log commands
-        for command, log_entries in self.__log_output_data.items():
-
-            command_status = "OK"
-            most_recent = dict()
+            log_most_recent = None
             log_entry_counter = dict()
 
-            for log_entry in log_entries:
+            for entry in self.__output_data.get_command_entries(command):
+                if ordered_output_data.get(entry.state) is None:
+                    ordered_output_data[entry.state] = list()
 
-                if self.cli_args.detailed is True:
-                    return_text.append(log_entry.get("text"))
-                else:
+                if entry.log_entry is True:
+                    if log_most_recent is None:
+                        log_most_recent = entry
 
-                    if plugin_status_types[log_entry.get("status")] > plugin_status_types[command_status]:
-                        command_status = log_entry.get("status")
+                    if plugin_status_types[entry.state] > plugin_status_types[log_most_recent.state]:
+                        log_most_recent = entry
 
-                    if log_entry_counter.get(log_entry.get("status")):
-                        log_entry_counter[log_entry.get("status")] += 1
+                    if log_entry_counter.get(entry.state):
+                        log_entry_counter[entry.state] += 1
                     else:
-                        log_entry_counter[log_entry.get("status")] = 1
+                        log_entry_counter[entry.state] = 1
 
-                    if most_recent.get(log_entry.get("status")) is None:
-                        most_recent[log_entry.get("status")] = log_entry.get("text")
+                ordered_output_data[entry.state].append(entry)
 
-            if self.cli_args.detailed is False:
-
+            # add log summary if command is a log command
+            if log_most_recent is not None:
                 message_summary = " and ".join(["%d %s" % (value, key) for key, value in log_entry_counter.items()])
 
-                return_text.append(f"[{command_status}]: Found {message_summary} {command} entries. "
-                                   f"Most recent notable: %s" % most_recent.get(command_status))
+                log_text = f"{command} contains {message_summary} entries."
+                if self.cli_args.detailed is False:
+                    log_text += f" Most recent notable: {log_most_recent.output_text()}"
+
+                ordered_output_data[log_most_recent.state].append(
+                    PluginOutputDataEntry(state=log_most_recent.state, is_summary=True, text=log_text)
+                )
+
+        if self.__return_status != "OK":
+
+            for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
+
+                if status_type_name == "OK":
+                    continue
+
+                for entry in ordered_output_data.get(status_type_name, list()):
+                    # add command to problem commands to avoid printing summary for this command
+                    problem_command.append(entry.command)
+                    add_location = True if len(command_locations.get(entry.command, list())) > 1 else False
+                    return_text.append(entry.output_text(add_location))
+
+        for entry in ordered_output_data.get("OK", list()):
+            if entry.is_summary is True and entry.command not in problem_command:
+                add_location = True if len(command_summary_locations.get(entry.command, list())) > 1 else False
+                return_text.append(entry.output_text(add_location))
+
+        if self.cli_args.detailed is True:
+            for entry in ordered_output_data.get("OK", list()):
+                if entry.is_summary is False:
+                    add_location = True if len(command_locations.get(entry.command, list())) > 1 else False
+                    return_text.append(entry.output_text(add_location))
 
         return_string = "\n".join(return_text)
 

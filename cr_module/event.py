@@ -122,7 +122,7 @@ def get_event_log(plugin_object, event_type):
 
     if system_manager_ids is None or len(system_manager_ids) == 0:
         plugin_object.add_output_data("UNKNOWN", f"No '{property_name}' property found in root path '/redfish/v1'",
-                                      summary=not plugin_object.cli_args.detailed)
+                                      summary=True)
         return
 
     for system_manager_id in system_manager_ids:
@@ -171,7 +171,7 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
 
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
-                                      summary=not plugin_object.cli_args.detailed)
+                                      summary=True)
         return
 
     # reverse list from newest to oldest entry
@@ -212,14 +212,14 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
                         and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_output_data(status, "%s: %s" % (date, message), log_entry=True)
 
         # obey max results returned
         if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             if forced_limit:
-                plugin_object.add_log_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
-                                                        f"limited {event_type} log results to "
-                                                        f"{limit_of_returned_items} entries")
+                plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
+                                                    f"limited {event_type} log results to "
+                                                    f"{limit_of_returned_items} entries", log_entry=True)
             return
 
     return
@@ -252,7 +252,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
 
     if len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
-                                      summary=not plugin_object.cli_args.detailed)
+                                      summary=True)
         return
 
     assoc_id_status = dict()
@@ -327,7 +327,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
                         entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin_object.add_log_output_data(status, "%s: %s" % (date, message))
+        plugin_object.add_output_data(status, "%s: %s" % (date, message), log_entry=True)
 
         processed_ids.append(event_entry_item.get("Id"))
 
@@ -356,7 +356,7 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
 
         if manager_data.get("LogServices") is None or len(manager_data.get("LogServices")) == 0:
             plugin_object.add_output_data("UNKNOWN", f"No 'LogServices' found for redfish URL '{system_manager_id}'",
-                                          summary=not plugin_object.cli_args.detailed)
+                                          summary=True)
             return
 
         log_services_data = plugin_object.rf.get(grab(manager_data, "LogServices/@odata.id", separator="/")) or dict()
@@ -443,7 +443,7 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
             if entry_date > date_warning.astimezone(entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                 status = "WARNING" if severity not in list(plugin_status_types.keys()) else severity
 
-        plugin_object.add_log_output_data(status, f"{date}: {log_name}: {source}: {message}")
+        plugin_object.add_output_data(status, f"{date}: {log_name}: {source}: {message}", log_entry=True)
 
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:

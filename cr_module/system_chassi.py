@@ -139,7 +139,7 @@ def get_single_system_info(plugin_object, redfish_url):
     if system_inventory.host_name is not None and len(system_inventory.host_name) > 0:
         host_name = system_inventory.host_name
 
-    status_text = f"Type: {system_inventory.manufacturer} {system_inventory.model} " \
+    status_text = f"INFO: {system_inventory.manufacturer} {system_inventory.model} " \
                   f"(CPU: {system_inventory.cpu_num}, MEM: {system_inventory.mem_size}GB) - " \
                   f"BIOS: {system_inventory.bios_version} - " \
                   f"Serial: {system_inventory.serial} - " \
@@ -228,35 +228,32 @@ def get_single_system_info(plugin_object, redfish_url):
                 status_text += " - " + ", ".join(dell_sensor_text)
 
     plugin_object.add_output_data(system_health_print_status, status_text,
-                                  summary=not plugin_object.cli_args.detailed,
+                                  summary=True,
                                   location=f"System {system_id}")
 
-    if plugin_object.cli_args.detailed is True and plugin_object.rf.vendor == "Dell" and len(dell_sensors) > 0:
-        for dell_sensor in dell_sensors:
-            for status, sensor in dell_sensor.items():
-                plugin_object.add_output_data(status, sensor, location=f"System {system_id}")
+    for dell_sensor in dell_sensors:
+        for status, sensor in dell_sensor.items():
+            plugin_object.add_output_data(status, sensor, location=f"System {system_id}")
 
-    if plugin_object.cli_args.detailed is True:
+    # add ILO data
+    if plugin_object.rf.vendor == "HPE":
+        plugin_object.add_output_data("OK", "%s - FW: %s" %
+                                      (plugin_object.rf.vendor_data.ilo_version,
+                                       plugin_object.rf.vendor_data.ilo_firmware_version),
+                                      location=f"System {system_id}")
 
-        # add ILO data
-        if plugin_object.rf.vendor == "HPE":
-            plugin_object.add_output_data("OK", "%s - FW: %s" %
-                                          (plugin_object.rf.vendor_data.ilo_version,
-                                           plugin_object.rf.vendor_data.ilo_firmware_version),
-                                          location=f"System {system_id}")
+    # add SDCard status
+    if plugin_object.rf.vendor == "Fujitsu":
+        sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
 
-        # add SDCard status
-        if plugin_object.rf.vendor == "Fujitsu":
-            sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
+        if sd_card.get("Inserted") is True and sd_card.get("Mounted") is True:
+            sd_card_status = sd_card.get("Status")
+            sd_card_capacity = sd_card.get("CapacityMB")
+            sd_card_free_space = sd_card.get("FreeSpaceMB")
 
-            if sd_card.get("Inserted") is True and sd_card.get("Mounted") is True:
-                sd_card_status = sd_card.get("Status")
-                sd_card_capacity = sd_card.get("CapacityMB")
-                sd_card_free_space = sd_card.get("FreeSpaceMB")
-
-                status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
-                plugin_object.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status,
-                                              status_text, location=f"System {system_id}")
+            status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
+            plugin_object.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status,
+                                          status_text, location=f"System {system_id}")
 
     return
 

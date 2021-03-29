@@ -126,6 +126,8 @@ def get_storage_hpe(plugin_object, system):
             plugin_object.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids",
                                            pd_inventory.id)
 
+            pd_list.append(pd_inventory)
+
             size = int(pd_inventory.size_in_byte / 1000 ** 3)
 
             drive_status_reasons = ""
@@ -217,6 +219,8 @@ def get_storage_hpe(plugin_object, system):
             plugin_object.inventory.append(StorageController, controller_inventory.id, "logical_drive_ids",
                                            ld_inventory.id)
 
+            ld_list.append(ld_inventory)
+
             status_text = f"Logical Drive ({ld_inventory.id}) %.1fGB (RAID {ld_inventory.raid_type}) " \
                           f"status: {ld_inventory.health_status}" % printed_size
 
@@ -293,6 +297,8 @@ def get_storage_hpe(plugin_object, system):
             plugin_object.inventory.append(StorageController, controller_inventory.id, "storage_enclosure_ids",
                                            enclosure_inventory.id)
 
+            enclosure_list.append(enclosure_inventory)
+
             status_text = f"StorageEnclosure ({enclosure_inventory.location}) " \
                           f"status: {enclosure_inventory.health_status}"
 
@@ -314,12 +320,19 @@ def get_storage_hpe(plugin_object, system):
         return
 
     storage_status = get_status_data(storage_response.get("Status"))
-    status = storage_status.get("Health")
+    sum_status = storage_status.get("Health")
 
-    if status == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
-        plugin_object.add_output_data("OK", f"Status of HP SmartArray is: {status}", summary=True,
-                                      location=f"System {system_id}")
+    if sum_status == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
+        plugin_object.add_output_data("OK", f"Status of HP SmartArray and all components is: {sum_status}",
+                                      summary=True, location=f"System {system_id}")
         return
+
+    # needed to count summary
+    controller_list = list()
+    pd_list = list()
+    ld_list = list()
+    enclosure_list = list()
+    battery_list = list()
 
     # unhealthy
     redfish_url = f"{system}/SmartStorage/ArrayControllers{plugin_object.rf.vendor_data.expand_string}"
@@ -377,6 +390,8 @@ def get_storage_hpe(plugin_object, system):
                 if controller_inventory.operation_status == "Absent":
                     continue
 
+                controller_list.append(controller_inventory)
+
                 status_text = f"{controller_inventory.model} (FW: {controller_inventory.firmware}) " \
                               f"status is: {controller_inventory.health_status}"
 
@@ -418,6 +433,28 @@ def get_storage_hpe(plugin_object, system):
                 plugin_object.add_output_data("CRITICAL"
                                               if status_data.get("Health") not in ["OK", "WARNING"] else
                                               status_data.get("Health"), status_text, location=f"System {system_id}")
+
+                battery_list.append(status_text)
+
+    summary_list = ["All HP SmartArray controller (%d)" % (len(controller_list))]
+    if len(ld_list) > 0:
+        summary_list.append("logical drives (%d)" % len(ld_list))
+    if len(ld_list) > 0:
+        summary_list.append("physical drives (%d)" % len(pd_list))
+    if len(enclosure_list) > 0:
+        summary_list.append("enclosures (%d)" % len(enclosure_list))
+    if len(battery_list) > 0:
+        summary_list.append("batteries (%d)" % len(battery_list))
+
+    if len(summary_list) > 1:
+        summary_text = ", ".join(summary_list[:-1])
+        summary_text += " and " + summary_list[-1]
+    else:
+        summary_text = summary_list[0]
+
+    summary_text += " are in good condition."
+
+    plugin_object.add_output_data("OK", summary_text, summary=True, location=f"System {system_id}")
 
     return
 
@@ -1144,35 +1181,35 @@ def get_storage_generic(plugin_object, system):
 
     if len(storage_controller_names_list) == 0 and len(system_drives_list) == 0:
         plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
-                                      summary=not plugin_object.cli_args.detailed, location=f"System {system_id}")
+                                      location=f"System {system_id}")
 
-    elif plugin_object.cli_args.detailed is False:
-        if len(storage_controller_names_list) == 0 and len(system_drives_list) != 0:
+    elif len(storage_controller_names_list) == 0 and len(system_drives_list) != 0:
 
-            drive_summary_status = "All system drives are in good condition (No storage controller found)"
+        drive_summary_status = "All system drives (%d) are in good condition (No storage controller found)" % \
+                               (len(system_drives_list))
 
-            plugin_object.add_output_data(get_component_status(condensed_drive_status), drive_summary_status,
-                                          summary=True, location=f"System {system_id}")
+        plugin_object.add_output_data(get_component_status(condensed_drive_status), drive_summary_status,
+                                      summary=True, location=f"System {system_id}")
 
-        elif len(storage_controller_names_list) != 0 and len(system_drives_list) == 0:
+    elif len(storage_controller_names_list) != 0 and len(system_drives_list) == 0:
 
-            storage_summary_status = "All storage controllers (%s) are in good condition (No system drives found)" % (
-                ", ".join(storage_controller_names_list)).replace(" Series Chipset Family", "")
+        storage_summary_status = "All storage controllers (%d) are in good condition (No system drives found)" % \
+                                 (len(storage_controller_names_list))
 
-            plugin_object.add_output_data(get_component_status(condensed_storage_status), storage_summary_status,
-                                          summary=True, location=f"System {system_id}")
+        plugin_object.add_output_data(get_component_status(condensed_storage_status), storage_summary_status,
+                                      summary=True, location=f"System {system_id}")
+    else:
+        condensed_summary_status = plugin_object.return_highest_status(
+            [condensed_storage_status, condensed_drive_status, condensed_volume_status, condensed_enclosure_status])
+
+        if condensed_summary_status == "OK":
+            summary_status = "All storage controllers (%d), volumes (%d) and disk drives (%d) are in good condition" % \
+                             (len(storage_controller_names_list), len(volume_status_list), len(system_drives_list))
         else:
-            condensed_summary_status = plugin_object.return_highest_status(
-                [condensed_storage_status, condensed_drive_status, condensed_volume_status, condensed_enclosure_status])
+            summary_status = "One or more storage components report an issue"
 
-            if condensed_summary_status == "OK":
-                summary_status = "All storage controllers (%s), volumes and disk drives are in good condition" % (
-                    ", ".join(storage_controller_names_list)).replace(" Series Chipset Family", "")
-            else:
-                summary_status = "One or more storage components report an issue"
-
-            plugin_object.add_output_data(get_component_status(condensed_summary_status), summary_status, summary=True,
-                                          location=f"System {system_id}")
+        plugin_object.add_output_data(get_component_status(condensed_summary_status), summary_status, summary=True,
+                                      location=f"System {system_id}")
 
     return
 

@@ -78,12 +78,11 @@ def get_firmware_info(plugin_object):
     if plugin_object.cli_args.detailed is False:
         summary_text += f" Use '--detailed' option to display them."
 
-    plugin_object.add_output_data(firmware_health_summary, summary_text, summary=not plugin_object.cli_args.detailed)
+    plugin_object.add_output_data(firmware_health_summary, summary_text, summary=True)
 
     firmware_status_entries = sorted(firmware_status_entries, key=lambda k: k["firmware"])
-    if plugin_object.cli_args.detailed is True:
-        for entry in firmware_status_entries:
-            plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
+    for entry in firmware_status_entries:
+        plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
 
     # remove inventory date if not requested
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
