@@ -118,7 +118,6 @@ class RedfishConnection:
 
     def get_session_file_name(self):
 
-        os.getuid() # add this to the session file
         default_session_file_prefix = "check_redfish"
         default_session_file_suffix = ".session"
 
@@ -154,7 +153,7 @@ class RedfishConnection:
         else:
             try:
                 current_user_id = os.getuid()
-            except Exception as e:
+            except Exception:
                 current_user_id = None
 
             if current_user_id is not None:
@@ -177,7 +176,7 @@ class RedfishConnection:
                     os.rename(old_sessionfilepath, sessionfilepath)
 
                 # fail silently and create a new file with a new session
-                except Exception as e:
+                except Exception:
                     pass
 
         if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.R_OK):
