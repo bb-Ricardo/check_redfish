@@ -34,7 +34,7 @@ def get_single_system_mem(plugin_object, redfish_url):
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
 
-            if plugin_object.rf.vendor == "Dell" and total_mem % 1024 != 0:
+            if plugin_object.rf.vendor == "Dell" and total_mem % 16 != 0:
                 total_mem = total_mem * 1024 ** 3 / 1000 ** 3
 
             plugin_object.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %

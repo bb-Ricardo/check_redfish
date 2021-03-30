@@ -104,7 +104,7 @@ def get_single_system_info(plugin_object, redfish_url):
 
     # Dell system
     # just WHY?
-    if plugin_object.rf.vendor == "Dell" and mem_size is not None and int(mem_size) % 1024 != 0:
+    if plugin_object.rf.vendor == "Dell" and mem_size is not None and int(mem_size) % 16 != 0:
         mem_size = round(mem_size * 1024 ** 3 / 1000 ** 3)
 
     status_data = get_status_data(system_response.get("Status"))
