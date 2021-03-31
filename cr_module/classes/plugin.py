@@ -294,7 +294,7 @@ class PluginData:
                 ordered_output_data[entry.state].append(entry)
 
             # add log summary if command is a log command
-            if log_most_recent is not None:
+            if log_most_recent is not None and log_most_recent.state == "OK":
                 message_summary = " and ".join(["%d %s" % (value, key) for key, value in log_entry_counter.items()])
 
                 log_text = f"{command} contains {message_summary} entries."
