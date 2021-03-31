@@ -25,8 +25,9 @@ cd check_redfish
 pip3 install -r requirements.txt || pip install -r requirements.txt
 ```
 
-### Icinga2
-Command definitions and a service config example for Icinga2 can be found in [contrib](contrib)
+### Icinga2 and Grafana
+Command definitions and a service config example for Icinga2 can be found in [contrib](contrib).
+There is also an InfluxDB dashboard for some metrics included.
 
 ## HELP
 ```
