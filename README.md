@@ -47,7 +47,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.1.0 (2020-11-23)
+Version: 1.2.0 (2021-04-01)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -242,26 +242,16 @@ suggestions for changes/improvements then please create a GitHub issue.
 ```
 {
     "inventory": {
-        "chassis": [],
-        "fans": [],
+        "chassi": [],
+        "fan": [],
         "firmware": [],
-        "logical_drives": [],
-        "managers": [],
-        "memories": [],
-        "meta": {
-            "WARNING": "THIS is an alpha version of this implementation and possible changes might occur without notice",
-            "data_retrieval_issues": [],
-            "duration_of_data_collection_in_seconds": 0.048623,
-            "host_that_collected_inventory": "inventory-collector.example.com",
-            "inventory_layout_version": "1.1.0",
-            "inventory_id": null,
-            "script_version": "1.1.0",
-            "start_of_data_collection": "2020-04-23T15:12:16+02:00"
-        },
-        "network_adapters": [],
+        "logical_drive": [],
+        "manager": [],
+        "memory": [],
+        "network_adapter": [],
         "network_port": [],
-        "physical_drives": [],
-        "power_supplies": [
+        "physical_drive": [],
+        "power_supply": [
             {
                 "bay": 1,
                 "capacity_in_watt": 500,
@@ -273,7 +263,7 @@ suggestions for changes/improvements then please create a GitHub issue.
                 "id": "0",
                 "input_voltage": 224,
                 "last_power_output": 110,
-                "model": "865408-B21",
+                "model": "XXXXXX-B21",
                 "name": "HpeServerPowerSupply",
                 "operation_status": "Enabled",
                 "part_number": "XXXXXX-001",
@@ -292,20 +282,29 @@ suggestions for changes/improvements then please create a GitHub issue.
                 "id": "1",
                 "input_voltage": 228,
                 "last_power_output": 110,
-                "model": "865408-B21",
+                "model": "XXXXXX-B21",
                 "name": "HpeServerPowerSupply",
                 "operation_status": "Enabled",
                 "part_number": "XXXXXX-001",
-                "serial": "ZZZZZZZZ",
+                "serial": "XXXXXXX",
                 "type": "AC",
                 "vendor": "CHCNY"
             }
         ],
-        "processors": [],
-        "storage_controllers": [],
-        "storage_enclosures": [],
-        "systems": [],
-        "temperatures": []
+        "processor": [],
+        "storage_controller": [],
+        "storage_enclosure": [],
+        "system": [],
+        "temperature": []
+    },
+    "meta": {
+        "data_retrieval_issues": {},
+        "duration_of_data_collection_in_seconds": 1.002901,
+        "host_that_collected_inventory": "inventory-collector.example.com",
+        "inventory_id": null,
+        "inventory_layout_version": "1.2.0",
+        "script_version": "1.2.0",
+        "start_of_data_collection": "2021-04-01T09:09:07+02:00"
     }
 }
 ```
@@ -315,7 +314,12 @@ In cause you need more information or want to debug the data you can add the ver
 option. This will also add the `source_data` attribute for each inventory item.
 
 ### Inventory attributes
-You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L181)
+You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L182)
+
+### Inventory file
+It is also possible to use the cli option `--inventory_file` to write the inventory data to a file.
+This way it can be forwarded or used in an inventory import tool. Here you also might want to use
+`--inventory_id` to get a fixed reference to an existing object.
 
 ## Known limitations
 * On HPE iLO4 a maximum of 30 entries will be returned for the commands

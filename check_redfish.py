@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2020 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2020 - 2021 Ricardo Bartels. All rights reserved.
 #
 #  check_redfish.py
 #
@@ -16,8 +16,8 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
-__version__ = "1.1.0"
-__version_date__ = "2020-11-23"
+__version__ = "1.2.0"
+__version_date__ = "2021-04-01"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
