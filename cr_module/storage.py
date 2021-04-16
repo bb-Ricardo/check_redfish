@@ -400,6 +400,26 @@ def get_storage_hpe(plugin_object, system):
                                               controller_inventory.health_status, status_text,
                                               location=f"System {system_id}")
 
+                cache_status_text = controller_inventory.backup_power_health
+                if controller_inventory.backup_power_health is None:
+                    # probably a Gen10 controller
+                    if "CacheModuleSerialNumber" in list(controller_response.keys()):
+                        cache_status = "WARNING"
+                        cache_status_text = "WARNING (health information missing)"
+                    else:
+                        cache_status = "OK"
+                        if controller_inventory.health_status == "WARNING":
+                            cache_status_text = "Unknown (if the controller is the only part with a Warning " \
+                                                "then most likely the cache battery has an issue)"
+                        else:
+                            cache_status_text = "Unknown (assumed OK)"
+                else:
+                    cache_status = controller_inventory.backup_power_health
+
+                plugin_object.add_output_data("CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status,
+                                              f"Smart Array controller cache ({controller_inventory.cache_size_in_mb}"
+                                              f"MB) status: {cache_status_text}", location=f"System {system_id}")
+
                 get_disks(array_controller.get("@odata.id"))
                 get_disks(array_controller.get("@odata.id"), "UnconfiguredDrives")
                 get_logical_drives(array_controller.get("@odata.id"))
