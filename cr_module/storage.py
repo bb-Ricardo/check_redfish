@@ -416,9 +416,12 @@ def get_storage_hpe(plugin_object, system):
                 else:
                     cache_status = controller_inventory.backup_power_health
 
-                plugin_object.add_output_data("CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status,
-                                              f"Smart Array controller cache ({controller_inventory.cache_size_in_mb}"
-                                              f"MB) status: {cache_status_text}", location=f"System {system_id}")
+                # only report cache status if "CacheMemorySizeMiB" is populated
+                if "CacheMemorySizeMiB" in list(controller_response.keys()):
+                    plugin_object.add_output_data("CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status,
+                                                  f"Smart Array controller cache "
+                                                  f"({controller_inventory.cache_size_in_mb}MB) "
+                                                  f" status: {cache_status_text}", location=f"System {system_id}")
 
                 get_disks(array_controller.get("@odata.id"))
                 get_disks(array_controller.get("@odata.id"), "UnconfiguredDrives")
