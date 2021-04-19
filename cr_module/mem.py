@@ -103,6 +103,15 @@ def get_single_system_mem(plugin_object, redfish_url):
                     status_data["State"] = grab(mem_module_response,
                                                 f"Oem.{plugin_object.rf.vendor_dict_key}.DIMMStatus")
 
+                elif plugin_object.rf.vendor == "Fujitsu" and \
+                        grab(mem_module_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SignalStatus"):
+
+                    status_data["State"] = grab(mem_module_response,
+                                                f"Oem.{plugin_object.rf.vendor_dict_key}.SignalStatus")
+
+                    status_data["Health"] = grab(mem_module_response,
+                                                 f"Oem.{plugin_object.rf.vendor_dict_key}.LegacyStatus")
+
                 elif mem_module_response.get("DIMMStatus"):
 
                     status_data["State"] = mem_module_response.get("DIMMStatus")
@@ -130,7 +139,7 @@ def get_single_system_mem(plugin_object, redfish_url):
 
                 plugin_object.inventory.add(mem_inventory)
 
-                if mem_inventory.operation_status in ["Absent", "NotPresent"]:
+                if mem_inventory.operation_status in ["Absent", "NotPresent", "EmptyOrNotInstalled"]:
                     continue
 
                 num_dimms += 1

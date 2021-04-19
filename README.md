@@ -364,6 +364,7 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
 
 ### Fujitsu
 iRMC S5 Firmware 2.60 till 2.63 has a minor bug, avoid usage!
+IMPORTANT: make sure to use `--detailed` option for memory check. HealthRollup for Memory is not working/existent!
 * PRIMERGY RX2530 M5 (iRMC Version 2.50P)
 * PRIMERGY RX2540 M4 (iRMC Version 2.50P)
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
