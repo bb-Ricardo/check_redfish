@@ -72,7 +72,8 @@ def get_single_chassi_power(plugin_object, redfish_url):
             # special Fujitsu case
             if fujitsu_power_sensors is not None and last_power_output is None:
                 for fujitsu_power_sensor in fujitsu_power_sensors:
-                    if fujitsu_power_sensor.get("Designation") == ps.get("Name"):
+                    if fujitsu_power_sensor.get("Designation") is not None and \
+                            fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
 
             ps_inventory = PowerSupply(
