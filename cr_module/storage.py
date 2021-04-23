@@ -503,7 +503,7 @@ def get_storage_generic(plugin_object, system):
             plugin_object.add_data_retrieval_error(PhysicalDrive, drive_response, drive_link)
             return
 
-        if drive_response.get("Name") is None:
+        if "Name" not in list(drive_response.keys()):
             plugin_object.inventory.add_issue(PhysicalDrive, f"Unable to retrieve disk info: {drive_link}")
             return
 
@@ -736,7 +736,7 @@ def get_storage_generic(plugin_object, system):
             plugin_object.add_data_retrieval_error(StorageEnclosure, enclosure_response, enclosure_link)
             return
 
-        if enclosure_response.get("Name") is None:
+        if "Name" not in list(enclosure_response.keys()):
             plugin_object.inventory.add_issue(StorageEnclosure, f"Unable to retrieve enclosure info: {enclosure_link}")
             return
 
@@ -824,7 +824,7 @@ def get_storage_generic(plugin_object, system):
 
         for storage_member in storage_response.get("Members"):
 
-            if storage_member.get("@odata.context"):
+            if storage_member.get("@odata.context") or "Name" in list(storage_member.keys()):
                 controller_response = storage_member
             else:
                 controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
