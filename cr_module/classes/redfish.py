@@ -535,6 +535,10 @@ class RedfishConnection:
 
             self.vendor_data = VendorFujitsuData()
 
+        if vendor_string in ["Ami"]:
+
+            self.vendor_data = VendorAmiData()
+
         # Cisco does not provide a OEM property in root object
         if "CIMC" in str(self.get_system_properties("managers")):
 
@@ -573,14 +577,19 @@ class RedfishConnection:
             system_properties[root_object.lower()] = list()
             for entity in rf_path.get("Members"):
 
+                # mitigate an Inspur implementation bug
+                if isinstance(entity, dict):
+                    entity_url = entity.get("@odata.id")
+                else:
+                    entity_url = entity
+
                 # ToDo:
                 #  * This is a DELL workaround
                 #  * If RAID chassi is requested the iDRAC will restart
-                if root_object == "Chassis" and \
-                        ("RAID" in entity.get("@odata.id") or "Enclosure" in entity.get("@odata.id")):
+                if root_object == "Chassis" and ("RAID" in entity_url or "Enclosure" in entity_url):
                     continue
 
-                system_properties[root_object.lower()].append(entity.get("@odata.id"))
+                system_properties[root_object.lower()].append(entity_url)
 
         self.connection.system_properties = system_properties
         if self.cli_args.nosession is False:

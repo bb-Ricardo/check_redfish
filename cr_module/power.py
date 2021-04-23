@@ -111,6 +111,10 @@ def get_single_chassi_power(plugin_object, redfish_url):
                 printed_status = operational_status
                 health = "OK"
 
+            if grab(ps, "Status") is None:
+                printed_status = "UNKNOWN (no status returned)"
+                health = "OK"
+
             if model is not None:
                 printed_model = "(%s) " % model.strip()
 
@@ -137,9 +141,8 @@ def get_single_chassi_power(plugin_object, redfish_url):
         pr_num = 0
         for power_redundancy in power_redundancies:
 
-            pr_status = power_redundancy.get("Status")
-
-            if pr_status is not None:
+            if power_redundancy.get("Status") is not None:
+                pr_status = get_status_data(grab(power_redundancy, "Status"))
                 status = pr_status.get("Health")
                 state = pr_status.get("State")
 
@@ -158,38 +161,70 @@ def get_single_chassi_power(plugin_object, redfish_url):
             default_text += f" and{pr_status_summary_text}"
 
     # get Voltages status
-    voltages = power_data.get("Voltages")
+    voltages_num = 0
+    for voltage in power_data.get("Voltages", list()):
 
-    if voltages is not None:
-        voltages_num = 0
-        for voltage in voltages:
+        if voltage.get("Status") is not None:
+            voltage_status = get_status_data(grab(voltage, "Status"))
+            status = voltage_status.get("Health")
+            state = voltage_status.get("State")
+            reading = voltage.get("ReadingVolts")
+            name = voltage.get("Name")
 
-            voltage_status = voltage.get("Status")
+            if status is not None:
+                voltages_num += 1
 
-            if voltage_status is not None:
-                status = voltage_status.get("Health")
-                state = voltage_status.get("State")
-                reading = voltage.get("ReadingVolts")
-                name = voltage.get("Name")
+                status_text = f"Voltage {name} (status: {status}/{state}): {reading}V"
 
-                if status is not None:
-                    voltages_num += 1
-                    status = status.upper()
+                plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+                                              status_text, location=f"Chassi {chassi_id}")
 
-                    status_text = f"Voltage {name} (status: {status}/{state}): {reading}V"
+                if reading is not None and name is not None:
+                    try:
+                        plugin_object.add_perf_data(f"voltage_{name}", float(reading),
+                                                    location=f"Chassi {chassi_id}")
+                    except Exception:
+                        pass
 
-                    plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                                  status_text, location=f"Chassi {chassi_id}")
+    if voltages_num > 0:
+        default_text += f" and {voltages_num} Voltages are OK"
 
-                    if reading is not None and name is not None:
-                        try:
-                            plugin_object.add_perf_data(f"voltage_{name}", float(reading),
-                                                        location=f"Chassi {chassi_id}")
-                        except Exception:
-                            pass
+    power_control_num = 0
+    power_control_data = power_data.get("PowerControl", list())
 
-        if voltages_num > 0:
-            default_text += f" and {voltages_num} Voltages are OK"
+    # Cisco workaround
+    if isinstance(power_control_data, dict):
+        power_control_data = [power_control_data]
+
+    for power_control in power_control_data:
+
+        if power_control.get("Status") is not None:
+            power_control_status = get_status_data(grab(power_control, "Status"))
+            status = power_control_status.get("Health")
+            state = power_control_status.get("State")
+            name = power_control.get("Name")
+            reading = power_control.get("PowerConsumedWatts")
+
+            if str(reading) == "0":
+                reading = None
+
+            if status is not None:
+                power_control_num += 1
+
+                if reading is not None:
+                    status_text = f"{name} (status: {status}/{state}) current consumption: {reading}W"
+                else:
+                    status_text = f"{name} status: {status}/{state}"
+
+                plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+                                              status_text, location=f"Chassi {chassi_id}")
+
+                if reading is not None and name is not None:
+                    try:
+                        plugin_object.add_perf_data(f"power_control_{name}", float(reading),
+                                                    location=f"Chassi {chassi_id}")
+                    except Exception:
+                        pass
 
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 

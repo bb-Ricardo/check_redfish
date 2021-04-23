@@ -110,7 +110,7 @@ def get_single_chassi_fan(plugin_object, redfish_url):
             if fan_name.lower().startswith("fan"):
                 fan_name = fan_name[3:].strip()
 
-            status_text = f"Fan '{fan_name}'{text_speed} status is: {fan_status}"
+            status_text = f"Fan '{fan_name.strip('_')}'{text_speed} status is: {fan_status}"
 
             plugin_object.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
                                           status_text,  location=f"Chassi {chassi_id}")

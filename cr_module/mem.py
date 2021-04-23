@@ -164,7 +164,7 @@ def get_single_system_mem(plugin_object, redfish_url):
                                               location=f"System {system_id}")
 
     if num_dimms == 0:
-        issue_text = f"Returned data from API URL '{redfish_url}' contains no processor information"
+        issue_text = f"Returned data from API URL '{redfish_url}' contains no memory information"
         plugin_object.inventory.add_issue(Memory, issue_text)
     else:
         plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (

@@ -1011,7 +1011,7 @@ def get_storage_generic(plugin_object, system):
                 plugin_object.add_output_data(get_component_status(controller_inventory.health_status),
                                               status_text, location=f"System {system_id}")
 
-            for controller_drive in controller_response.get("Drives"):
+            for controller_drive in controller_response.get("Drives", list()):
                 system_drives_list.append(controller_drive.get("@odata.id"))
                 get_drive(controller_drive.get("@odata.id"))
 

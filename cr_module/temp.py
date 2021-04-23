@@ -83,11 +83,11 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
             plugin_object.inventory.add(temp_inventory)
 
-            if state in ["Absent", "Disabled", "UnavailableOffline"]:
+            if state.lower() in ["absent", "disabled", "disable", "unavailableoffline"]:
                 continue
 
             if status is None:
-                status = "OK" if state == "Enabled" else state
+                status = "OK" if "enable" in state.lower() else state
 
             current_temp = temp_inventory.reading
             critical_temp = temp_inventory.upper_threshold_critical
@@ -95,13 +95,13 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
             temp_num += 1
 
-            if str(warning_temp) in ["0", "N/A"]:
+            if str(warning_temp) in ["0", "0.0", "N/A"]:
                 warning_temp = None
 
             if warning_temp is not None and float(current_temp) >= float(warning_temp):
                 status = "WARNING"
 
-            if str(critical_temp) in ["0", "N/A"]:
+            if str(critical_temp) in ["0", "0.0", "N/A"]:
                 critical_temp = None
 
             if critical_temp is not None and float(current_temp) >= float(critical_temp):
