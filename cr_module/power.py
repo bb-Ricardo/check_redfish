@@ -15,6 +15,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
     plugin_object.set_current_command("Power")
 
     chassi_id = redfish_url.rstrip("/").split("/")[-1]
+    num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
 
     redfish_url = f"{redfish_url}/Power"
 
@@ -76,8 +77,13 @@ def get_single_chassi_power(plugin_object, redfish_url):
                             fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
 
+            ps_id = grab(ps, "MemberId") or ps_num
+            # prefix with chassi id if system has more then one
+            if num_chassis > 1:
+                ps_id = f"{chassi_id}.{ps_id}"
+
             ps_inventory = PowerSupply(
-                id=grab(ps, "MemberId") or ps_num,
+                id=ps_id,
                 name=ps.get("Name"),
                 model=model,
                 bay=bay,
@@ -125,6 +131,9 @@ def get_single_chassi_power(plugin_object, redfish_url):
                                           status_text, location=f"Chassi {chassi_id}")
 
             if last_power_output is not None:
+                if num_chassis > 1:
+                    bay = f"{chassi_id}.{bay}"
+
                 plugin_object.add_perf_data(f"ps_{bay}", int(last_power_output), location=f"Chassi {chassi_id}")
 
         default_text = "All power supplies (%d) are in good condition" % (ps_num - ps_absent)
@@ -181,6 +190,9 @@ def get_single_chassi_power(plugin_object, redfish_url):
 
                 if reading is not None and name is not None:
                     try:
+                        if num_chassis > 1:
+                            name = f"{chassi_id}.{name}"
+
                         plugin_object.add_perf_data(f"voltage_{name}", float(reading),
                                                     location=f"Chassi {chassi_id}")
                     except Exception:

@@ -16,6 +16,7 @@ def get_single_chassi_temp(plugin_object, redfish_url):
     plugin_object.set_current_command("Temp")
 
     chassi_id = redfish_url.rstrip("/").split("/")[-1]
+    num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
 
     redfish_url = f"{redfish_url}/Thermal"
 
@@ -41,6 +42,10 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
             if member_id is None:
                 member_id = name
+
+            # prefix with chassi id if system has more then one
+            if num_chassis > 1:
+                member_id = f"{chassi_id}.{member_id}"
 
             temp_inventory = Temperature(
                 name=name,
@@ -117,7 +122,11 @@ def get_single_chassi_temp(plugin_object, redfish_url):
             plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
                                           location=f"Chassi {chassi_id}")
 
-            plugin_object.add_perf_data(f"temp_{temp_inventory.name}", float(current_temp), warning=warning_temp,
+            temp_name = temp_inventory.name
+            if num_chassis > 1:
+                temp_name = f"{chassi_id}.{temp_name}"
+
+            plugin_object.add_perf_data(f"temp_{temp_name}", float(current_temp), warning=warning_temp,
                                         critical=critical_temp, location=f"Chassi {chassi_id}")
 
         default_text = f"All temp sensors ({temp_num}) are in good condition"

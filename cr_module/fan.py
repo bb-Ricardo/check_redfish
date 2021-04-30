@@ -15,6 +15,7 @@ def get_single_chassi_fan(plugin_object, redfish_url):
     plugin_object.set_current_command("Fan")
 
     chassi_id = redfish_url.rstrip("/").split("/")[-1]
+    num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
 
     redfish_url = f"{redfish_url}/Thermal"
 
@@ -39,6 +40,10 @@ def get_single_chassi_fan(plugin_object, redfish_url):
             # This helps on systems where the same MemberId could be assigned to multiple instances
             if grab(fan, "SensorNumber") is not None:
                 member_id = f"{member_id}.{grab(fan, 'SensorNumber')}"
+
+            # prefix with chassi id if system has more then one
+            if num_chassis > 1:
+                member_id = f"{chassi_id}.{member_id}"
 
             physical_context = fan.get("PhysicalContext")
 
@@ -108,15 +113,18 @@ def get_single_chassi_fan(plugin_object, redfish_url):
 
             fan_name = fan_inventory.name
             if fan_name.lower().startswith("fan"):
-                fan_name = fan_name[3:].strip()
+                fan_name = fan_name[3:].strip().strip('_')
 
-            status_text = f"Fan '{fan_name.strip('_')}'{text_speed} status is: {fan_status}"
+            status_text = f"Fan '{fan_name}'{text_speed} status is: {fan_status}"
 
             plugin_object.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
                                           status_text,  location=f"Chassi {chassi_id}")
 
             if fan_inventory.reading is not None:
-                plugin_object.add_perf_data(f"Fan_{fan_inventory.name}", int(fan_inventory.reading),
+                if num_chassis > 1:
+                    fan_name = f"{chassi_id}.{fan_name}"
+
+                plugin_object.add_perf_data(f"Fan_{fan_name}", int(fan_inventory.reading),
                                             perf_uom=perf_units, warning=plugin_object.cli_args.warning,
                                             critical=plugin_object.cli_args.critical, location=f"Chassi {chassi_id}")
 
