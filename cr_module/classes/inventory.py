@@ -86,7 +86,7 @@ class InventoryItem(object):
                     resource_list.extend(get_links_recursive(item))
             elif isinstance(data_structure, dict):
                 for key, value in data_structure.items():
-                    if key == "@odata.id":
+                    if key == "@odata.id" and isinstance(value, str):
                         resource_list.append(value.rstrip("/"))
                     else:
                         resource_list.extend(get_links_recursive(value))
@@ -155,7 +155,7 @@ class InventoryItem(object):
                 return True
 
             # skip formatting of certain attributes
-            if value is not None and key not in ["id", "name", "firmware", "serial", "version"]:
+            if value is not None and key not in ["id", "name", "firmware", "serial", "version", "host_name"]:
                 if is_int(value):
                     value = int(float(value))
 

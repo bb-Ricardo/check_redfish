@@ -422,7 +422,12 @@ class RedfishConnection:
         return_data = None
         if isinstance(redfish_data, dict) and redfish_data.get("error"):
             error = grab(redfish_data, "error/@Message.ExtendedInfo/0", separator="/")
-            return_data = "got '%s/%s' for API path '%s'" % (error.get("MessageId"), error.get("Message"), redfish_url)
+            if error is not None:
+                error_message = '%s/%s' % (error.get("MessageId"), error.get("Message"))
+            else:
+                error_message = redfish_data.get("error")
+
+            return_data = f"got '{error_message}' for API path '{redfish_url}'"
 
         return return_data
 

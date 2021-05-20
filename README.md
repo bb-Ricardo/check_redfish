@@ -377,6 +377,10 @@ Models:
 * Cisco C220M5SX (CIMC Version 3.1(3a))
 * Cisco C240M5SX (CIMC Version 3.1(3a))
 
+### Inspur (limited support)
+* Inspur NF5280 M5 (4.26.3)
+* Inspur NF5280 M6 (4.12.04)
+
 ## License
 >You can check out the full license [here](LICENSE.txt)
 
