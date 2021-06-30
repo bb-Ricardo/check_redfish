@@ -204,9 +204,11 @@ def get_system_nics(plugin_object, redfish_url):
             network_function_id = function_response.get("Id")
 
             port_inventory = get_network_port(physical_port_path, network_function_id, True)
-            if not port_inventory:
-                return None
-            elif plugin_object.cli_args.verbose:
+
+            if port_inventory is None:
+                return
+
+            if plugin_object.cli_args.verbose:
                 source_data = getattr(port_inventory, "source_data")
                 source_data["function"] = function_response
 
