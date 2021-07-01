@@ -250,7 +250,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
 
     event_entries = plugin_object.rf.get(redfish_path, max_members=max_entries).get("Members")
 
-    if len(event_entries) == 0:
+    if event_entries and  len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
                                       summary=True)
         return
