@@ -88,10 +88,10 @@ def get_single_chassi_temp(plugin_object, redfish_url):
 
             plugin_object.inventory.add(temp_inventory)
 
-            if state.lower() in ["absent", "disabled", "disable", "unavailableoffline"]:
+            if not state or state.lower() in ["absent", "disabled", "disable", "unavailableoffline"]:
                 continue
 
-            if status is None:
+            elif status is None:
                 status = "OK" if "enable" in state.lower() else state
 
             current_temp = temp_inventory.reading
