@@ -139,11 +139,17 @@ def get_single_system_info(plugin_object, redfish_url):
     if system_inventory.host_name is not None and len(system_inventory.host_name) > 0:
         host_name = system_inventory.host_name
 
-    status_text = f"INFO: {system_inventory.manufacturer} {system_inventory.model} " \
-                  f"(CPU: {system_inventory.cpu_num}, MEM: {system_inventory.mem_size}GB) - " \
-                  f"BIOS: {system_inventory.bios_version} - " \
-                  f"Serial: {system_inventory.serial} - " \
-                  f"Power: {system_inventory.power_state} - Name: {host_name}"
+    status_text_data = list()
+    status_text_data.append(f"INFO: {system_inventory.manufacturer} {system_inventory.model} "
+                            f"(CPU: {system_inventory.cpu_num}, MEM: {system_inventory.mem_size}GB)")
+    status_text_data.append(f"BIOS: {system_inventory.bios_version}")
+    status_text_data.append(f"Serial: {system_inventory.serial}")
+    if plugin_object.rf.vendor == "Dell":
+        status_text_data.append(f"ServiceTag: {system_response.get('SKU')}")
+    status_text_data.append(f"Power: {system_inventory.power_state}")
+    status_text_data.append(f"Name: {host_name}")
+
+    status_text = " - ".join(status_text_data)
 
     system_health_print_status = \
         "CRITICAL" if system_inventory.health_status not in ["OK", "WARNING"] else system_inventory.health_status
