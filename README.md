@@ -47,7 +47,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.3.0 (2021-06-30)
+Version: 1.3.1 (2021-09-08)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
