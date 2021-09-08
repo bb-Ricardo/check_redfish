@@ -366,10 +366,12 @@ class RedfishConnection:
                 redfish_response = self._rf_get(redfish_path)
 
             # test if response is valid json and can be decoded
-            try:
-                redfish_response_json_data = redfish_response.dict
-            except Exception:
-                redfish_response_json_data = dict({"Members": list()})
+            redfish_response_json_data = dict({"Members": list()})
+            if redfish_response.status != 404:
+                try:
+                    redfish_response_json_data = redfish_response.dict
+                except Exception:
+                    pass
 
             # retrieve all members from resource
             if redfish_response_json_data.get("Members") is not None:
@@ -457,6 +459,10 @@ class RedfishConnection:
 
                 # query again
                 redfish_response = self._rf_post("/redfish/v1/Views/", self.vendor_data.view_select)
+
+            if redfish_response.status == 404:
+                if redfish_path is not None:
+                    return self.get(redfish_path)
 
             # test if response is valid json and can be decoded
             redfish_response_json_data = None
