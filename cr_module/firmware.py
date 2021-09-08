@@ -498,6 +498,11 @@ def get_firmware_info_generic(plugin_object):
             plugin_object.inventory.add(firmware_inventory)
 
         if get_power is True:
+            # suppress Power supply data_retrieval_issues
+            for i in list(plugin_object.inventory.data_retrieval_issues.keys()):
+                if i == "power_supply":
+                    del plugin_object.inventory.data_retrieval_issues[i]
+
             for power_supply in plugin_object.inventory.get(PowerSupply):
                 fw_id += 1
 
