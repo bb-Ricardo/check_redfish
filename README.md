@@ -2,7 +2,11 @@
 
 This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
-It will also create a inventory of all components of a system.
+It will also create an inventory of all components of a system.
+
+### NetBox import support
+You are also able to import the inventory files into [NetBox](https://github.com/netbox-community/netbox)
+using [netbox-snyc](https://github.com/bb-Ricardo/netbox-sync).
 
 ## Requirements
 * python >= 3.6
@@ -114,7 +118,7 @@ query inventory information (no health check):
 ## General usage
 multiple request commands can be combined. Or use `--all` to query all system information at once
 
-### Lets start with an example
+### Let's start with an example
 ```/usr/lib64/nagios/plugins/check_redfish/check_redfish.py -H 10.0.0.23 -f /etc/icinga2/ilo_credentials --storage --power```
 * request BMC: 10.0.0.23
 * use credentials from file: /etc/icinga2/ilo_credentials
@@ -185,16 +189,16 @@ results in following session file:
 you can use warning and critical with following commands:
 
 **--mel** and **--sel** (values are passed as "days")<br>
-define after how many days event log entries which have a != OK severity shouldn't
+define after how many days' event log entries which have a != OK severity shouldn't
 be alerted anymore. On most systems it is not possible to set management event log entries
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
 
 Example: ```--mel --critical 1 --warning 3```
 
-* Entries with a != OK severity which are not older then 24 hours are reported as CRITICAL
-* Entries with a != OK severity which are not older then 72 hours are reported as WARNING
-* Any entries with a != OK severity which are older then 72 hours will be reported as OK
+* Entries with a != OK severity which are not older than 24 hours are reported as CRITICAL
+* Entries with a != OK severity which are not older than 72 hours are reported as WARNING
+* Any entries with a != OK severity which are older than 72 hours will be reported as OK
 
 ### Detailed (health checks only)
 Health status by default will be reported as a summary:
@@ -219,7 +223,7 @@ by **--mel** and **--sel**
 ### Timeout and Retries
 Sometimes an iLO4 BMC can be very slow in answering Redfish request. To avoid getting "retries exhausted"
 alarms you can increase the number of retries and/or the timeout. The timeout defines the seconds after each
-try/retry times out. If you increase theses values make sure to also adjust the ```check_timeout``` setting
+try/retry times out. If you increase these values make sure to also adjust the ```check_timeout``` setting
 in your [Icinga2 service definition](contrib/icinga2_hw_service_checks_example.conf). The total runtime of
 this plugin (if all retries fail) can be calculated like this: (1. try + num retries) * timeout
 
@@ -310,7 +314,7 @@ suggestions for changes/improvements then please create a GitHub issue.
 ```
 
 ### Verbose output
-In cause you need more information or want to debug the data you can add the verbose
+In case you need more information or want to debug the data you can add the verbose
 option. This will also add the `source_data` attribute for each inventory item.
 
 ### Inventory attributes
