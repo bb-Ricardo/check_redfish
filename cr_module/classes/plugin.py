@@ -204,7 +204,7 @@ class PluginData:
         return_status = status_list[0]
 
         for status in status_list:
-            if status is None:
+            if status not in plugin_status_types.keys():
                 continue
 
             if plugin_status_types[status] > plugin_status_types[return_status]:
