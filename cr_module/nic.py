@@ -59,6 +59,9 @@ def format_interface_addresses(addresses):
 
     for address in input_list:
 
+        if address is None:
+            continue
+
         address = address.upper()
 
         # add colons to interface address
