@@ -9,6 +9,7 @@
 
 from cr_module.classes.inventory import Temperature
 from cr_module.common import get_status_data, grab
+from cr_module.common import get_chassi_thermal_power_data
 
 
 def get_single_chassi_temp(plugin_object, redfish_url):
@@ -18,9 +19,9 @@ def get_single_chassi_temp(plugin_object, redfish_url):
     chassi_id = redfish_url.rstrip("/").split("/")[-1]
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
 
-    redfish_url = f"{redfish_url}/Thermal"
+    thermal_data = get_chassi_thermal_power_data(plugin_object, redfish_url, "Thermal")
 
-    thermal_data = plugin_object.rf.get_view(redfish_url)
+    redfish_url = f"{redfish_url}/Thermal"
 
     if thermal_data.get("error"):
         plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)

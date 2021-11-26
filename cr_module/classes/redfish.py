@@ -95,18 +95,16 @@ class RedfishConnection:
                             self.password = var.strip()
 
             except FileNotFoundError:
-                self.exit_on_error("Provided authentication file not found: %s" % self.cli_args.authfile)
+                self.exit_on_error(f"Provided authentication file not found: {self.cli_args.authfile}")
             except PermissionError:
-                self.exit_on_error("Error opening authentication file: %s" % self.cli_args.authfile)
+                self.exit_on_error(f"Error opening authentication file: {self.cli_args.authfile}")
             except Exception as e:
                 self.exit_on_error(
-                    "Unknown exception while trying to open authentication file %s: %s" % self.cli_args.authfile,
-                    str(e))
+                    f"Unknown exception while trying to open authentication file {self.cli_args.authfile}: {e}")
 
             if self.username is None or self.password is None:
-                self.exit_on_error(
-                    "Error parsing authentication file '%s'. Make sure username and password are set properly." %
-                    self.cli_args.authfile)
+                self.exit_on_error(f"Error parsing authentication file '{self.cli_args.authfile}'. "
+                                   "Make sure username and password are set properly.")
 
             return
 
@@ -128,7 +126,7 @@ class RedfishConnection:
 
         # check if directory is a file
         if os.path.isfile(session_file_dir):
-            self.exit_on_error("The session file destination (%s) seems to be file." % session_file_dir)
+            self.exit_on_error(f"The session file destination ({session_file_dir}) seems to be file.")
 
         # check if directory exists
         if not os.path.exists(session_file_dir):
@@ -136,14 +134,13 @@ class RedfishConnection:
             try:
                 os.makedirs(session_file_dir, 0o700)
             except OSError:
-                self.exit_on_error("Unable to create session file directory: %s." % session_file_dir)
+                self.exit_on_error(f"Unable to create session file directory: {session_file_dir}.")
             except Exception as e:
-                self.exit_on_error("Unknown exception while creating session file directory %s: %s" % session_file_dir,
-                                   str(e))
+                self.exit_on_error(f"Unknown exception while creating session file directory {session_file_dir}: {e}")
 
         # check if directory is writable
         if not os.access(session_file_dir, os.X_OK | os.W_OK):
-            self.exit_on_error("Error writing to session file directory: %s" % session_file_dir)
+            self.exit_on_error(f"Error writing to session file directory: {session_file_dir}")
 
         # get full path to session file
         # also try to migrate from "older" session file naming schema
@@ -180,10 +177,10 @@ class RedfishConnection:
                     pass
 
         if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.R_OK):
-            self.exit_on_error("Got no permission to read existing session file: %s" % sessionfilepath)
+            self.exit_on_error(f"Got no permission to read existing session file: {sessionfilepath}")
 
         if os.path.exists(sessionfilepath) and not os.access(sessionfilepath, os.W_OK):
-            self.exit_on_error("Got no permission to write to existing session file: %s" % sessionfilepath)
+            self.exit_on_error(f"Got no permission to write to existing session file: {sessionfilepath}")
 
         return sessionfilepath
 
@@ -204,10 +201,10 @@ class RedfishConnection:
         except (FileNotFoundError, EOFError):
             pass
         except PermissionError as e:
-            self.exit_on_error("Error opening session file: %s" % str(e))
+            self.exit_on_error(f"Error opening session file: {e}")
         except Exception as e:
             self.exit_on_error(
-                "Unknown exception while trying to open session file %s: %s" % (self.session_file_path, str(e)))
+                f"Unknown exception while trying to open session file {self.session_file_path}: {e}")
 
         # restore root attribute as RisObject
         # unfortunately we have to re implement the code from get_root_object function
@@ -259,7 +256,7 @@ class RedfishConnection:
                                           self.desired_session_file_mode)
 
         except PermissionError as e:
-            self.exit_on_error("Error opening session file to save session: %s" % str(e))
+            self.exit_on_error(f"Error opening session file to save session: {e}")
         except Exception as e:
 
             # log out from current connection
@@ -272,7 +269,7 @@ class RedfishConnection:
                 pass
 
             self.exit_on_error(
-                "Unknown exception while trying to save session to file %s: %s" % (self.session_file_path, str(e)))
+                f"Unknown exception while trying to save session to file {self.session_file_path}: {e}")
         finally:
             os.umask(umask_original)
 
@@ -303,15 +300,15 @@ class RedfishConnection:
 
         # initialize connection
         try:
-            self.connection = redfish.redfish_client(base_url="https://%s" % self.cli_args.host,
+            self.connection = redfish.redfish_client(base_url=f"https://{self.cli_args.host}",
                                                      max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
-            self.exit_on_error("Host '%s' down or unreachable." % self.cli_args.host, "CRITICAL")
+            self.exit_on_error(f"Host '{ self.cli_args.host}' down or unreachable.", "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
-            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host,
+            self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                "CRITICAL")
         except Exception as e:
-            self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
+            self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if not self.connection:
             raise Exception("Unable to establish connection.")
@@ -320,12 +317,12 @@ class RedfishConnection:
             try:
                 self.connection.login(username=self.username, password=self.password, auth="session")
             except redfish.rest.v1.RetriesExhaustedError:
-                self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host,
+                self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                    "CRITICAL")
             except redfish.rest.v1.InvalidCredentialsError:
                 self.exit_on_error("Username or password invalid.", "CRITICAL")
             except Exception as e:
-                self.exit_on_error("Unable to connect to Host '%s': %s" % (self.cli_args.host, str(e)), "CRITICAL")
+                self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if self.connection is not None:
             self.connection.system_properties = None
@@ -343,8 +340,7 @@ class RedfishConnection:
         try:
             return self.connection.get(redfish_path, None)
         except redfish.rest.v1.RetriesExhaustedError:
-            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host,
-                               "CRITICAL")
+            self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.", "CRITICAL")
 
     def get(self, redfish_path, max_members=None):
 
@@ -438,8 +434,7 @@ class RedfishConnection:
         try:
             return self.connection.post(redfish_path, body=body)
         except redfish.rest.v1.RetriesExhaustedError:
-            self.exit_on_error("Unable to connect to Host '%s', max retries exhausted." % self.cli_args.host,
-                               "CRITICAL")
+            self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.", "CRITICAL")
 
     def get_view(self, redfish_path=None):
 

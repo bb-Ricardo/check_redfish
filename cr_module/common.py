@@ -137,4 +137,27 @@ def get_status_data(status_data=None):
 
     return return_data
 
+
+def get_chassi_thermal_power_data(plugin_object, redfish_url, data_point):
+
+    if data_point not in ["Power", "Thermal"]:
+        raise ValueError("attribute 'data_point' must be 'Power' or 'Thermal'")
+
+    thermal_data = plugin_object.rf.get_view(f"{redfish_url}/{data_point}")
+
+    if thermal_data.get("error") is None:
+        return thermal_data
+
+    chassi_data = plugin_object.rf.get_view(redfish_url)
+
+    thermal_url = chassi_data.get("Thermal")
+
+    if thermal_url is not None:
+        return plugin_object.rf.get_view(thermal_url)
+
+    if data_point == "Thermal":
+        return {"Fans": [], "Redundancy": [], "Temperatures": []}
+    else:
+        return {"PowerControl": [], "PowerSupplies": [], "Redundancy": [], "Voltages": []}
+
 # EOF
