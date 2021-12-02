@@ -25,15 +25,68 @@ def get_chassi_data(plugin_object, data_type):
         plugin_object.inventory.add_issue(data_type, "No 'chassis' property found in root path '/redfish/v1'")
         return
 
-    for chassi in chassis:
-        if data_type == PowerSupply:
-            get_single_chassi_power(plugin_object, chassi)
-        elif data_type == Temperature:
-            get_single_chassi_temp(plugin_object, chassi)
-        elif data_type == Fan:
-            get_single_chassi_fan(plugin_object, chassi)
+    handler = {
+        PowerSupply: get_single_chassi_power,
+        Temperature: get_single_chassi_temp,
+        Fan: get_single_chassi_fan
+    }
+
+    if data_type not in handler.keys():
+        raise AttributeError(f"Unknown data_type used for get_chassi_data(): {type(data_type)}")
+
+    data_point = "Power" if data_type == PowerSupply else "Thermal"
+
+    for chassi_url in chassis:
+
+        chassi_id = chassi_url.rstrip("/").split("/")[-1]
+
+        chassi_data = plugin_object.rf.get_view(chassi_url)
+        discovered_url = grab(chassi_data, f"{data_point}/@odata.id", separator="/")
+        fallback_url = f"{chassi_url}/{data_point}"
+
+        chassi_power_thermal_data = None
+        discovered_url_data = None
+
+        # power/thermal data present
+        if discovered_url is not None:
+            discovered_url_data = plugin_object.rf.get_view(discovered_url)
+
+            if discovered_url_data.get("error") is None and str(discovered_url_data) != "{'Members': []}":
+                chassi_power_thermal_data = discovered_url_data
+
+        # try to query fallback url
+        if chassi_power_thermal_data is None:
+            fallback_url_data = plugin_object.rf.get_view(fallback_url)
+
+            if fallback_url_data.get("error") is None and str(fallback_url_data) != "{'Members': []}":
+                chassi_power_thermal_data = fallback_url_data
+
+        # fallback also failed
+        if chassi_power_thermal_data is None:
+
+            # there is just no data endpoint
+            if discovered_url is None:
+                if data_type == PowerSupply:
+                    plugin_object.set_current_command("Power")
+                    default_text = f"Chassi has no power supplies installed/reported"
+                elif data_type == Temperature:
+                    plugin_object.set_current_command("Temp")
+                    default_text = f"Chassi has no temp sensors installed/reported"
+                else:
+                    plugin_object.set_current_command("Fan")
+                    default_text = f"Chassi has no fans installed/reported"
+
+                plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+                continue
+
+            # there seems to be an error retrieving data
+            if discovered_url is not None and discovered_url_data is not None:
+                # hand over to handle returned data
+                handler.get(data_type)(plugin_object, discovered_url, chassi_id, discovered_url_data)
+
         else:
-            raise AttributeError(f"Unknown data_type used for get_chassi_data(): {type(data_type)}")
+            data_url = discovered_url if discovered_url is not None else fallback_url
+            handler.get(data_type)(plugin_object, data_url, chassi_id, chassi_power_thermal_data)
 
     return
 

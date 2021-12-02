@@ -9,18 +9,12 @@
 
 from cr_module.common import get_status_data, grab
 from cr_module.classes.inventory import Fan
-from cr_module.common import get_chassi_thermal_power_data
 
 
-def get_single_chassi_fan(plugin_object, redfish_url):
+def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
     plugin_object.set_current_command("Fan")
 
-    chassi_id = redfish_url.rstrip("/").split("/")[-1]
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
-
-    thermal_data = get_chassi_thermal_power_data(plugin_object, redfish_url, "Thermal")
-
-    redfish_url = f"{redfish_url}/Thermal"
 
     if thermal_data.get("error"):
         plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
@@ -28,7 +22,7 @@ def get_single_chassi_fan(plugin_object, redfish_url):
 
     fan_num = 0
     if "Fans" in thermal_data:
-        for fan in thermal_data.get("Fans"):
+        for fan in thermal_data.get("Fans") or list():
 
             status_data = get_status_data(grab(fan, "Status"))
 
@@ -129,10 +123,13 @@ def get_single_chassi_fan(plugin_object, redfish_url):
                                             perf_uom=perf_units, warning=plugin_object.cli_args.warning,
                                             critical=plugin_object.cli_args.critical, location=f"Chassi {chassi_id}")
 
-        default_text = f"All fans ({fan_num}) are in good condition"
+        if len(thermal_data.get("Fans")) > 0:
+            default_text = f"All fans ({fan_num}) are in good condition"
+        else:
+            default_text = f"Chassi has no fans installed/reported"
     else:
-        default_text = "no FAN detected"
-        plugin_object.inventory.add_issue(Fan, f"No FAN data returned for API URL '{redfish_url}'")
+        default_text = "No fans detected"
+        plugin_object.inventory.add_issue(Fan, f"No fan data returned for API URL '{redfish_url}'")
 
     # get FanRedundancy status
     fan_redundancies = thermal_data.get("FanRedundancy") or thermal_data.get("Redundancy")

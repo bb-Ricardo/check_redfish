@@ -529,7 +529,12 @@ def get_storage_generic(plugin_object, system):
         storage_port = None
         power_on_hours = drive_response.get("PowerOnHours")
         if drive_oem_data is not None:
-            temperature = drive_oem_data.get("TemperatureCelsius") or drive_oem_data.get("TemperatureC")
+            temperature = drive_oem_data.get("TemperatureCelsius")
+            if temperature is None:
+                temperature = drive_oem_data.get("TemperatureC")
+            if temperature is None:
+                temperature = drive_oem_data.get("Temperature")
+
             if power_on_hours is None:
                 power_on_hours = drive_oem_data.get("HoursOfPoweredUp") or drive_oem_data.get("PowerOnHours")
             bay = drive_oem_data.get("SlotNumber")
@@ -655,7 +660,7 @@ def get_storage_generic(plugin_object, system):
 
             name = volume_data.get("Name")
 
-            raid_level = volume_data.get("VolumeType")
+            raid_level = volume_data.get("VolumeType") or volume_data.get("RAIDType")
             volume_name = volume_data.get("Description")
             volume_state = status_data.get("State")
 
@@ -666,7 +671,7 @@ def get_storage_generic(plugin_object, system):
                     volume_name = oem_data.get("VolumeName")
 
                 if plugin_object.rf.vendor in ["Fujitsu", "Lenovo"]:
-                    raid_level = oem_data.get("RaidLevel")
+                    raid_level = oem_data.get("RaidLevel") or raid_level
                     volume_name = oem_data.get("Name") or name
 
                 if plugin_object.rf.vendor == "Cisco":
@@ -882,6 +887,21 @@ def get_storage_generic(plugin_object, system):
                     else:
                         controller_id = controller_response.get("Id")
 
+                    location = None
+                    location_data = grab(storage_controller, "Location")
+                    if location_data is None:
+                        location_data = grab(storage_controller, f"Oem.{plugin_object.rf.vendor_dict_key}.Location")
+
+                    if location_data is not None:
+                        if grab(location_data, "PartLocation.LocationType") in ["Slot", "Bay"] and \
+                                grab(location_data, 'PartLocation.LocationOrdinalValue') is not None:
+
+                            location = f"{grab(location_data, 'PartLocation.LocationType')} " \
+                                       f"{grab(location_data, 'PartLocation.LocationOrdinalValue')}"
+
+                        if location is None:
+                            location = grab(location_data, "Info") or grab(location_data, "0.Info")
+
                     controller_inventory = StorageController(
                         id=controller_id,
                         name=storage_controller.get("Name"),
@@ -891,7 +911,7 @@ def get_storage_generic(plugin_object, system):
                         manufacturer=storage_controller.get("Manufacturer"),
                         firmware=storage_controller.get("FirmwareVersion"),
                         serial=storage_controller.get("SerialNumber"),
-                        location=grab(storage_controller, f"Oem.{plugin_object.rf.vendor_dict_key}.Location.Info"),
+                        location=location,
                         backup_power_present=backup_power_present,
                         cache_size_in_mb=cache_size_in_mb,
                         system_ids=system_id
@@ -920,9 +940,10 @@ def get_storage_generic(plugin_object, system):
 
                     storage_controller_id_list.append(controller_response.get("@odata.id"))
 
-                    if controller_inventory.location is None:
-                        location_string = ""
-                    else:
+                    location_string = ""
+                    if controller_inventory.location is not None and \
+                            controller_inventory.location not in controller_name:
+
                         location_string = f"{controller_inventory.location} "
 
                     status_text = f"{controller_name} {location_string}" \

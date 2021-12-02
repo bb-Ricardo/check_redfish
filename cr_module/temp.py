@@ -9,29 +9,21 @@
 
 from cr_module.classes.inventory import Temperature
 from cr_module.common import get_status_data, grab
-from cr_module.common import get_chassi_thermal_power_data
 
 
-def get_single_chassi_temp(plugin_object, redfish_url):
-
+def get_single_chassi_temp(plugin_object, redfish_url, chassi_id, thermal_data):
     plugin_object.set_current_command("Temp")
 
-    chassi_id = redfish_url.rstrip("/").split("/")[-1]
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
-
-    thermal_data = get_chassi_thermal_power_data(plugin_object, redfish_url, "Thermal")
-
-    redfish_url = f"{redfish_url}/Thermal"
 
     if thermal_data.get("error"):
         plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)
         return
 
-    default_text = ""
     temp_num = 0
     if "Temperatures" in thermal_data:
 
-        for temp in thermal_data.get("Temperatures"):
+        for temp in thermal_data.get("Temperatures") or list():
 
             status_data = get_status_data(grab(temp, "Status"))
 
@@ -130,9 +122,12 @@ def get_single_chassi_temp(plugin_object, redfish_url):
             plugin_object.add_perf_data(f"temp_{temp_name}", float(current_temp), warning=warning_temp,
                                         critical=critical_temp, location=f"Chassi {chassi_id}")
 
-        default_text = f"All temp sensors ({temp_num}) are in good condition"
+        if len(thermal_data.get("Temperatures")) > 0:
+            default_text = f"All temp sensors ({temp_num}) are in good condition"
+        else:
+            default_text = f"Chassi has no temp sensors installed/reported"
     else:
-        default_text = "no temp sensors detected"
+        default_text = "No temp sensors detected"
         plugin_object.inventory.add_issue(Temperature, f"No temp sensor data returned for API URL '{redfish_url}'")
 
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")

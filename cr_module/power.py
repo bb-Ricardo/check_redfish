@@ -9,18 +9,12 @@
 
 from cr_module.classes.inventory import PowerSupply
 from cr_module.common import get_status_data, grab
-from cr_module.common import get_chassi_thermal_power_data
 
 
-def get_single_chassi_power(plugin_object, redfish_url):
+def get_single_chassi_power(plugin_object, redfish_url, chassi_id, power_data):
     plugin_object.set_current_command("Power")
 
-    chassi_id = redfish_url.rstrip("/").split("/")[-1]
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
-
-    power_data = get_chassi_thermal_power_data(plugin_object, redfish_url, "Power")
-
-    redfish_url = f"{redfish_url}/Power"
 
     if power_data.get("error"):
         plugin_object.add_data_retrieval_error(PowerSupply, power_data, redfish_url)
@@ -140,7 +134,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
         default_text = "All power supplies (%d) are in good condition" % (ps_num - ps_absent)
 
     else:
-        default_text = "no power supplies detected"
+        default_text = "No power supplies detected"
         plugin_object.inventory.add_issue(PowerSupply, f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
@@ -190,6 +184,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
                                               status_text, location=f"Chassi {chassi_id}")
 
                 if reading is not None and name is not None:
+                    # noinspection PyBroadException
                     try:
                         if num_chassis > 1:
                             name = f"{chassi_id}.{name}"
@@ -233,6 +228,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
                                               status_text, location=f"Chassi {chassi_id}")
 
                 if reading is not None and name is not None:
+                    # noinspection PyBroadException
                     try:
                         plugin_object.add_perf_data(f"power_control_{name}", float(reading),
                                                     location=f"Chassi {chassi_id}")
