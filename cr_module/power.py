@@ -11,15 +11,10 @@ from cr_module.classes.inventory import PowerSupply
 from cr_module.common import get_status_data, grab
 
 
-def get_single_chassi_power(plugin_object, redfish_url):
+def get_single_chassi_power(plugin_object, redfish_url, chassi_id, power_data):
     plugin_object.set_current_command("Power")
 
-    chassi_id = redfish_url.rstrip("/").split("/")[-1]
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
-
-    redfish_url = f"{redfish_url}/Power"
-
-    power_data = plugin_object.rf.get_view(redfish_url)
 
     if power_data.get("error"):
         plugin_object.add_data_retrieval_error(PowerSupply, power_data, redfish_url)
@@ -189,6 +184,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
                                               status_text, location=f"Chassi {chassi_id}")
 
                 if reading is not None and name is not None:
+                    # noinspection PyBroadException
                     try:
                         if num_chassis > 1:
                             name = f"{chassi_id}.{name}"
@@ -232,6 +228,7 @@ def get_single_chassi_power(plugin_object, redfish_url):
                                               status_text, location=f"Chassi {chassi_id}")
 
                 if reading is not None and name is not None:
+                    # noinspection PyBroadException
                     try:
                         plugin_object.add_perf_data(f"power_control_{name}", float(reading),
                                                     location=f"Chassi {chassi_id}")
