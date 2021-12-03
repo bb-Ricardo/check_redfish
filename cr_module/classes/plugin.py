@@ -255,7 +255,7 @@ class PluginData:
 
         retrieval_error = self.rf.get_error(redfish_data, redfish_url)
         if retrieval_error is not None:
-            retrieval_error = f"No {class_name.inventory_item_name} data returned for API URL '{redfish_url}'"
+            retrieval_error = f"No {class_name.inventory_item_name} data returned for API URL '{redfish_url}': {retrieval_error}"
 
         self.inventory.add_issue(class_name, retrieval_error)
 

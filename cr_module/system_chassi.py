@@ -343,6 +343,11 @@ def get_single_chassi_info(plugin_object, redfish_url):
         type=chassi_response.get("ChassisType")
     )
 
+    # add Supermicro data
+    if grab(chassi_response, "Oem.Supermicro") is not None:
+        chassi_inventory.manufacturer = "Supermicro"
+        chassi_inventory.model = chassi_response.get("PartNumber")
+
     if plugin_object.cli_args.verbose:
         chassi_inventory.source_data = chassi_response
 

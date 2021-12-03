@@ -84,7 +84,7 @@ def get_firmware_info(plugin_object):
     for entry in firmware_status_entries:
         plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
 
-    # remove inventory date if not requested
+    # remove inventory data if not requested
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
         plugin_object.inventory.unset(PhysicalDrive)
         plugin_object.inventory.unset(LogicalDrive)
@@ -333,29 +333,54 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
 
 def get_firmware_info_generic(plugin_object):
 
-    if plugin_object.rf.connection.root.get("UpdateService") is None:
+    update_service_destination = plugin_object.rf.connection.root.get("UpdateService")
+    if update_service_destination is None:
         plugin_object.inventory.add_issue(Firmware,
                                           "URL '/redfish/v1/UpdateService' unavailable. "
                                           "Unable to retrieve firmware information.")
         return
 
-    redfish_url = f"/redfish/v1/UpdateService/FirmwareInventory{plugin_object.rf.vendor_data.expand_string}"
+    update_service_url = grab(update_service_destination, "@odata.id", separator="/")
 
-    firmware_response = plugin_object.rf.get(redfish_url)
+    if update_service_url is None:
+        plugin_object.inventory.add_issue(Firmware, f"URL '{update_service_destination}' unavailable. "
+                                                    "Unable to retrieve firmware information.")
+        return
 
-    if firmware_response.get("error"):
-        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+    update_service_data = plugin_object.rf.get(update_service_url)
 
-    # older Cisco CIMC versions reported Firmware inventory in a different fashion
-    if plugin_object.rf.vendor == "Cisco":
-        if firmware_response.get("@odata.id") is None:
-            redfish_url = f"/redfish/v1/UpdateService/{plugin_object.rf.vendor_data.expand_string}"
-            firmware_response = plugin_object.rf.get(redfish_url)
-            if firmware_response.get("error"):
-                plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+    if update_service_data.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, update_service_data, update_service_url)
 
-        if firmware_response.get("FirmwareInventory") is not None:
-            firmware_response["Members"] = firmware_response.get("FirmwareInventory")
+    # SuperMicro 'special' case
+    firmware_inventory_location = "FirmwareInventory"
+    if grab(update_service_data, "Oem.Supermicro.SmcFirmwareInventory") is not None:
+        firmware_inventory_location = "Oem/Supermicro/SmcFirmwareInventory"
+
+    firmware_inventory_attribute = grab(update_service_data, firmware_inventory_location, separator="/")
+
+    if isinstance(firmware_inventory_attribute, dict):
+        firmware_inventory_url = grab(update_service_data, f"{firmware_inventory_location}/@odata.id", separator="/")
+
+        if firmware_inventory_url is None:
+            url_part = firmware_inventory_location.split("/")[-1]
+            plugin_object.inventory.add_issue(Firmware, f"URL '{update_service_url}/{url_part}' unavailable. "
+                                                        "Unable to retrieve firmware information.")
+            return
+
+        redfish_url = f"{firmware_inventory_url}{plugin_object.rf.vendor_data.expand_string}"
+
+        firmware_response = plugin_object.rf.get(redfish_url)
+
+        if firmware_response.get("error"):
+            plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
+
+    elif isinstance(firmware_inventory_attribute, list):
+        firmware_response = {"Members": firmware_inventory_attribute}
+    else:
+        plugin_object.inventory.add_issue(Firmware, f"URL '{update_service_url}/FirmwareInventory' unavailable. "
+                                                    "Unable to retrieve firmware information.")
+        return
 
     for firmware_member in firmware_response.get("Members"):
 

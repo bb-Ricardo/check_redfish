@@ -167,4 +167,17 @@ class VendorAmiData(VendorGeneric):
     manager_event_log_entries_path = "{system_manager_id}/LogServices/EventLog/Entries/"
     system_event_log_entries_path = "{system_manager_id}/LogServices/BIOS/Entries/"
 
+
+class SupermicroData(VendorGeneric):
+
+    name = "Supermicro"
+
+    expand_string = ""
+
+    manager_event_log_location = "managers"
+    system_event_log_location = "systems"
+
+    manager_event_log_entries_path = "{system_manager_id}/LogServices/Log1/Entries/"
+    system_event_log_entries_path = "{system_manager_id}/LogServices/Log1/Entries/"
+
 # EOF

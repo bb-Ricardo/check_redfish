@@ -26,6 +26,12 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
 
     if grab(log_services, "Members") is not None and len(log_services.get("Members")) > 0:
 
+        # return if we have only one log member and event type is part of system_manager_id
+        if event_type.lower() in system_manager_id.lower() and len(log_services.get("Members")) == 1:
+            log_service_data = plugin_object.rf.get(grab(log_services, "Members/0/@odata.id", separator="/"))
+
+            return grab(log_service_data, "Entries/@odata.id", separator="/")
+
         for log_service in log_services.get("Members"):
 
             log_service_data = plugin_object.rf.get(log_service.get("@odata.id"))
@@ -54,8 +60,10 @@ def get_log_entry_time(entry_date=None):
     #   2019-11-01T15:03:32-0500
 
     entry_date_object = None
+    # noinspection PyBroadException
     try:
-        entry_date_object = datetime.datetime.strptime(entry_date[::-1].replace(":","",1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+        entry_date_object = \
+            datetime.datetime.strptime(entry_date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
     except Exception:
         pass
 
@@ -70,6 +78,7 @@ def get_log_entry_time(entry_date=None):
         else:
             string_format = "%Y-%m-%d %H:%M:%S"
 
+        # noinspection PyBroadException
         try:
             entry_date_object = datetime.datetime.strptime(entry_date, string_format)
             entry_date_object = entry_date_object.replace(tzinfo=local_timezone)
@@ -259,7 +268,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     processed_ids = list()
 
     # reverse list from newest to oldest entry
-    if plugin_object.rf.vendor == "Lenovo":
+    if plugin_object.rf.vendor in ["Lenovo", "Supermicro"]:
         event_entries.reverse()
 
     for event_entry_item in event_entries:
