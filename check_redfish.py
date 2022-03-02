@@ -80,6 +80,9 @@ def parse_command_line():
                        help=f"set number of maximum retries (default: {default_conn_max_retries})")
     group.add_argument("-t", "--timeout", type=int, default=default_conn_timeout,
                        help=f"set number of request timeout per try/retry (default: {default_conn_timeout})")
+    group.add_argument("--log_exclude",
+                       help="a comma separated list of log lines (regex) "
+                            "to exclude from log status checks (--sel, --mel)")
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health information (at least one is required)")

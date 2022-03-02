@@ -7,6 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import re
 import logging
 from cr_module.classes import plugin_status_types
 
@@ -134,6 +135,33 @@ def get_status_data(status_data=None):
                             status_value.upper() in plugin_status_types.keys():
                         status_value = status_value.upper()
                     return_data[key] = status_value
+
+    return return_data
+
+
+def quoted_split(string_to_split):
+    """
+        Splits a comma separated string into a list.
+        It obeys quoted parts which could contain a comma as well.
+
+        Parameters
+        ----------
+        string_to_split: str
+            the string to split
+
+        Returns
+        -------
+        list
+            of separated string parts
+    """
+
+    return_data = list()
+
+    if not isinstance(string_to_split, str):
+        return return_data
+
+    for part in re.split(r",(?=(?:[^\"']*[\"'][^\"']*[\"'])*[^\"']*$)", string_to_split):
+        return_data.append(part.strip(' "\''))
 
     return return_data
 

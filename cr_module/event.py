@@ -7,10 +7,11 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.common import grab
+from cr_module.common import grab, quoted_split
 from cr_module.classes import plugin_status_types
 
 import datetime
+import re
 
 
 def discover_log_services(plugin_object, event_type, system_manager_id):
@@ -88,6 +89,18 @@ def get_log_entry_time(entry_date=None):
     return entry_date_object
 
 
+def log_line_is_excluded(plugin_object, log_message):
+
+    # match log message against regex expression
+    if len(plugin_object.cli_args.log_exclude_list) > 0 and isinstance(log_message, str):
+
+        for log_exclude in plugin_object.cli_args.log_exclude_list:
+            if log_exclude.search(log_message):
+                return True
+
+    return False
+
+
 def get_event_log(plugin_object, event_type):
 
     # event logs are not part of the inventory
@@ -134,6 +147,18 @@ def get_event_log(plugin_object, event_type):
                                       summary=True)
         return
 
+    plugin_object.cli_args.log_exclude_list = list()
+    if plugin_object.cli_args.log_exclude is not None and len(plugin_object.cli_args.log_exclude) > 0:
+
+        for log_excluded in quoted_split(plugin_object.cli_args.log_exclude):
+            try:
+                re_compiled = re.compile(log_excluded)
+            except Exception as e:
+                plugin_object.add_output_data("UNKNOWN", f"Problem parsing regular expression '{log_excluded}': {e}")
+                continue
+
+            plugin_object.cli_args.log_exclude_list.append(re_compiled)
+
     for system_manager_id in system_manager_ids:
 
         if event_entries_redfish_path is not None:
@@ -178,15 +203,11 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
 
     event_entries = plugin_object.rf.get(redfish_path).get("Members")
 
-    if len(event_entries) == 0:
-        plugin_object.add_output_data("OK", f"No {event_type} log entries found.",
-                                      summary=True)
-        return
-
     # reverse list from newest to oldest entry
     event_entries.reverse()
 
     num_entry = 0
+    num_entry_discarded = 0
     for event_entry_item in event_entries:
 
         if event_entry_item.get("@odata.context"):
@@ -194,9 +215,14 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
         else:
             event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
 
+        message = event_entry.get("Message")
+
+        if log_line_is_excluded(plugin_object, message) is True:
+            num_entry_discarded += 1
+            continue
+
         num_entry += 1
 
-        message = event_entry.get("Message")
         severity = event_entry.get("Severity")
         if severity is not None:
             severity = severity.upper()
@@ -231,12 +257,21 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
                                                     f"{limit_of_returned_items} entries", log_entry=True)
             return
 
+    # in case all log entries matched teh filter
+    if num_entry == 0:
+        status_message = f"No {event_type} log entries found."
+        if len(plugin_object.cli_args.log_exclude_list) > 0:
+            status_message += f" {num_entry_discarded} discarded log entries by log_exclude option."
+
+        plugin_object.add_output_data("OK", status_message, summary=True)
+
     return
 
 
 def get_event_log_generic(plugin_object, event_type, redfish_path):
 
     num_entry = 0
+    num_entry_discarded = 0
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
@@ -285,6 +320,10 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
 
         if message is not None:
             message = message.strip().strip("\n").strip()
+
+        if log_line_is_excluded(plugin_object, message) is True:
+            num_entry_discarded += 1
+            continue
 
         num_entry += 1
 
@@ -344,12 +383,21 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
 
+    # in case all log entries matched teh filter
+    if num_entry == 0:
+        status_message = f"No {event_type} log entries found."
+        if len(plugin_object.cli_args.log_exclude_list) > 0:
+            status_message += f" {num_entry_discarded} discarded log entries by log_exclude option."
+
+        plugin_object.add_output_data("OK", status_message, summary=True)
+
     return
 
 
 def get_event_log_huawei(plugin_object, event_type, system_manager_id):
 
     num_entry = 0
+    num_entry_discarded = 0
     data_now = datetime.datetime.now()
     date_warning = None
     date_critical = None
@@ -393,8 +441,6 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         else:
             event_entry = log_entry
 
-        num_entry += 1
-
         """
         It is not really clear what a "Asserted" and a "Deasserted" event looks like.
         We could assume that an "Asserted" event contains a "MessageId" and a
@@ -415,6 +461,12 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         log_name = event_entry.get("Name")
         source = ""
         status = "OK"
+
+        if log_line_is_excluded(plugin_object, message) is True:
+            num_entry_discarded += 1
+            continue
+
+        num_entry += 1
 
         if severity is not None:
             severity = severity.upper()
@@ -457,5 +509,13 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
+
+    # in case all log entries matched teh filter
+    if num_entry == 0:
+        status_message = f"No {event_type} log entries found."
+        if len(plugin_object.cli_args.log_exclude_list) > 0:
+            status_message += f" {num_entry_discarded} discarded log entries by log_exclude option."
+
+        plugin_object.add_output_data("OK", status_message, summary=True)
 
     return

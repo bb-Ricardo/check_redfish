@@ -35,15 +35,11 @@ There is also an InfluxDB dashboard for some metrics included.
 
 ## HELP
 ```
-usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
-                        [--sessionfile SESSIONFILE]
-                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h]
-                        [-w WARNING] [-c CRITICAL] [-v] [-d] [-m MAX]
-                        [-r RETRIES] [-t TIMEOUT] [--storage] [--proc]
-                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
-                        [--info] [--firmware] [--sel] [--mel] [--all] [-i]
-                        [--inventory_id INVENTORY_ID]
-                        [--inventory_file INVENTORY_FILE]
+usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE] [--sessionfile SESSIONFILE]
+                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h] [-w WARNING] [-c CRITICAL] [-v] [-d]
+                        [-m MAX] [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE] [--storage] [--proc]
+                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware] [--sel] [--mel]
+                        [--all] [-i] [--inventory_id INVENTORY_ID] [--inventory_file INVENTORY_FILE]
 
 This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
@@ -54,8 +50,7 @@ R.I.P. IPMI
 Version: 1.3.2 (2022-01-23)
 
 mandatory arguments:
-  -H HOST, --host HOST  define the host to request. To change the port just
-                        add ':portnumber' to this parameter
+  -H HOST, --host HOST  define the host to request. To change the port just add ':portnumber' to this parameter
 
 authentication arguments:
   -u USERNAME, --username USERNAME
@@ -68,8 +63,7 @@ authentication arguments:
                         define name of session file
   --sessionfiledir SESSIONFILEDIR
                         define directory where the plugin saves session files
-  --nosession           Don't establish a persistent session and log out after
-                        check is finished
+  --nosession           Don't establish a persistent session and log out after check is finished
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -77,16 +71,16 @@ optional arguments:
                         set warning value
   -c CRITICAL, --critical CRITICAL
                         set critical value
-  -v, --verbose         this will add all https requests and responses to
-                        output, also adds inventory source data to all
-                        inventory objects
+  -v, --verbose         this will add all https requests and responses to output, also adds inventory source data to
+                        all inventory objects
   -d, --detailed        always print detailed result
   -m MAX, --max MAX     set maximum of returned items for --sel or --mel
   -r RETRIES, --retries RETRIES
                         set number of maximum retries (default: 3)
   -t TIMEOUT, --timeout TIMEOUT
-                        set number of request timeout per try/retry (default:
-                        7)
+                        set number of request timeout per try/retry (default: 7)
+  --log_exclude LOG_EXCLUDE
+                        a comma separated list of log lines (regex) to exclude from log status checks (--sel, --mel)
 
 query status/health information (at least one is required):
   --storage             request storage health
@@ -104,14 +98,11 @@ query status/health information (at least one is required):
   --all                 request all of the above information at once
 
 query inventory information (no health check):
-  -i, --inventory       return inventory in json format instead of regular
-                        plugin output
+  -i, --inventory       return inventory in json format instead of regular plugin output
   --inventory_id INVENTORY_ID
-                        set an ID which can be used to identify this host in
-                        the destination inventory
+                        set an ID which can be used to identify this host in the destination inventory
   --inventory_file INVENTORY_FILE
-                        set file to write the inventory output to. Otherwise
-                        stdout will be used.
+                        set file to write the inventory output to. Otherwise stdout will be used.
 
 ```
 
