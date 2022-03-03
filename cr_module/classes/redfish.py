@@ -242,10 +242,14 @@ class RedfishConnection:
 
         # fix for change in redfish 2.0.10
         # Socket objects can't be pickled. Remove socket object from pickle object and add it back later on
-        connection_socket = self.connection._conn
-        connection_socket_count = self.connection._conn_count
-        self.connection._conn = None
-        self.connection._conn_count = 0
+        # not needed anymore since redfish 3.10 but added a compatible mode
+
+        connection_socket = None
+        if hasattr(self.connection, "_conn"):
+            connection_socket = self.connection._conn
+            connection_socket_count = self.connection._conn_count
+            self.connection._conn = None
+            self.connection._conn_count = 0
 
         # create file handle file descriptor
         umask_original = os.umask(0o777 ^ self.desired_session_file_mode)
@@ -281,8 +285,9 @@ class RedfishConnection:
         self.connection.root = root_data
 
         # restore connection object
-        self.connection._conn = connection_socket
-        self.connection._conn_count = connection_socket_count
+        if connection_socket is not None:
+            self.connection._conn = connection_socket
+            self.connection._conn_count = connection_socket_count
 
         return
 
