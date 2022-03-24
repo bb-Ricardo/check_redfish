@@ -344,6 +344,8 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
 
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
+* ThinkAgile HX7520 Appliance (Lenovo XClarity Controller v5.4)
+* ThinkAgile HX3720 Appliance (Lenovo XClarity Controller v4.2)
 
 ### Dell
 * PowerEdge R630   (iDRAC 8 Version 2.70.70.70)
@@ -353,6 +355,7 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
 * PowerEdge R7515  (iDRAC 9 Version 4.10.10.10)
 * PowerEdge R840   (iDRAC 9 Version 4.22.00.00)
 * PowerEdge R930   (iDRAC 8 Version 2.70.70.70)
+* XC6420 Appliance (Firmware: 5.00.20.00 & BIOS 2.12.2)
 
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
