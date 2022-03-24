@@ -83,6 +83,9 @@ def parse_command_line():
     group.add_argument("--log_exclude",
                        help="a comma separated list of log lines (regex) "
                             "to exclude from log status checks (--sel, --mel)")
+    group.add_argument("--ignore_missing_ps", action='store_true',
+                       help="ignore the fact that no power supplies are present and report the status"
+                            "of the power subsystem")
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health information (at least one is required)")

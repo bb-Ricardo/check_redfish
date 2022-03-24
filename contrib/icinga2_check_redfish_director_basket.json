@@ -1,6 +1,6 @@
 {
     "Command": {
-        "redfish_test": {
+        "redfish": {
             "arguments": {
                 "--authfile": {
                     "description": "Authentication file content: \n                                                    username=<username>  \n                                                    password=<password>",
@@ -114,6 +114,14 @@
                 "--inventory_file": {
                     "description": "the inventory file to write inventory JSON data to",
                     "value": "$redfish_inventory_file$"
+                },
+                "--log_exclude": {
+                    "description": "a comma separated list of log lines (regex) to exclude from log status checks (--sel, --mel)",
+                    "value": "$redfish_log_exclude$"
+                },
+                "--ignore_missing_ps": {
+                    "description": "ignore the fact that no power supplies are present and report the status of the power subsystem",
+                    "set_if": "$redfish_ignore_missing_ps$"
                 }
             },
             "command": "check_redfish.py",
@@ -128,7 +136,7 @@
             "imports": [],
             "is_string": null,
             "methods_execute": "PluginCheck",
-            "object_name": "redfish_test",
+            "object_name": "redfish",
             "object_type": "object",
             "timeout": "300",
             "vars": {},

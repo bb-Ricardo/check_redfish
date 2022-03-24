@@ -135,7 +135,8 @@ def get_single_chassi_power(plugin_object, redfish_url, chassi_id, power_data):
 
     else:
         default_text = "No power supplies detected"
-        plugin_object.inventory.add_issue(PowerSupply, f"No power supply data returned for API URL '{redfish_url}'")
+        if plugin_object.cli_args.ignore_missing_ps is False:
+            plugin_object.inventory.add_issue(PowerSupply, f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
     power_redundancies = power_data.get("PowerRedundancy") or power_data.get("Redundancy")

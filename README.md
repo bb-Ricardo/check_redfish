@@ -37,9 +37,9 @@ There is also an InfluxDB dashboard for some metrics included.
 ```
 usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE] [--sessionfile SESSIONFILE]
                         [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h] [-w WARNING] [-c CRITICAL] [-v] [-d]
-                        [-m MAX] [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE] [--storage] [--proc]
-                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware] [--sel] [--mel]
-                        [--all] [-i] [--inventory_id INVENTORY_ID] [--inventory_file INVENTORY_FILE]
+                        [-m MAX] [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps] [--storage]
+                        [--proc] [--memory] [--power] [--temp] [--fan] [--nic] [--bmc] [--info] [--firmware] [--sel]
+                        [--mel] [--all] [-i] [--inventory_id INVENTORY_ID] [--inventory_file INVENTORY_FILE]
 
 This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
@@ -81,6 +81,7 @@ optional arguments:
                         set number of request timeout per try/retry (default: 7)
   --log_exclude LOG_EXCLUDE
                         a comma separated list of log lines (regex) to exclude from log status checks (--sel, --mel)
+  --ignore_missing_ps   ignore the fact that no power supplies are present and report the statusof the power subsystem
 
 query status/health information (at least one is required):
   --storage             request storage health
