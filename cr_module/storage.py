@@ -9,6 +9,7 @@
 
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
 from cr_module.common import get_status_data, grab
+from cr_module.firmware_issues import component_has_firmware_issues
 
 
 def get_storage(plugin_object):
@@ -138,6 +139,11 @@ def get_storage_hpe(plugin_object, system):
 
                 if len(drive_status_reasons_list) > 0:
                     drive_status_reasons = " (%s)" % (", ".join(drive_status_reasons_list))
+
+            if component_has_firmware_issues(PhysicalDrive, pd_inventory.model, pd_inventory.firmware) is True:
+                pd_inventory.health_status = "CRITICAL"
+                drive_status_reasons += f" FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
+                                        f"has known issues and needs to be upgraded"
 
             status_text = f"Physical Drive ({pd_inventory.location}) {size}GB " \
                           f"status: {pd_inventory.health_status}{drive_status_reasons}"
@@ -616,9 +622,15 @@ def get_storage_generic(plugin_object, system):
         if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
             size_string = "%0.2fGiB" % (pd_inventory.size_in_byte / (1000 ** 3))
 
+        fw_issues = ""
+        if component_has_firmware_issues(PhysicalDrive, pd_inventory.model, pd_inventory.firmware) is True:
+            pd_inventory.health_status = "CRITICAL"
+            fw_issues += f" FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
+                         f"has known issues and needs to be upgraded"
+
         status_text = f"Physical Drive {pd_inventory.name} {location_string}({pd_inventory.model} / " \
                       f"{pd_inventory.type} / " \
-                      f"{pd_inventory.interface_type}) {size_string} status: {pd_inventory.health_status}"
+                      f"{pd_inventory.interface_type}) {size_string} status: {pd_inventory.health_status}{fw_issues}"
 
         plugin_object.add_output_data(get_component_status(pd_inventory.health_status), status_text,
                                       location=f"System {system_id}")
