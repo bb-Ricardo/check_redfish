@@ -301,6 +301,19 @@ def get_single_system_info(plugin_object, redfish_url):
                                        plugin_object.rf.vendor_data.ilo_firmware_version),
                                       location=f"System {system_id}")
 
+        power_regulator_mode = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.PowerRegulatorMode")
+        power_auto_on = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.PowerAutoOn")
+
+        power_text = list()
+        if power_regulator_mode is not None:
+            power_text.append(f"Power Regulator Mode: {power_regulator_mode}")
+
+        if power_auto_on is not None:
+            power_text.append(f"Power Auto On: {power_auto_on}")
+
+        if len(power_text):
+            plugin_object.add_output_data("OK", " - ".join(power_text), location=f"System {system_id}")
+
     # add SDCard status
     if plugin_object.rf.vendor == "Fujitsu":
         sd_card = plugin_object.rf.get(redfish_url + "/Oem/ts_fujitsu/SDCard")
