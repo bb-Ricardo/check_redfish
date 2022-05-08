@@ -404,7 +404,7 @@ class RedfishConnection:
 
                         collected_entry_path_list.append(entry_path)
 
-                        if len(this_response.get("Members")) == 0:
+                        if this_response.get("Members") is None or len(this_response.get("Members")) == 0:
                             break
                         else:
                             redfish_response_json_data["Members"].extend(this_response.get("Members"))
