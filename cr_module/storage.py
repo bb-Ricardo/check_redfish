@@ -439,6 +439,30 @@ def get_storage_hpe(plugin_object, system):
                                           f"No array controller data returned for API URL '{redfish_url}'")
         return
 
+    # check controller batteries/Capacitors on iLO4 systems
+    if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 4":
+        for chassi in plugin_object.rf.get_system_properties("systems") or list():
+
+            battery_status = grab(
+                plugin_object.rf.get(chassi), f"Oem.{plugin_object.rf.vendor_dict_key}.Battery"
+            ) or list()
+
+            for controller_battery in battery_status:
+                if controller_battery.get("Present") != "Yes":
+                    continue
+
+                status_data = get_status_data(controller_battery.get("Condition"))
+
+                status_text = f"SmartStorageBattery {controller_battery.get('Index')} " \
+                              f"(capacity: {controller_battery.get('MaxCapWatts')}W) " \
+                              f"status: {status_data.get('Health')}"
+
+                plugin_object.add_output_data("CRITICAL"
+                                              if status_data.get("Health") not in ["OK", "WARNING"] else
+                                              status_data.get("Health"), status_text, location=f"System {system_id}")
+
+                battery_list.append(status_text)
+
     # check controller batteries/Capacitors on iLO5 systems
     if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 5":
         for chassi in plugin_object.rf.get_system_properties("chassis") or list():
