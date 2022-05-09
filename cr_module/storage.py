@@ -26,7 +26,11 @@ def get_storage(plugin_object):
         if plugin_object.rf.vendor == "HPE":
             get_storage_hpe(plugin_object, system)
 
-        else:
+        """
+            Newer HPe systems finally moved to /Storage as well instead of /SmartStorage
+            If no physical drives were returned for SmartStorage then we try /Storage as well
+        """
+        if len(plugin_object.inventory.get(PhysicalDrive)) == 0:
             get_storage_generic(plugin_object, system)
 
     return
@@ -325,14 +329,6 @@ def get_storage_hpe(plugin_object, system):
         plugin_object.add_data_retrieval_error(StorageController, storage_response, redfish_url)
         return
 
-    storage_status = get_status_data(storage_response.get("Status"))
-    sum_status = storage_status.get("Health")
-
-    if sum_status == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
-        plugin_object.add_output_data("OK", f"Status of HP SmartArray and all components is: {sum_status}",
-                                      summary=True, location=f"System {system_id}")
-        return
-
     # needed to count summary
     controller_list = list()
     pd_list = list()
@@ -560,7 +556,8 @@ def get_storage_generic(plugin_object, system):
         location = \
             grab(drive_response, "Location.0.Info") or \
             grab(drive_response, "PhysicalLocation.0.Info") or \
-            grab(drive_response, "PhysicalLocation.Info")
+            grab(drive_response, "PhysicalLocation.Info") or \
+            grab(drive_response, "PhysicalLocation.PartLocation.ServiceLabel")
 
         interface_speed = None
         if drive_response.get("NegotiatedSpeedGbs") is not None:
@@ -699,7 +696,7 @@ def get_storage_generic(plugin_object, system):
                 # logical drive id repeats per controller
                 # prefix drive id with controller id
                 id="{}:{}".format(controller_inventory.id, volume_data.get("Id")),
-                name=volume_name,
+                name=volume_name or name,
                 health_status=status_data.get("Health"),
                 operation_status=volume_state,
                 type=volume_data.get("VolumeType"),
