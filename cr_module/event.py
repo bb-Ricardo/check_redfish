@@ -7,16 +7,16 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.common import grab, quoted_split
+from cr_module.common import grab, quoted_split, get_local_timezone
 from cr_module.classes import plugin_status_types
 
 import datetime
 import re
 
 
-def discover_log_services(plugin_object, event_type, system_manager_id):
+def discover_log_services(plugin_object, system_manager_id):
     # try to discover log service
-    redfish_url = None
+    log_service_url_list = list()
 
     system_manager_data = plugin_object.rf.get(system_manager_id)
 
@@ -25,27 +25,13 @@ def discover_log_services(plugin_object, event_type, system_manager_id):
     if log_services_link is not None:
         log_services = plugin_object.rf.get(log_services_link)
 
-    if grab(log_services, "Members") is not None and len(log_services.get("Members")) > 0:
-
-        # return if we have only one log member and event type is part of system_manager_id
-        if event_type.lower() in system_manager_id.lower() and len(log_services.get("Members")) == 1:
-            log_service_data = plugin_object.rf.get(grab(log_services, "Members/0/@odata.id", separator="/"))
-
-            return grab(log_service_data, "Entries/@odata.id", separator="/")
+    if isinstance(grab(log_services, "Members"), list):
 
         for log_service in log_services.get("Members"):
 
-            log_service_data = plugin_object.rf.get(log_service.get("@odata.id"))
+            log_service_url_list.append(log_service.get("@odata.id").rstrip("/"))
 
-            # check if "Name" contains "System" or "Manager"
-            if log_service_data.get("Name") is not None and \
-                    event_type.lower() in log_service_data.get("Name").lower():
-
-                if log_service_data.get("Entries") is not None:
-                    redfish_url = log_service_data.get("Entries").get("@odata.id")
-                    break
-
-    return redfish_url
+    return log_service_url_list
 
 
 def get_log_entry_time(entry_date=None):
@@ -60,18 +46,18 @@ def get_log_entry_time(entry_date=None):
     # to:
     #   2019-11-01T15:03:32-0500
 
+    time_regex = "^(\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d).*([+-]\d\d):*(\d\d)$"
+
     entry_date_object = None
     # noinspection PyBroadException
     try:
         entry_date_object = \
-            datetime.datetime.strptime(entry_date[::-1].replace(":", "", 1)[::-1], "%Y-%m-%dT%H:%M:%S%z")
+            datetime.datetime.strptime("".join(re.search(time_regex, entry_date).groups()), "%Y-%m-%dT%H:%M:%S%z")
     except Exception:
         pass
 
     # parse time zone unaware entry dates and add this local time zone
     if entry_date_object is None:
-
-        local_timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
 
         # HP event log time format
         if "T" in entry_date:
@@ -82,7 +68,7 @@ def get_log_entry_time(entry_date=None):
         # noinspection PyBroadException
         try:
             entry_date_object = datetime.datetime.strptime(entry_date, string_format)
-            entry_date_object = entry_date_object.replace(tzinfo=local_timezone)
+            entry_date_object = entry_date_object.replace(tzinfo=get_local_timezone())
         except Exception:
             entry_date_object = get_log_entry_time(None)
 
@@ -114,31 +100,21 @@ def get_event_log(plugin_object, event_type):
 
     if event_type == "System":
         property_name = plugin_object.rf.vendor_data.system_event_log_location
-        event_entries_redfish_path = plugin_object.rf.vendor_data.system_event_log_entries_path
+        event_entries_redfish_path = plugin_object.rf.vendor_data.system_event_log_entries_path or list()
     else:
         property_name = plugin_object.rf.vendor_data.manager_event_log_location
-        event_entries_redfish_path = plugin_object.rf.vendor_data.manager_event_log_entries_path
+        event_entries_redfish_path = plugin_object.rf.vendor_data.manager_event_log_entries_path or list()
 
-    # we need to discover the log services if no property_name is set (generic vendor)
+    all_log_services = list()
+    for this_property in ["managers", "systems"]:
+        for s_m_id in plugin_object.rf.get_system_properties(this_property) or list():
+            all_log_services.extend(discover_log_services(plugin_object, s_m_id))
+
     if property_name is None:
-        for this_property in ["managers", "systems"]:
-            for s_m_id in plugin_object.rf.get_system_properties(this_property) or list():
-                event_entries_redfish_path = discover_log_services(plugin_object, event_type, s_m_id)
-                if event_entries_redfish_path is not None:
-                    event_entries_redfish_path = event_entries_redfish_path.replace(s_m_id, "{system_manager_id}")
-                    property_name = this_property
-                    break
-
-            if property_name is not None:
-                break
-
-        if event_entries_redfish_path is None:
-            plugin_object.add_output_data("UNKNOWN",
-                                          f"No log services discovered where name matches '{event_type}'")
-            return
-
-    if property_name not in ["managers", "systems"]:
-        raise Exception(f"Unknown event log location: {property_name}")
+        property_name = event_type.lower() + "s"
+        for log_service in all_log_services:
+            if event_type.lower() in log_service.lower():
+                event_entries_redfish_path.append(log_service)
 
     system_manager_ids = plugin_object.rf.get_system_properties(property_name)
 
@@ -159,19 +135,36 @@ def get_event_log(plugin_object, event_type):
 
             plugin_object.cli_args.log_exclude_list.append(re_compiled)
 
+    log_services_parsed = False
     for system_manager_id in system_manager_ids:
 
-        if event_entries_redfish_path is not None:
-            event_entries_redfish_path = event_entries_redfish_path.format(system_manager_id=system_manager_id)
-
-        if plugin_object.rf.vendor == "HPE":
-            get_event_log_hpe(plugin_object, event_type, event_entries_redfish_path)
-
-        elif plugin_object.rf.vendor == "Huawei":
+        if plugin_object.rf.vendor == "Huawei":
             get_event_log_huawei(plugin_object, event_type, system_manager_id)
-
         else:
-            get_event_log_generic(plugin_object, event_type, event_entries_redfish_path)
+
+            for single_event_entries_redfish_path in event_entries_redfish_path:
+                single_event_entries_redfish_path = \
+                    single_event_entries_redfish_path.format(system_manager_id=system_manager_id)
+
+                single_event_entries_redfish_path = single_event_entries_redfish_path.rstrip("/").replace("//", "/")
+
+                # in case the log services couldn't be discovered
+                if len(all_log_services) > 0 and single_event_entries_redfish_path not in all_log_services:
+                    continue
+
+                log_services_parsed = True
+
+                # get Entries location
+                log_service_data_entries = grab(plugin_object.rf.get(single_event_entries_redfish_path),
+                                                "Entries/@odata.id", separator="/")
+                if log_service_data_entries is not None:
+                    if plugin_object.rf.vendor == "HPE":
+                        get_event_log_hpe(plugin_object, event_type, log_service_data_entries)
+                    else:
+                        get_event_log_generic(plugin_object, event_type, log_service_data_entries)
+
+    if plugin_object.rf.vendor != "Huawei" and log_services_parsed is False:
+        plugin_object.add_output_data("UNKNOWN", f"No log services discovered where name matches '{event_type}'")
 
     return
 
@@ -247,14 +240,14 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
                         and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin_object.add_output_data(status, "%s: %s" % (date, message), log_entry=True)
+        plugin_object.add_output_data(status, "%s: %s" % (date, message), is_log_entry=True, log_entry_date=entry_date)
 
         # obey max results returned
         if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             if forced_limit:
                 plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
                                                     f"limited {event_type} log results to "
-                                                    f"{limit_of_returned_items} entries", log_entry=True)
+                                                    f"{limit_of_returned_items} entries", is_log_entry=True)
             return
 
     # in case all log entries matched teh filter
@@ -276,12 +269,6 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     date_warning = None
     date_critical = None
     max_entries = None
-
-    # define locations for known vendors
-    if plugin_object.rf.vendor == "Dell":
-        log_service_data = plugin_object.rf.get(redfish_path)
-        if grab(log_service_data, "Entries") is not None:
-            redfish_path = log_service_data.get("Entries").get("@odata.id")
 
     if plugin_object.cli_args.warning:
         date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
@@ -363,9 +350,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
             if event_entry.get("SensorNumber") is not None and severity == "OK":
                 assoc_id_status[assoc_id] = "cleared"
 
-        if (date_critical is not None or date_warning is not None) and severity is not None:
+        entry_date = get_log_entry_time(date)
 
-            entry_date = get_log_entry_time(date)
+        if (date_critical is not None or date_warning is not None) and severity is not None:
 
             if entry_date is not None and date_critical is not None:
                 if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
@@ -375,7 +362,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
                         entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                     status = "WARNING"
 
-        plugin_object.add_output_data(status, "%s: %s" % (date, message), log_entry=True)
+        plugin_object.add_output_data(status, "%s: %s" % (date, message), is_log_entry=True, log_entry_date=entry_date)
 
         processed_ids.append(event_entry_item.get("Id"))
 
@@ -383,7 +370,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
 
-    # in case all log entries matched teh filter
+    # in case all log entries matched the filter
     if num_entry == 0:
         status_message = f"No {event_type} log entries found."
         if len(plugin_object.cli_args.log_exclude_list) > 0:
@@ -504,7 +491,8 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
             if entry_date > date_warning.astimezone(entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
                 status = "WARNING" if severity not in list(plugin_status_types.keys()) else severity
 
-        plugin_object.add_output_data(status, f"{date}: {log_name}: {source}: {message}", log_entry=True)
+        plugin_object.add_output_data(status, f"{date}: {log_name}: {source}: {message}", is_log_entry=True,
+                                      log_entry_date=entry_date)
 
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:

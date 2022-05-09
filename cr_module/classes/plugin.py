@@ -6,12 +6,13 @@
 #  This work is licensed under the terms of the MIT license.
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
-
+import datetime
 import os
 
 from cr_module.classes import plugin_status_types
 from cr_module.classes.redfish import RedfishConnection
 from cr_module.classes.inventory import Inventory
+from cr_module.common import get_local_timezone
 
 
 class PluginOutputDataEntry:
@@ -22,8 +23,10 @@ class PluginOutputDataEntry:
     location = None
     is_summary = False
     log_entry = False
+    log_entry_date = None
 
-    def __init__(self, state="OK", command=None, text=None, location=None, is_summary=False, log_entry=False):
+    def __init__(self, state="OK", command=None, text=None, location=None, is_summary=False, is_log_entry=False,
+                 log_entry_date=None):
 
         if state not in list(plugin_status_types.keys()):
             raise Exception(f"Status '{state}' is invalid, needs to be one of these: %s" %
@@ -34,7 +37,8 @@ class PluginOutputDataEntry:
         self.text = text
         self.location = location
         self.is_summary = is_summary
-        self.log_entry = log_entry
+        self.log_entry = is_log_entry
+        self.log_entry_date = log_entry_date or datetime.datetime.now().replace(tzinfo=get_local_timezone())
 
     def output_text(self, add_location=False):
 
@@ -55,7 +59,7 @@ class PluginOutputData:
     def append(self, entry):
 
         if not isinstance(entry, PluginOutputDataEntry):
-            raise Exception(f"Output entry must be a \"PluginOutputDataEntry\" object.")
+            raise Exception('Output entry must be a "PluginOutputDataEntry" object.')
 
         self.__output_entries.append(entry)
 
@@ -212,7 +216,7 @@ class PluginData:
 
         return return_status
 
-    def add_output_data(self, state, text, summary=False, location=None, log_entry=False):
+    def add_output_data(self, state, text, summary=False, location=None, is_log_entry=False, log_entry_date=None):
 
         if self.__in_firmware_collection_mode is True:
             return
@@ -221,7 +225,7 @@ class PluginData:
 
         self.__output_data.append(PluginOutputDataEntry(state=state, command=self.__current_command,
                                                         text=text, location=location, is_summary=summary,
-                                                        log_entry=log_entry
+                                                        is_log_entry=is_log_entry, log_entry_date=log_entry_date
                                                         ))
 
     def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None, location=None):
@@ -255,7 +259,8 @@ class PluginData:
 
         retrieval_error = self.rf.get_error(redfish_data, redfish_url)
         if retrieval_error is not None:
-            retrieval_error = f"No {class_name.inventory_item_name} data returned for API URL '{redfish_url}': {retrieval_error}"
+            retrieval_error = f"No {class_name.inventory_item_name} data returned for " \
+                              f"API URL '{redfish_url}': {retrieval_error}"
 
         self.inventory.add_issue(class_name, retrieval_error)
 
@@ -275,7 +280,12 @@ class PluginData:
             log_most_recent = None
             log_entry_counter = dict()
 
-            for entry in self.__output_data.get_command_entries(command):
+            output_entries = self.__output_data.get_command_entries(command)
+
+            if "log" in command.lower():
+                output_entries = sorted(output_entries, key=lambda x: x.log_entry_date, reverse=True)
+
+            for entry in output_entries:
                 if ordered_output_data.get(entry.state) is None:
                     ordered_output_data[entry.state] = list()
 
@@ -331,7 +341,7 @@ class PluginData:
 
         return_string = "\n".join(return_text)
 
-        # append perfdata if there is any
+        # append perf data if there is any
         if len(self.__perf_data) > 0:
             return_string += "|" + " ".join(self.__perf_data)
 

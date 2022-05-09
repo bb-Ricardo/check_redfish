@@ -38,8 +38,8 @@ class VendorHPEData(VendorGeneric):
     manager_event_log_location = "managers"
     system_event_log_location = "systems"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/IEL/Entries"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/IML/Entries"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/IEL"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/IML"]
 
     """
         Select and store view (supported from ILO 5)
@@ -98,8 +98,14 @@ class VendorLenovoData(VendorGeneric):
     manager_event_log_location = "systems"
     system_event_log_location = "systems"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/StandardLog/Entries/"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/ActiveLog/Entries/"
+    manager_event_log_entries_path = [
+        "{system_manager_id}/LogServices/StandardLog",
+        "{system_manager_id}/LogServices/PlatformLog",
+        "{system_manager_id}/LogServices/MaintenanceLog",
+        "{system_manager_id}/LogServices/SaLog",
+        "{system_manager_id}/LogServices/AuditLog",
+    ]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/ActiveLog"]
 
 
 class VendorDellData(VendorGeneric):
@@ -112,8 +118,8 @@ class VendorDellData(VendorGeneric):
 
     # ATTENTION: for Dell we only provide the "base" path.
     #            the Entries path will be discovered in the the according function
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/Lclog"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/Sel"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/Lclog"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/Sel"]
 
 
 class VendorHuaweiData(VendorGeneric):
@@ -139,8 +145,8 @@ class VendorFujitsuData(VendorGeneric):
     manager_event_log_location = "managers"
     system_event_log_location = "managers"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/InternalEventLog/Entries/"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/SystemEventLog/Entries/"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/InternalEventLog"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/SystemEventLog"]
 
 
 class VendorCiscoData(VendorGeneric):
@@ -151,8 +157,8 @@ class VendorCiscoData(VendorGeneric):
     manager_event_log_location = "managers"
     system_event_log_location = "systems"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/CIMC/Entries/"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/SEL/Entries/"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/CIMC"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/SEL"]
 
 
 class VendorAmiData(VendorGeneric):
@@ -164,8 +170,8 @@ class VendorAmiData(VendorGeneric):
     manager_event_log_location = "managers"
     system_event_log_location = "systems"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/EventLog/Entries/"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/BIOS/Entries/"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/EventLog"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/BIOS"]
 
 
 class SupermicroData(VendorGeneric):
@@ -177,7 +183,7 @@ class SupermicroData(VendorGeneric):
     manager_event_log_location = "managers"
     system_event_log_location = "systems"
 
-    manager_event_log_entries_path = "{system_manager_id}/LogServices/Log1/Entries/"
-    system_event_log_entries_path = "{system_manager_id}/LogServices/Log1/Entries/"
+    manager_event_log_entries_path = ["{system_manager_id}/LogServices/Log1"]
+    system_event_log_entries_path = ["{system_manager_id}/LogServices/Log1"]
 
 # EOF

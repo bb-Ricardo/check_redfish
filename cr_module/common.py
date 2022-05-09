@@ -9,7 +9,10 @@
 
 import re
 import logging
+import datetime
 from cr_module.classes import plugin_status_types
+
+local_timezone = None
 
 
 def grab(structure=None, path=None, separator="."):
@@ -164,5 +167,16 @@ def quoted_split(string_to_split):
         return_data.append(part.strip(' "\''))
 
     return return_data
+
+
+def get_local_timezone():
+
+    global local_timezone
+
+    if local_timezone is None:
+        local_timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
+
+    return local_timezone
+
 
 # EOF
