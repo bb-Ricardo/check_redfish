@@ -87,6 +87,7 @@ def get_storage_hpe(plugin_object, system):
 
             predicted_media_life_left_percent = None
             if disk_response.get("SSDEnduranceUtilizationPercentage") is not None:
+                # noinspection PyBroadException
                 try:
                     predicted_media_life_left_percent = 100 - int(
                         disk_response.get("SSDEnduranceUtilizationPercentage"))
@@ -1013,7 +1014,7 @@ def get_storage_generic(plugin_object, system):
 
                         cap_percent = None
                         if None not in [cap_full_capacity, cap_remain_capacity]:
-                            cap_percent = 100 / int(cap_full_capacity.replace("J", ""))  * \
+                            cap_percent = 100 / int(cap_full_capacity.replace("J", "")) * \
                                           int(cap_remain_capacity.replace("J", ""))
 
                         status_text = f"Controller capacitor ({cap_manufacturer} {cap_model}) " \
@@ -1206,6 +1207,7 @@ def get_storage_generic(plugin_object, system):
                         status_text = f"{manufacturer} {name} {model}"
 
                         if capacity is not None:
+                            # noinspection PyBroadException
                             try:
                                 status_text += " (size: %0.2f GiB)" % (int(capacity) / 1000 ** 3)
                             except Exception:

@@ -84,7 +84,7 @@ def parse_command_line():
                        help="a comma separated list of log lines (regex) "
                             "to exclude from log status checks (--sel, --mel)")
     group.add_argument("--ignore_missing_ps", action='store_true',
-                       help="ignore the fact that no power supplies are present and report the status"
+                       help="ignore the fact that no power supplies are present and report the status "
                             "of the power subsystem")
 
     # require at least one argument

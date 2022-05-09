@@ -86,6 +86,7 @@ def get_single_system_procs(plugin_object, redfish_url):
                 # Intel XEON CPUs
                 if current_speed is None and model is not None and "GHz" in model:
                     model_speed = model.split("@")[-1].strip().replace("GHz", "")
+                    # noinspection PyBroadException
                     try:
                         current_speed = int(float(model_speed) * 1000)
                     except Exception:
@@ -121,7 +122,7 @@ def get_single_system_procs(plugin_object, redfish_url):
                         level_3_cache_kib = cache_size * 1000 / 1024
 
                 cpu_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
-                             proc_response.get("SN")
+                    proc_response.get("SN")
 
                 proc_inventory = Processor(
                     name=proc_response.get("Name"),

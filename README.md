@@ -47,7 +47,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.3.2 (2022-01-23)
+Version: 1.4.0-pre1 (2022-05-09)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just add ':portnumber' to this parameter
@@ -81,7 +81,7 @@ optional arguments:
                         set number of request timeout per try/retry (default: 7)
   --log_exclude LOG_EXCLUDE
                         a comma separated list of log lines (regex) to exclude from log status checks (--sel, --mel)
-  --ignore_missing_ps   ignore the fact that no power supplies are present and report the statusof the power subsystem
+  --ignore_missing_ps   ignore the fact that no power supplies are present and report the status of the power subsystem
 
 query status/health information (at least one is required):
   --storage             request storage health
@@ -328,13 +328,14 @@ will be treated as **OK** if Status.State is set to **Enabled**
 This plugin is currently tested with following systems
 
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
+Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.40) should work
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10
+* ProLiant DL365 Gen10 Plus
 * ProLiant DL380p Gen8
 * ProLiant DL380 Gen9
 * ProLiant DL380 Gen10
@@ -344,6 +345,7 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.20) should work
 
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
+* ThinkSystem SR650 V2 (BMC Version 12I-1.15
 * ThinkAgile HX7520 Appliance (Lenovo XClarity Controller v5.4)
 * ThinkAgile HX3720 Appliance (Lenovo XClarity Controller v4.2)
 
@@ -379,6 +381,13 @@ Models:
 ### Inspur (limited support)
 * Inspur NF5280 M5 (4.26.3)
 * Inspur NF5280 M6 (4.12.04)
+
+### SuperMicro (limited support)
+* SuperServer 5028D-TN4T (BMC Version 3.88)
+* SuperServer E300-9D-8CN8TP (BMC Version 01.73.12)
+
+### GIGABYTE (limited support)
+* H262-Z61
 
 ## License
 >You can check out the full license [here](LICENSE.txt)

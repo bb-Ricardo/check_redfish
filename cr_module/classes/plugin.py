@@ -38,7 +38,8 @@ class PluginOutputDataEntry:
         self.location = location
         self.is_summary = is_summary
         self.log_entry = is_log_entry
-        self.log_entry_date = log_entry_date or datetime.datetime.now().replace(tzinfo=get_local_timezone())
+        self.log_entry_date = log_entry_date or \
+            datetime.datetime.fromtimestamp(-3600*48).replace(tzinfo=get_local_timezone())
 
     def output_text(self, add_location=False):
 
@@ -279,6 +280,7 @@ class PluginData:
 
             log_most_recent = None
             log_entry_counter = dict()
+            log_all_counter = 0
 
             output_entries = self.__output_data.get_command_entries(command)
 
@@ -295,6 +297,11 @@ class PluginData:
 
                     if plugin_status_types[entry.state] > plugin_status_types[log_most_recent.state]:
                         log_most_recent = entry
+
+                    if self.cli_args.max is not None and log_all_counter >= self.cli_args.max:
+                        continue
+
+                    log_all_counter += 1
 
                     if log_entry_counter.get(entry.state):
                         log_entry_counter[entry.state] += 1

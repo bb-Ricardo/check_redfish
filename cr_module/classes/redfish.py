@@ -245,6 +245,7 @@ class RedfishConnection:
         # not needed anymore since redfish 3.10 but added a compatible mode
 
         connection_socket = None
+        connection_socket_count = None
         if hasattr(self.connection, "_conn"):
             connection_socket = self.connection._conn
             connection_socket_count = self.connection._conn_count

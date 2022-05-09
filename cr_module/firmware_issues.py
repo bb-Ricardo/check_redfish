@@ -7,7 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import PhysicalDrive, InventoryItem
+from cr_module.classes.inventory import PhysicalDrive
 
 known_firmware_issues = {
 
@@ -52,12 +52,12 @@ def component_has_firmware_issues(inventory_type, model, firmware_version):
 
         Parameters
         ----------
-        inventory_type: InventoryItem
+        inventory_type: PowerSupply
             check_redfish inventory item class
         model: str
             name of the component model
         firmware_version: str
-            firmware version to check for kown issues
+            firmware version to check for known issues
 
         Returns
         -------

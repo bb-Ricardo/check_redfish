@@ -66,7 +66,7 @@ def format_interface_addresses(addresses):
 
         # add colons to interface address
         if ":" not in address:
-            address = ':'.join(address[i:i+2] for i in range(0,len(address),2))
+            address = ':'.join(address[i:i+2] for i in range(0, len(address), 2))
 
         if address == "00:00:00:00:00:00":
             continue
