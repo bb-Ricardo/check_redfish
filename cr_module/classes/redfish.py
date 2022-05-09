@@ -297,6 +297,23 @@ class RedfishConnection:
         if reset is True:
             self.connection = None
 
+        """
+            Test for python-redfish lib version. If we unpickle old library sessions then
+            the attribute '_session' is missing and the request will fail. Here we check
+            if version is 3.1.0 or greater and invalidate the session if '_session' is missing.
+        """
+        if self.connection is not None:
+            redfish_version = tuple(map(int, (redfish.__version__.split("."))))
+            if len(redfish_version) >= 2 and \
+                    redfish_version[0] >= 3 and \
+                    redfish_version[1] >= 1:
+
+                if getattr(self.connection, "_session", None) is None:
+                    self.connection = None
+            else:
+                if getattr(self.connection, "_conn", None) is None:
+                    self.connection = None
+
         # if we have a connection object then just return
         if self.connection is not None:
             return
