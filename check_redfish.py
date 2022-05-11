@@ -16,8 +16,8 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
-__version__ = "1.3.2"
-__version_date__ = "2022-01-23"
+__version__ = "1.4.0"
+__version_date__ = "2022-05-11"
 __author__ = "Ricardo Bartels <ricardo.bartels@telekom.de>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -122,6 +122,8 @@ def parse_command_line():
                        help="return inventory in json format instead of regular plugin output")
     group.add_argument("--inventory_id",
                        help="set an ID which can be used to identify this host in the destination inventory")
+    group.add_argument("--inventory_name",
+                       help="set a name which can be used to identify this host in the destination inventory")
     group.add_argument("--inventory_file",
                        help="set file to write the inventory output to. Otherwise stdout will be used.")
 

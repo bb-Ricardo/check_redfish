@@ -122,7 +122,7 @@ class PluginData:
         self._validate_inventory_file()
         self.rf = RedfishConnection(cli_args)
 
-        self.inventory = Inventory(plugin_version, cli_args.inventory_id)
+        self.inventory = Inventory(plugin_version, cli_args.inventory_id, cli_args.inventory_name)
 
     def in_firmware_collection_mode(self, enabled=False):
 

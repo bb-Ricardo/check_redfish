@@ -47,7 +47,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.4.0-pre1 (2022-05-09)
+Version: 1.4.0 (2022-05-11)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just add ':portnumber' to this parameter
@@ -102,6 +102,8 @@ query inventory information (no health check):
   -i, --inventory       return inventory in json format instead of regular plugin output
   --inventory_id INVENTORY_ID
                         set an ID which can be used to identify this host in the destination inventory
+  --inventory_name INVENTORY_NAME
+                        set a name which can be used to identify this host in the destination inventory
   --inventory_file INVENTORY_FILE
                         set file to write the inventory output to. Otherwise stdout will be used.
 
@@ -207,10 +209,37 @@ If multiline output by default is preferred the option ```--detailed``` needs to
 Use option ```--verbose``` to check for connection problems.
 All redfish https requests and responses will be printed.
 
-
 ### Max option (health checks only)
 This option can be used to limit the results output for event log entries requested
 by **--mel** and **--sel**
+
+### Log filter option
+With `--log_exclude` it is possible to define log messages which will be excluded from monitoring.
+This filter uses regex to match log messages. Multiple filters can be defined comma separated. Use quotes to
+"escape" messages which include a comma.
+
+Example Usage:
+```
+--log_exclude = '"log message, with a comma", another log message, user .* logged in'
+```
+Example result:
+```
+# ./check_redfish.py '--mel' ...
+[CRITICAL]: 2022-03-04T09:48:35-06:00: The iDRAC Service Module communication with iDRAC has ended.
+[CRITICAL]: 2022-03-04T09:36:13-06:00: The iDRAC Service Module communication with iDRAC has ended.
+[WARNING]: 2022-03-03T09:13:19-06:00: The iDRAC Service Module communication with iDRAC has ended.
+[WARNING]: 2022-03-02T15:40:15-06:00: The Integrated NIC 1 Port 1 network link is down.
+[WARNING]: 2022-03-02T15:40:15-06:00: The Integrated NIC 1 Port 2 network link is down.
+[WARNING]: 2022-03-02T15:40:12-06:00: The iDRAC Service Module communication with iDRAC has ended.
+[WARNING]: 2022-03-02T08:16:53-06:00: The iDRAC Service Module communication with iDRAC has ended.
+
+# ./check_redfish.py '--mel' ... --log_exclude "The iDRAC Service Module communication with iDRAC has ended"
+[WARNING]: 2022-03-02T15:40:15-06:00: The Integrated NIC 1 Port 1 network link is down.
+[WARNING]: 2022-03-02T15:40:15-06:00: The Integrated NIC 1 Port 2 network link is down.
+
+# ./check_redfish.py '--mel' ... --log_exclude 'The iDRAC Service Module communication with iDRAC has ended, network link is down'
+[OK]: Manager Event Log contains 2437 OK entries. Most recent notable: [OK]: 2022-03-07T10:00:13-06:00: Successfully logged in using icinga, from 10.1.2.3.
+```
 
 ### Timeout and Retries
 Sometimes an iLO4 BMC can be very slow in answering Redfish request. To avoid getting "retries exhausted"
@@ -298,8 +327,9 @@ suggestions for changes/improvements then please create a GitHub issue.
         "duration_of_data_collection_in_seconds": 1.002901,
         "host_that_collected_inventory": "inventory-collector.example.com",
         "inventory_id": null,
-        "inventory_layout_version": "1.2.0",
-        "script_version": "1.2.0",
+        "inventory_name": null,
+        "inventory_layout_version": "1.4.0",
+        "script_version": "1.4.0",
         "start_of_data_collection": "2021-04-01T09:09:07+02:00"
     }
 }
