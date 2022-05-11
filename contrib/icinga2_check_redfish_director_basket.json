@@ -108,7 +108,11 @@
                     "set_if": "$redfish_inventory$"
                 },
                 "--inventory_id": {
-                    "description": "the object identifier in the destination inventory system",
+                    "description": "the object identifier ID in the destination inventory system",
+                    "value": "$redfish_inventory_id$"
+                },
+                "--inventory_name": {
+                    "description": "the object identifier NAME in the destination inventory system",
                     "value": "$redfish_inventory_id$"
                 },
                 "--inventory_file": {
