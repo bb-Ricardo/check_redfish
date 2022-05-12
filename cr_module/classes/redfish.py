@@ -309,10 +309,10 @@ class RedfishConnection:
                     redfish_version[0] >= 3 and \
                     redfish_version[1] >= 1:
 
-                if getattr(self.connection, "_session", None) is None:
+                if hasattr(self.connection, "_session") is False:
                     self.connection = None
             else:
-                if getattr(self.connection, "_conn", None) is None:
+                if hasattr(self.connection, "_conn") is False:
                     self.connection = None
 
         # if we have a connection object then just return
