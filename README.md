@@ -47,7 +47,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.4.0 (2022-05-11)
+Version: 1.4.1 (2022-05-16)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just add ':portnumber' to this parameter
@@ -329,7 +329,7 @@ suggestions for changes/improvements then please create a GitHub issue.
         "inventory_id": null,
         "inventory_name": null,
         "inventory_layout_version": "1.4.0",
-        "script_version": "1.4.0",
+        "script_version": "1.4.1",
         "start_of_data_collection": "2021-04-01T09:09:07+02:00"
     }
 }
