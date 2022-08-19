@@ -31,6 +31,7 @@ from cr_module.system_chassi import get_system_info, get_chassi_data, get_system
 from cr_module.nic import get_network_interfaces
 from cr_module.storage import get_storage
 from cr_module.bmc import get_bmc_info
+from cr_module.securityservice import get_securityservice_info
 from cr_module.firmware import get_firmware_info
 from cr_module.event import get_event_log
 from cr_module.classes.redfish import default_conn_max_retries, default_conn_timeout
@@ -113,6 +114,8 @@ def parse_command_line():
                        help="request System Log status")
     group.add_argument("--mel", dest="requested_query", action='append_const', const="mel",
                        help="request Management Processor Log status")
+    group.add_argument("--security", dest="requested_query", action='append_const', const="security",
+                       help="request Security Service")
     group.add_argument("--all", dest="requested_query", action='append_const', const="all",
                        help="request all of the above information at once")
 
@@ -174,6 +177,7 @@ if __name__ == "__main__":
     if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info(plugin)
     if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log(plugin, "Manager")
     if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log(plugin, "System")
+    if any(x in args.requested_query for x in ['security', 'all']): get_securityservice_info(plugin)
 
     plugin.do_exit()
 
