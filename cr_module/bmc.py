@@ -331,6 +331,18 @@ def get_bmc_info_generic(plugin_object, redfish_url):
             plugin_object.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status,
                                           self_test_status_text, location=f"Manager {manager_inventory.id}")
 
+        # iLO SecurityState
+        security_service_link = grab(vendor_data, "Links/SecurityService/@odata.id", separator="/")
+        if security_service_link is not None:
+            security_service_response = plugin_object.rf.get(security_service_link)
+            security_state = security_service_response.get("SecurityState")
+
+            if security_state is not None:
+                status_text = f"iLO Security State: {security_state}"
+
+                plugin_object.add_output_data("WARNING" if security_state in ["Production", "Wipe"] else "OK",
+                                              status_text, location=f"Manager {manager_inventory.id}")
+
     # Lenovo specific stuff
     if plugin_object.rf.vendor == "Lenovo":
         redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
