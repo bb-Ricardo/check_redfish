@@ -38,8 +38,7 @@ class PluginOutputDataEntry:
         self.location = location
         self.is_summary = is_summary
         self.log_entry = is_log_entry
-        self.log_entry_date = log_entry_date or \
-            datetime.datetime.fromtimestamp(-3600*48).replace(tzinfo=get_local_timezone())
+        self.log_entry_date = log_entry_date or datetime.datetime.fromtimestamp(0).replace(tzinfo=get_local_timezone())
 
     def output_text(self, add_location=False):
 
