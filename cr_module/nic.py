@@ -366,9 +366,9 @@ def get_system_nics(plugin_object, redfish_url):
                     firmware = grab(controller, "FirmwarePackageVersion")
 
                     network_ports = grab(controller, "Links.NetworkPorts") or \
-                        grab(controller, "Link.NetworkPorts")
+                        grab(controller, "Link.NetworkPorts") or list()
                     network_functions = grab(controller, "Links.NetworkDeviceFunctions") or \
-                        grab(controller, "Link.NetworkDeviceFunctions")
+                        grab(controller, "Link.NetworkDeviceFunctions") or list()
 
                     num_ports = len(network_ports)
 
