@@ -17,14 +17,16 @@ def get_single_system_procs(plugin_object, redfish_url):
     systems_response = plugin_object.rf.get(redfish_url)
 
     if systems_response.get("error"):
-        plugin_object.add_data_retrieval_error(Processor, systems_response, redfish_url)
+        plugin_object.add_data_retrieval_error(
+            Processor, systems_response, redfish_url)
         return
 
     system_id = systems_response.get("Id")
 
     if systems_response.get("ProcessorSummary"):
 
-        proc_status = get_status_data(grab(systems_response, "ProcessorSummary.Status"))
+        proc_status = get_status_data(
+            grab(systems_response, "ProcessorSummary.Status"))
 
         # DELL is HealthRollUp not HealthRollup
         # Fujitsu is just Health and not HealthRollup
@@ -36,7 +38,8 @@ def get_single_system_procs(plugin_object, redfish_url):
             proc_count_text = f"({proc_count}) "
 
         if health == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
-            plugin_object.add_output_data("OK", f"All processors {proc_count_text}are in good condition", summary=True)
+            plugin_object.add_output_data(
+                "OK", f"All processors {proc_count_text}are in good condition", summary=True)
             return
 
     system_response_proc_key = "Processors"
@@ -45,12 +48,15 @@ def get_single_system_procs(plugin_object, redfish_url):
         plugin_object.inventory.add_issue(Processor, issue_text)
         return
 
-    processors_link = grab(systems_response, f"{system_response_proc_key}/@odata.id", separator="/")
+    processors_link = grab(
+        systems_response, f"{system_response_proc_key}/@odata.id", separator="/")
 
-    processors_response = plugin_object.rf.get_view(f"{processors_link}{plugin_object.rf.vendor_data.expand_string}")
+    processors_response = plugin_object.rf.get_view(
+        f"{processors_link}{plugin_object.rf.vendor_data.expand_string}")
 
     if processors_response.get("error"):
-        plugin_object.add_data_retrieval_error(Processor, processors_response, processors_link)
+        plugin_object.add_data_retrieval_error(
+            Processor, processors_response, processors_link)
         return
 
     if processors_response.get("Members") is not None or processors_response.get(system_response_proc_key) is not None:
@@ -64,86 +70,17 @@ def get_single_system_procs(plugin_object, redfish_url):
                 proc_response = plugin_object.rf.get(proc.get("@odata.id"))
 
                 if proc_response.get("error"):
-                    plugin_object.add_data_retrieval_error(Processor, proc_response, proc.get("@odata.id"))
+                    plugin_object.add_data_retrieval_error(
+                        Processor, proc_response, proc.get("@odata.id"))
                     continue
 
             if proc_response.get("Id"):
+                processor_type = proc_response.get("ProcessorType")
 
-                status_data = get_status_data(proc_response.get("Status"))
-
-                model = proc_response.get("Model")
-
-                vendor_data = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
-
-                if plugin_object.rf.vendor == "Dell" and grab(vendor_data, "DellProcessor") is not None:
-                    vendor_data = grab(vendor_data, "DellProcessor")
-
-                # get current/regular speed
-                current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or grab(vendor_data, "RatedSpeedMHz") or \
-                    grab(vendor_data, "FrequencyMHz")
-
-                # try to extract speed from model if current_speed is None
-                # Intel XEON CPUs
-                if current_speed is None and model is not None and "GHz" in model:
-                    model_speed = model.split("@")[-1].strip().replace("GHz", "")
-                    # noinspection PyBroadException
-                    try:
-                        current_speed = int(float(model_speed) * 1000)
-                    except Exception:
-                        pass
-
-                # get cache information
-                level_1_cache_kib = grab(vendor_data, "L1CacheKiB")
-                level_2_cache_kib = grab(vendor_data, "L2CacheKiB")
-                level_3_cache_kib = grab(vendor_data, "L3CacheKiB")
-
-                if plugin_object.rf.vendor == "Dell":
-                    level_1_cache_kib = grab(vendor_data, "Cache1InstalledSizeKB")
-                    level_2_cache_kib = grab(vendor_data, "Cache2InstalledSizeKB")
-                    level_3_cache_kib = grab(vendor_data, "Cache3InstalledSizeKB")
-
-                #                   HPE                           Lenovo
-                vendor_cache_data = grab(vendor_data, "Cache") or grab(vendor_data, "CacheInfo") or list()
-
-                for cpu_cache in vendor_cache_data:
-
-                    #            HPE                                 Lenovo
-                    cache_size = cpu_cache.get("InstalledSizeKB") or cpu_cache.get("InstalledSizeKByte")
-                    cache_level = cpu_cache.get("Name") or cpu_cache.get("CacheLevel")
-
-                    if cache_size is None or cache_level is None:
-                        continue
-
-                    if "L1" in cache_level:
-                        level_1_cache_kib = cache_size * 1000 / 1024
-                    if "L2" in cache_level:
-                        level_2_cache_kib = cache_size * 1000 / 1024
-                    if "L3" in cache_level:
-                        level_3_cache_kib = cache_size * 1000 / 1024
-
-                cpu_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
-                    proc_response.get("SN")
-
-                proc_inventory = Processor(
-                    name=proc_response.get("Name"),
-                    id=proc_response.get("Id"),
-                    model=model,
-                    socket=proc_response.get("Socket"),
-                    health_status=status_data.get("Health"),
-                    operation_status=status_data.get("State"),
-                    cores=proc_response.get("TotalCores"),
-                    threads=proc_response.get("TotalThreads"),
-                    current_speed=current_speed,
-                    max_speed=proc_response.get("MaxSpeedMHz"),
-                    manufacturer=proc_response.get("Manufacturer"),
-                    instruction_set=proc_response.get("InstructionSet"),
-                    architecture=proc_response.get("ProcessorArchitecture"),
-                    serial=cpu_serial,
-                    system_ids=system_id,
-                    L1_cache_kib=level_1_cache_kib,
-                    L2_cache_kib=level_2_cache_kib,
-                    L3_cache_kib=level_3_cache_kib
-                )
+                if processor_type == "CPU":
+                    proc_inventory = get_cpu_inventory(system_id=system_id,proc_response=proc_response,plugin_object=plugin_object)
+                elif processor_type == "GPU":
+                    proc_inventory = get_gpu_inventory(system_id=system_id,proc_response=proc_response)
 
                 if plugin_object.cli_args.verbose:
                     proc_inventory.source_data = proc_response
@@ -178,5 +115,104 @@ def get_single_system_procs(plugin_object, redfish_url):
         plugin_object.inventory.add_issue(Processor, f"No processor data returned for API URL '{redfish_url}'")
 
     return
+
+
+def get_cpu_inventory(system_id, proc_response, plugin_object):
+    status_data = get_status_data(proc_response.get("Status"))
+    model = proc_response.get("Model")
+    vendor_data = grab(
+        proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
+
+    if plugin_object.rf.vendor == "Dell" and grab(vendor_data, "DellProcessor") is not None:
+        vendor_data = grab(vendor_data, "DellProcessor")
+
+    # get current/regular speed
+    current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or grab(vendor_data, "RatedSpeedMHz") or \
+        grab(vendor_data, "FrequencyMHz")
+
+    # try to extract speed from model if current_speed is None
+    # Intel XEON CPUs
+    if current_speed is None and model is not None and "GHz" in model:
+        model_speed = model.split(
+            "@")[-1].strip().replace("GHz", "")
+        # noinspection PyBroadException
+        try:
+            current_speed = int(float(model_speed) * 1000)
+        except Exception:
+            pass
+
+    # get cache information
+    level_1_cache_kib = grab(vendor_data, "L1CacheKiB")
+    level_2_cache_kib = grab(vendor_data, "L2CacheKiB")
+    level_3_cache_kib = grab(vendor_data, "L3CacheKiB")
+
+    if plugin_object.rf.vendor == "Dell":
+        level_1_cache_kib = grab(
+            vendor_data, "Cache1InstalledSizeKB")
+        level_2_cache_kib = grab(
+            vendor_data, "Cache2InstalledSizeKB")
+        level_3_cache_kib = grab(
+            vendor_data, "Cache3InstalledSizeKB")
+
+    #                   HPE                           Lenovo
+    vendor_cache_data = grab(vendor_data, "Cache") or grab(
+        vendor_data, "CacheInfo") or list()
+
+    for cpu_cache in vendor_cache_data:
+
+        #            HPE                                 Lenovo
+        cache_size = cpu_cache.get(
+            "InstalledSizeKB") or cpu_cache.get("InstalledSizeKByte")
+        cache_level = cpu_cache.get(
+            "Name") or cpu_cache.get("CacheLevel")
+
+        if cache_size is None or cache_level is None:
+            continue
+
+        if "L1" in cache_level:
+            level_1_cache_kib = cache_size * 1000 / 1024
+        if "L2" in cache_level:
+            level_2_cache_kib = cache_size * 1000 / 1024
+        if "L3" in cache_level:
+            level_3_cache_kib = cache_size * 1000 / 1024
+    cpu_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
+                        proc_response.get("SN")
+    return Processor(
+        name=proc_response.get("Name"),
+        id=proc_response.get("Id"),
+        model=model,
+        socket=proc_response.get("Socket"),
+        health_status=status_data.get("Health"),
+        operation_status=status_data.get("State"),
+        cores=proc_response.get("TotalCores"),
+        threads=proc_response.get("TotalThreads"),
+        current_speed=current_speed,
+        max_speed=proc_response.get("MaxSpeedMHz"),
+        manufacturer=proc_response.get("Manufacturer"),
+        instruction_set=proc_response.get("InstructionSet"),
+        architecture=proc_response.get("ProcessorArchitecture"),
+        serial=cpu_serial,
+        system_ids=system_id,
+        L1_cache_kib=level_1_cache_kib,
+        L2_cache_kib=level_2_cache_kib,
+        L3_cache_kib=level_3_cache_kib,
+        type="CPU"
+    )
+
+def get_gpu_inventory(system_id, proc_response):
+    status_data = get_status_data(proc_response.get("Status"))
+    model = proc_response.get("Model")
+
+    return Processor(
+        name=proc_response.get("Name"),
+        id=proc_response.get("Id"),
+        model=model,
+        health_status=status_data.get("Health"),
+        operation_status=status_data.get("State"),
+        manufacturer=proc_response.get("Manufacturer"),
+        serial=proc_response.get("SerialNumber"),
+        system_ids=system_id,
+        type="GPU"
+    )
 
 # EOF
