@@ -321,9 +321,8 @@ def get_system_nics(plugin_object, redfish_url):
                 grab(nic_member, "Links.NetworkAdapter.0")
 
             # HPE systems
-            num_ports = 0
-            network_ports = []
-            network_functions = []
+            network_ports = list()
+            network_functions = list()
 
             if adapter_path is None:
 
@@ -365,12 +364,13 @@ def get_system_nics(plugin_object, redfish_url):
                 for controller in adapter_controllers:
                     firmware = grab(controller, "FirmwarePackageVersion")
 
-                    network_ports.extend(grab(controller, "Links.NetworkPorts") or \
-                        grab(controller, "Link.NetworkPorts"))
+                    network_ports.extend(
+                        grab(controller, "Links.NetworkPorts") or grab(controller, "Link.NetworkPorts")
+                    )
                     network_functions.extend(
-                        grab(controller, "Links.NetworkDeviceFunctions") 
-                        or grab(controller, "Link.NetworkDeviceFunctions")
-                        or list()
+                        grab(controller, "Links.NetworkDeviceFunctions") or
+                        grab(controller, "Link.NetworkDeviceFunctions") or
+                        list()
                     )
 
                 num_ports = len(network_ports)
