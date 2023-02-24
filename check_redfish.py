@@ -86,6 +86,8 @@ def parse_command_line():
     group.add_argument("--ignore_missing_ps", action='store_true',
                        help="ignore the fact that no power supplies are present and report the status "
                             "of the power subsystem")
+    group.add_argument("--enable_bmc_security_warning", action='store_true',
+                       help="return status WARNING if BMC security issues are detected (HPE iLO only)")
 
     # require at least one argument
     group = parser.add_argument_group(title="query status/health information (at least one is required)")

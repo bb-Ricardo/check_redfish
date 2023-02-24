@@ -245,9 +245,15 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
         # obey max results returned
         if limit_of_returned_items is not None and num_entry >= limit_of_returned_items:
             if forced_limit:
+                # set the timestamp to '1969-12-30 01:00:00+-TIMEZONE'
+                # This is an iLO specific case where some log entries return with timestamp '0'
+                # To put the this message even before (chronological) log entries with timestamp '0'
+                # we set it to 2 days before unix time '0'
+                message_date = datetime.datetime.fromtimestamp(0-3600*48).replace(tzinfo=get_local_timezone())
                 plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
                                                     f"limited {event_type} log results to "
-                                                    f"{limit_of_returned_items} entries", is_log_entry=True)
+                                                    f"{limit_of_returned_items} entries", is_log_entry=True,
+                                                    log_entry_date=message_date)
             return
 
     # in case all log entries matched teh filter

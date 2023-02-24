@@ -377,7 +377,9 @@ class RedfishConnection:
                 if self.username is None or self.password is None:
                     self.exit_on_error(f"Username and Password needed to connect to this BMC")
 
-            if redfish_response.status != 404 and redfish_response.status >= 400 and self.session_was_restored is True:
+            if (redfish_response.status is None or
+                (redfish_response.status != 404 and redfish_response.status >= 400)) \
+                    and self.session_was_restored is True:
                 # reset connection
                 self.init_connection(reset=True)
 
@@ -599,6 +601,9 @@ class RedfishConnection:
         root_objects = ["Chassis", "Managers", "Systems"]
 
         for root_object in root_objects:
+
+            system_properties[root_object.lower()] = list()
+
             if self.connection.root.get(root_object) is None:
                 continue
 
@@ -607,8 +612,7 @@ class RedfishConnection:
             if rf_path is None:
                 continue
 
-            system_properties[root_object.lower()] = list()
-            for entity in rf_path.get("Members"):
+            for entity in rf_path.get("Members", list()):
 
                 # mitigate an Inspur implementation bug
                 if isinstance(entity, dict):

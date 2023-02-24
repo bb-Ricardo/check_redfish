@@ -42,6 +42,12 @@ known_firmware_issues = {
         "EO1600JVYPP": ["HDP1", "HDP2", "HDP3", "HDP4", "HDP5", "HDP6"],
         "MK0800JVYPQ": ["HDP1", "HDP2", "HDP3", "HDP4", "HDP5", "HDP6"],
         "MO1600JVYPR": ["HDP1", "HDP2", "HDP3", "HDP4", "HDP5", "HDP6"],
+
+        # https://sp.ts.fujitsu.com/dmsp/Publications/public/SB-PRI-21010.pdf
+        "PX02SMF020": ["5202", "5203", "5204"],
+        "PX02SMF040": ["5202", "5203", "5204"],
+        "PX02SMF080": ["5202", "5203", "5204"],
+        "PX02SMB160": ["5202", "5203", "5204"],
     }
 }
 

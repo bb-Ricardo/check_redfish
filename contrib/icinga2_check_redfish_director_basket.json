@@ -126,6 +126,10 @@
                 "--ignore_missing_ps": {
                     "description": "ignore the fact that no power supplies are present and report the status of the power subsystem",
                     "set_if": "$redfish_ignore_missing_ps$"
+                },
+                "--enable_bmc_security_warning": {
+                    "description": "return status WARNING if BMC security issues are detected (HPE iLO only)",
+                    "set_if": "$redfish_enable_bmc_security_warning$"
                 }
             },
             "command": "check_redfish.py",

@@ -331,6 +331,60 @@ def get_bmc_info_generic(plugin_object, redfish_url):
             plugin_object.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status,
                                           self_test_status_text, location=f"Manager {manager_inventory.id}")
 
+        # iLO SecurityState
+        security_service_link = grab(vendor_data, "Links/SecurityService/@odata.id", separator="/")
+        if security_service_link is not None:
+            security_service_response = plugin_object.rf.get(security_service_link)
+            security_state = security_service_response.get("SecurityState")
+
+            if security_state is not None:
+                ilo_security_status_text = f"iLO Security State: {security_state}"
+
+                ilo_security_status = "OK"
+                if security_state in ["Production", "Wipe"]:
+                    ilo_security_status_text += " (should be 'HighSecurity' or 'FIPS')"
+
+                    if plugin_object.cli_args.enable_bmc_security_warning is True:
+                        ilo_security_status = "WARNING"
+
+                plugin_object.add_output_data(ilo_security_status, ilo_security_status_text,
+                                              location=f"Manager {manager_inventory.id}")
+
+            # SecurityParams
+            security_dashboard_link = grab(security_service_response, "Links/SecurityDashboard/@odata.id",
+                                           separator="/")
+            if security_dashboard_link is not None:
+                security_dashboard_response = plugin_object.rf.get(security_dashboard_link)
+                security_parameters_link = grab(security_dashboard_response, "SecurityParameters/@odata.id",
+                                                separator="/")
+                if security_parameters_link is not None:
+                    security_parameters = plugin_object.rf.get(security_parameters_link)
+                    for security_param in security_parameters.get("Members") or list():
+                        if security_param.get("@odata.context"):
+                            sp_response = security_param
+                        else:
+                            sp_response = plugin_object.rf.get(security_param.get("@odata.id"))
+
+                            if sp_response.get("error"):
+                                continue
+
+                        sp_plugin_status = "OK"
+                        sp_name = sp_response.get("Name")
+                        sp_ignore = sp_response.get("Ignore")
+                        sp_status = sp_response.get("SecurityStatus")
+                        sp_state = sp_response.get("State")
+
+                        sp_text = f"Security Param '{sp_name}' is '{sp_state}' - Status: {sp_status}"
+                        if sp_ignore is True and f"{sp_status}".upper() != "OK":
+                            sp_text += " (ignored by iLO config)"
+
+                        if plugin_object.cli_args.enable_bmc_security_warning is True and \
+                                f"{sp_status}".upper() != "OK" and sp_ignore is False:
+                            sp_plugin_status = "WARNING"
+
+                        plugin_object.add_output_data(sp_plugin_status, sp_text,
+                                                      location=f"Manager {manager_inventory.id}")
+
     # Lenovo specific stuff
     if plugin_object.rf.vendor == "Lenovo":
         redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
