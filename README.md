@@ -35,12 +35,16 @@ There is also an InfluxDB dashboard for some metrics included.
 
 ## HELP
 ```
-usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE] [--sessionfile SESSIONFILE]
-                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h] [-w WARNING] [-c CRITICAL] [-v] [-d]
-                        [-m MAX] [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps]
-                        [--enable_bmc_security_warning] [--storage] [--proc] [--memory] [--power] [--temp] [--fan]
-                        [--nic] [--bmc] [--info] [--firmware] [--sel] [--mel] [--all] [-i]
-                        [--inventory_id INVENTORY_ID] [--inventory_name INVENTORY_NAME]
+usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
+                        [--sessionfile SESSIONFILE]
+                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h]
+                        [-w WARNING] [-c CRITICAL] [-v] [-d] [-m MAX]
+                        [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE]
+                        [--ignore_missing_ps] [--enable_bmc_security_warning]
+                        [--storage] [--proc] [--memory] [--power] [--temp]
+                        [--fan] [--nic] [--bmc] [--info] [--firmware] [--sel]
+                        [--mel] [--all] [-i] [--inventory_id INVENTORY_ID]
+                        [--inventory_name INVENTORY_NAME]
                         [--inventory_file INVENTORY_FILE]
 
 This is a monitoring/inventory plugin to check components and
@@ -49,10 +53,11 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.4.1 (2022-05-16)
+Version: 1.5.0 (2023-02-24)
 
 mandatory arguments:
-  -H HOST, --host HOST  define the host to request. To change the port just add ':portnumber' to this parameter
+  -H HOST, --host HOST  define the host to request. To change the port just
+                        add ':portnumber' to this parameter
 
 authentication arguments:
   -u USERNAME, --username USERNAME
@@ -65,7 +70,8 @@ authentication arguments:
                         define name of session file
   --sessionfiledir SESSIONFILEDIR
                         define directory where the plugin saves session files
-  --nosession           Don't establish a persistent session and log out after check is finished
+  --nosession           Don't establish a persistent session and log out after
+                        check is finished
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -73,19 +79,24 @@ optional arguments:
                         set warning value
   -c CRITICAL, --critical CRITICAL
                         set critical value
-  -v, --verbose         this will add all https requests and responses to output, also adds inventory source data to
-                        all inventory objects
+  -v, --verbose         this will add all https requests and responses to
+                        output, also adds inventory source data to all
+                        inventory objects
   -d, --detailed        always print detailed result
   -m MAX, --max MAX     set maximum of returned items for --sel or --mel
   -r RETRIES, --retries RETRIES
                         set number of maximum retries (default: 3)
   -t TIMEOUT, --timeout TIMEOUT
-                        set number of request timeout per try/retry (default: 7)
+                        set number of request timeout per try/retry (default:
+                        7)
   --log_exclude LOG_EXCLUDE
-                        a comma separated list of log lines (regex) to exclude from log status checks (--sel, --mel)
-  --ignore_missing_ps   ignore the fact that no power supplies are present and report the status of the power subsystem
+                        a comma separated list of log lines (regex) to exclude
+                        from log status checks (--sel, --mel)
+  --ignore_missing_ps   ignore the fact that no power supplies are present and
+                        report the status of the power subsystem
   --enable_bmc_security_warning
-                        return status WARNING if BMC security issues are detected (HPE iLO only)
+                        return status WARNING if BMC security issues are
+                        detected (HPE iLO only)
 
 query status/health information (at least one is required):
   --storage             request storage health
@@ -103,13 +114,17 @@ query status/health information (at least one is required):
   --all                 request all of the above information at once
 
 query inventory information (no health check):
-  -i, --inventory       return inventory in json format instead of regular plugin output
+  -i, --inventory       return inventory in json format instead of regular
+                        plugin output
   --inventory_id INVENTORY_ID
-                        set an ID which can be used to identify this host in the destination inventory
+                        set an ID which can be used to identify this host in
+                        the destination inventory
   --inventory_name INVENTORY_NAME
-                        set a name which can be used to identify this host in the destination inventory
+                        set a name which can be used to identify this host in
+                        the destination inventory
   --inventory_file INVENTORY_FILE
-                        set file to write the inventory output to. Otherwise stdout will be used.
+                        set file to write the inventory output to. Otherwise
+                        stdout will be used.
 
 ```
 
