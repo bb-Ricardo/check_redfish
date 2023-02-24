@@ -69,6 +69,8 @@ def get_single_system_procs(plugin_object, redfish_url):
 
             if proc_response.get("Id"):
 
+                processor_type = proc_response.get("ProcessorType")
+
                 status_data = get_status_data(proc_response.get("Status"))
 
                 model = proc_response.get("Model")
@@ -121,8 +123,11 @@ def get_single_system_procs(plugin_object, redfish_url):
                     if "L3" in cache_level:
                         level_3_cache_kib = cache_size * 1000 / 1024
 
-                cpu_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
-                    proc_response.get("SN")
+                if processor_type == "CPU":
+                    proc_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
+                        proc_response.get("SN")
+                elif processor_type == "GPU":
+                    proc_serial = proc_response.get("SerialNumber")
 
                 proc_inventory = Processor(
                     name=proc_response.get("Name"),
@@ -138,11 +143,12 @@ def get_single_system_procs(plugin_object, redfish_url):
                     manufacturer=proc_response.get("Manufacturer"),
                     instruction_set=proc_response.get("InstructionSet"),
                     architecture=proc_response.get("ProcessorArchitecture"),
-                    serial=cpu_serial,
+                    serial=proc_serial,
                     system_ids=system_id,
                     L1_cache_kib=level_1_cache_kib,
                     L2_cache_kib=level_2_cache_kib,
-                    L3_cache_kib=level_3_cache_kib
+                    L3_cache_kib=level_3_cache_kib,
+                    type=processor_type
                 )
 
                 if plugin_object.cli_args.verbose:

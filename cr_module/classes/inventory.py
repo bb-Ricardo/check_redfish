@@ -290,7 +290,8 @@ class Processor(InventoryItem):
        "serial",
        "socket",
        "system_ids",
-       "threads"
+       "threads",
+       "type"
     ]
 
 
