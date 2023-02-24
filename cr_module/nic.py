@@ -322,8 +322,8 @@ def get_system_nics(plugin_object, redfish_url):
 
             # HPE systems
             num_ports = 0
-            network_ports = None
-            network_functions = None
+            network_ports = []
+            network_functions = []
 
             if adapter_path is None:
 
@@ -365,12 +365,15 @@ def get_system_nics(plugin_object, redfish_url):
                 for controller in adapter_controllers:
                     firmware = grab(controller, "FirmwarePackageVersion")
 
-                    network_ports = grab(controller, "Links.NetworkPorts") or \
-                        grab(controller, "Link.NetworkPorts") or list()
-                    network_functions = grab(controller, "Links.NetworkDeviceFunctions") or \
-                        grab(controller, "Link.NetworkDeviceFunctions") or list()
+                    network_ports.extend(grab(controller, "Links.NetworkPorts") or \
+                        grab(controller, "Link.NetworkPorts"))
+                    network_functions.extend(
+                        grab(controller, "Links.NetworkDeviceFunctions") 
+                        or grab(controller, "Link.NetworkDeviceFunctions")
+                        or list()
+                    )
 
-                    num_ports = len(network_ports)
+                num_ports = len(network_ports)
 
             adapter_inventory = NetworkAdapter(
                 id=adapter_id,
@@ -387,7 +390,7 @@ def get_system_nics(plugin_object, redfish_url):
             )
 
             discovered_network_ports = 0
-            for network_function in network_functions or list():
+            for network_function in network_functions:
                 port_inventory_data = get_network_function(network_function)
 
                 if port_inventory_data is not None:
@@ -398,7 +401,7 @@ def get_system_nics(plugin_object, redfish_url):
                     discovered_network_ports += 1
 
             if discovered_network_ports == 0:
-                for network_port in network_ports or list():
+                for network_port in network_ports:
                     port_inventory_data = get_network_port(network_port, return_data=True)
 
                     if port_inventory_data is not None:
