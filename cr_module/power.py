@@ -207,34 +207,41 @@ def get_single_chassi_power(plugin_object, redfish_url, chassi_id, power_data):
 
     for power_control in power_control_data:
 
-        if power_control.get("Status") is not None:
-            power_control_status = get_status_data(grab(power_control, "Status"))
-            status = power_control_status.get("Health")
-            state = power_control_status.get("State")
-            name = power_control.get("Name")
-            reading = power_control.get("PowerConsumedWatts")
+        if power_control.get("Status") is None:
+            continue
 
-            if str(reading) == "0":
-                reading = None
+        power_control_status = get_status_data(grab(power_control, "Status"))
+        status = power_control_status.get("Health")
+        state = power_control_status.get("State")
+        name = power_control.get("Name")
+        reading = power_control.get("PowerConsumedWatts")
 
-            if status is not None:
-                power_control_num += 1
+        if status is None:
+            continue
 
-                if reading is not None:
-                    status_text = f"{name} (status: {status}/{state}) current consumption: {reading}W"
-                else:
-                    status_text = f"{name} status: {status}/{state}"
+        if str(reading) == "0":
+            reading = None
 
-                plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text, location=f"Chassi {chassi_id}")
+        power_control_num += 1
 
-                if reading is not None and name is not None:
-                    # noinspection PyBroadException
-                    try:
-                        plugin_object.add_perf_data(f"power_control_{name}", float(reading),
-                                                    location=f"Chassi {chassi_id}")
-                    except Exception:
-                        pass
+        if plugin_object.rf.vendor == "Ami" and state == "Disabled":
+            status = "OK"
+
+        if reading is not None:
+            status_text = f"{name} (status: {status}/{state}) current consumption: {reading}W"
+        else:
+            status_text = f"{name} status: {status}/{state}"
+
+        plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+                                      status_text, location=f"Chassi {chassi_id}")
+
+        if reading is not None and name is not None:
+            # noinspection PyBroadException
+            try:
+                plugin_object.add_perf_data(f"power_control_{name}", float(reading),
+                                            location=f"Chassi {chassi_id}")
+            except Exception:
+                pass
 
     if plugin_object.rf.vendor == "Supermicro":
         battery = grab(power_data, f"Oem.{plugin_object.rf.vendor_dict_key}.Battery")
