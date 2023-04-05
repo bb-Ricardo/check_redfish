@@ -20,6 +20,8 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
         plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
         return
 
+    system_power_state = get_system_power_state(plugin_object).upper()
+
     fan_num = 0
     if "Fans" in thermal_data:
         for fan in thermal_data.get("Fans") or list():
@@ -104,6 +106,9 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
             if fan_inventory.health_status is None:
                 fan_status = "OK" if fan_inventory.operation_status == "Enabled" else fan_inventory.operation_status
 
+            if system_power_state != "ON":
+                fan_status = "OK"
+
             fan_num += 1
 
             fan_name = fan_inventory.name
@@ -154,5 +159,15 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
     return plugin_object
+
+
+def get_system_power_state(plugin_object):
+
+    for system in plugin_object.rf.get_system_properties("systems") or list():
+        system_state = grab(plugin_object.rf.get(system), "PowerState")
+        if system_state is not None:
+            return system_state
+
+    return "On"
 
 # EOF

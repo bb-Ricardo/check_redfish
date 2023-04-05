@@ -256,7 +256,7 @@ def get_single_system_info(plugin_object, redfish_url):
 
                     this_sensor_status = "OK"
 
-                    if dell_sensor.get('EnabledState') == "Enabled":
+                    if dell_sensor.get('EnabledState') == "Enabled" and system_inventory.power_state.upper() == "ON":
                         if "WARNING" in dell_sensor.get('HealthState').upper():
                             this_sensor_status = "WARNING"
                         elif dell_sensor.get('HealthState') != "OK":

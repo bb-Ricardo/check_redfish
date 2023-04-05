@@ -148,6 +148,9 @@ def get_single_system_mem(plugin_object, redfish_url):
                 if mem_inventory.operation_status in ["GoodInUse", "Operable"]:
                     plugin_status = "OK"
                     status_text = mem_inventory.operation_status
+                elif systems_response.get("PowerState").upper() != "ON":
+                    plugin_status = "OK"
+                    status_text = mem_inventory.health_status
                 else:
                     plugin_status = mem_inventory.health_status
                     status_text = plugin_status
