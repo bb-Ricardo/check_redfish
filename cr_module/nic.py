@@ -138,7 +138,8 @@ def get_system_nics(plugin_object, redfish_url):
 
         # check if port has already be added
         if port_id in [p.id for p in plugin_object.inventory.get(NetworkPort)]:
-            print(f"ALREADY in INVENTORY: {port_id}")
+            # silently ignore that network port has already been parsed
+            # print(f"ALREADY in INVENTORY: {port_id}")
             return
 
         network_port_inventory = NetworkPort(
