@@ -8,6 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 from cr_module.classes.inventory import Fan
 from cr_module.classes.plugin import PluginData
 
@@ -162,18 +163,6 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
 
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
-    return plugin_object
-
-
-def get_system_power_state():
-
-    plugin_object = PluginData()
-
-    for system in plugin_object.rf.get_system_properties("systems") or list():
-        system_state = grab(plugin_object.rf.get(system), "PowerState")
-        if system_state is not None:
-            return system_state
-
-    return "On"
+    return
 
 # EOF
