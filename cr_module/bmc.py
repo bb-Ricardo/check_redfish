@@ -8,13 +8,14 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import Manager, NetworkPort
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module.firmware import get_firmware_info_fujitsu
 from cr_module.nic import get_interface_ip_addresses, format_interface_addresses
 
 
-def get_bmc_info(plugin_object):
-
+def get_bmc_info():
+    plugin_object = PluginData()
     plugin_object.set_current_command("BMC Info")
 
     managers = plugin_object.rf.get_system_properties("managers")
@@ -24,12 +25,12 @@ def get_bmc_info(plugin_object):
         return
 
     for manager in managers:
-        get_bmc_info_generic(plugin_object, manager)
+        get_bmc_info_generic(manager)
 
     return
 
 
-def get_bmc_info_generic(plugin_object, redfish_url):
+def get_bmc_info_generic(redfish_url):
     """
     Possible Info to add
     * NTP Status
@@ -38,6 +39,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     * BIOS settings (maybe, varies a lot between vendors)
     """
 
+    plugin_object = PluginData()
     view_response = plugin_object.rf.get_view(f"{redfish_url}{plugin_object.rf.vendor_data.expand_string}")
 
     if view_response.get("error"):
@@ -412,7 +414,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     # get running firmware information from Fujitsu server
     if plugin_object.rf.vendor == "Fujitsu":
 
-        for bmc_firmware in get_firmware_info_fujitsu(plugin_object, redfish_url, True):
+        for bmc_firmware in get_firmware_info_fujitsu(redfish_url, True):
             plugin_object.add_output_data("OK", "BMC Firmware: %s: %s" %
                                           (bmc_firmware.get("name"), bmc_firmware.get("version")),
                                           location=f"Manager {manager_inventory.id}")

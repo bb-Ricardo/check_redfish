@@ -9,6 +9,7 @@
 
 from cr_module.classes import plugin_status_types
 from cr_module.classes.inventory import System, Chassi, Fan, PowerSupply, Temperature, Memory, Processor
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module.power import get_single_chassi_power
 from cr_module.temp import get_single_chassi_temp
@@ -17,7 +18,9 @@ from cr_module.proc import get_single_system_procs
 from cr_module.mem import get_single_system_mem
 
 
-def get_chassi_data(plugin_object, data_type):
+def get_chassi_data(data_type):
+
+    plugin_object = PluginData()
 
     chassis = plugin_object.rf.get_system_properties("chassis") or list()
 
@@ -82,16 +85,18 @@ def get_chassi_data(plugin_object, data_type):
             # there seems to be an error retrieving data
             if discovered_url is not None and discovered_url_data is not None:
                 # hand over to handle returned data
-                handler.get(data_type)(plugin_object, discovered_url, chassi_id, discovered_url_data)
+                handler.get(data_type)(discovered_url, chassi_id, discovered_url_data)
 
         else:
             data_url = discovered_url if discovered_url is not None else fallback_url
-            handler.get(data_type)(plugin_object, data_url, chassi_id, chassi_power_thermal_data)
+            handler.get(data_type)(data_url, chassi_id, chassi_power_thermal_data)
 
     return
 
 
-def get_system_data(plugin_object, data_type):
+def get_system_data(data_type):
+
+    plugin_object = PluginData()
 
     systems = plugin_object.rf.get_system_properties("systems") or list()
 
@@ -101,16 +106,19 @@ def get_system_data(plugin_object, data_type):
 
     for system in systems:
         if data_type == Processor:
-            get_single_system_procs(plugin_object, system)
+            get_single_system_procs(system)
         elif data_type == Memory:
-            get_single_system_mem(plugin_object, system)
+            get_single_system_mem(system)
         else:
             raise AttributeError("Unknown data_type not set for get_system_data(): %s", type(data_type))
 
     return
 
 
-def get_system_info(plugin_object):
+def get_system_info():
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("System Info")
 
     systems = plugin_object.rf.get_system_properties("systems") or list()
@@ -120,18 +128,21 @@ def get_system_info(plugin_object):
         return
 
     for system in systems:
-        get_single_system_info(plugin_object, system)
+        get_single_system_info(system)
 
     # add chassi inventory here too
     if plugin_object.cli_args.inventory is True:
 
         for chassi in plugin_object.rf.get_system_properties("chassis") or list():
-            get_single_chassi_info(plugin_object, chassi)
+            get_single_chassi_info(chassi)
 
     return
 
 
-def get_single_system_info(plugin_object, redfish_url):
+def get_single_system_info(redfish_url):
+
+    plugin_object = PluginData()
+
     system_response = plugin_object.rf.get(redfish_url)
 
     system_id = redfish_url.rstrip("/").split("/")[-1]
@@ -330,7 +341,10 @@ def get_single_system_info(plugin_object, redfish_url):
     return
 
 
-def get_single_chassi_info(plugin_object, redfish_url):
+def get_single_chassi_info(redfish_url):
+
+    plugin_object = PluginData()
+
     chassi_response = plugin_object.rf.get(redfish_url)
 
     if chassi_response is None:

@@ -8,10 +8,14 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import PowerSupply
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 
 
-def get_single_chassi_power(plugin_object, redfish_url, chassi_id, power_data):
+def get_single_chassi_power(redfish_url, chassi_id, power_data):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Power")
 
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())

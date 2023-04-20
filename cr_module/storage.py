@@ -8,11 +8,15 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module.firmware_issues import component_has_firmware_issues
 
 
-def get_storage(plugin_object):
+def get_storage():
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Storage")
 
     systems = plugin_object.rf.get_system_properties("systems")
@@ -24,19 +28,22 @@ def get_storage(plugin_object):
     for system in systems:
 
         if plugin_object.rf.vendor == "HPE":
-            get_storage_hpe(plugin_object, system)
+            get_storage_hpe(system)
 
         """
             Newer HPe systems finally moved to /Storage as well instead of /SmartStorage
             If no physical drives were returned for SmartStorage then we try /Storage as well
         """
         if len(plugin_object.inventory.get(PhysicalDrive)) == 0:
-            get_storage_generic(plugin_object, system)
+            get_storage_generic(system)
 
     return
 
 
-def get_storage_hpe(plugin_object, system):
+def get_storage_hpe(system):
+
+    plugin_object = PluginData()
+
     def get_disks(link, disk_type="DiskDrives"):
 
         disks_response = plugin_object.rf.get(f"{link}/{disk_type}/?$expand=.")
@@ -509,7 +516,10 @@ def get_storage_hpe(plugin_object, system):
     return
 
 
-def get_storage_generic(plugin_object, system):
+def get_storage_generic(system):
+
+    plugin_object = PluginData()
+
     def get_component_status(this_status):
         return_status = "CRITICAL"
         if this_status in ["OK", None]:

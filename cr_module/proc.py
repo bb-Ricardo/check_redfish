@@ -8,10 +8,14 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import Processor
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 
 
-def get_single_system_procs(plugin_object, redfish_url):
+def get_single_system_procs(redfish_url):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Procs")
 
     systems_response = plugin_object.rf.get(redfish_url)

@@ -8,10 +8,13 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import NetworkAdapter, NetworkPort
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 
 
-def get_network_interfaces(plugin_object):
+def get_network_interfaces():
+
+    plugin_object = PluginData()
 
     systems = plugin_object.rf.get_system_properties("systems") or list()
 
@@ -20,7 +23,7 @@ def get_network_interfaces(plugin_object):
         return
 
     for system in systems:
-        get_system_nics(plugin_object, system)
+        get_system_nics(system)
 
     return
 
@@ -76,8 +79,12 @@ def format_interface_addresses(addresses):
     return output_list
 
 
-def get_system_nics(plugin_object, redfish_url):
+# noinspection PyShadowingNames
+def get_system_nics(redfish_url):
 
+    plugin_object = PluginData()
+
+    # noinspection PyShadowingNames
     def get_network_port(port_data=None, network_function_id=None, return_data=False):
 
         # could be
@@ -172,6 +179,7 @@ def get_system_nics(plugin_object, redfish_url):
 
         return
 
+    # noinspection PyShadowingNames
     def get_network_function(function_data=None):
 
         # could be
@@ -505,6 +513,7 @@ def get_system_nics(plugin_object, redfish_url):
 
                     plugin_object.inventory.add(port_inventory)
 
+    # noinspection PyShadowingNames
     def add_port_status(port_inventory_item):
 
         plugin_status = port_status = port_inventory_item.health_status

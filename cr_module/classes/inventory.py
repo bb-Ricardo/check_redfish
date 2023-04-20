@@ -13,7 +13,6 @@ import json
 import sys
 
 from cr_module.classes import plugin_status_types
-from cr_module.common import grab
 
 # inventory definition
 inventory_layout_version_string = "1.4.0"

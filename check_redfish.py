@@ -36,8 +36,6 @@ from cr_module.event import get_event_log
 from cr_module.classes.redfish import default_conn_max_retries, default_conn_timeout
 from cr_module.classes.inventory import Fan, PowerSupply, Temperature, Memory, Processor
 
-plugin = None
-
 
 def parse_command_line():
     """parse command line arguments
@@ -164,18 +162,18 @@ if __name__ == "__main__":
     # get basic information
     plugin.rf.determine_vendor()
 
-    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data(plugin, PowerSupply)
-    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data(plugin, Temperature)
-    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data(plugin, Fan)
-    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data(plugin, Processor)
-    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data(plugin, Memory)
-    if any(x in args.requested_query for x in ['nic', 'all']):      get_network_interfaces(plugin)
-    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage(plugin)
-    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info(plugin)
-    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info(plugin)
-    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info(plugin)
-    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log(plugin, "Manager")
-    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log(plugin, "System")
+    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
+    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
+    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data(Fan)
+    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data(Processor)
+    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data(Memory)
+    if any(x in args.requested_query for x in ['nic', 'all']):      get_network_interfaces()
+    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage()
+    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
+    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info()
+    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info()
+    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
+    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log("System")
 
     plugin.do_exit()
 

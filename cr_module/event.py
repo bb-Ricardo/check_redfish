@@ -9,12 +9,16 @@
 
 from cr_module.common import grab, quoted_split, get_local_timezone
 from cr_module.classes import plugin_status_types
+from cr_module.classes.plugin import PluginData
 
 import datetime
 import re
 
 
-def discover_log_services(plugin_object, system_manager_id):
+def discover_log_services(system_manager_id):
+
+    plugin_object = PluginData()
+
     # try to discover log service
     log_service_url_list = list()
 
@@ -75,7 +79,9 @@ def get_log_entry_time(entry_date=None):
     return entry_date_object
 
 
-def log_line_is_excluded(plugin_object, log_message):
+def log_line_is_excluded(log_message):
+
+    plugin_object = PluginData()
 
     # match log message against regex expression
     if len(plugin_object.cli_args.log_exclude_list) > 0 and isinstance(log_message, str):
@@ -87,7 +93,9 @@ def log_line_is_excluded(plugin_object, log_message):
     return False
 
 
-def get_event_log(plugin_object, event_type):
+def get_event_log(event_type):
+
+    plugin_object = PluginData()
 
     # event logs are not part of the inventory
     if plugin_object.cli_args.inventory is True:
@@ -108,7 +116,7 @@ def get_event_log(plugin_object, event_type):
     all_log_services = list()
     for this_property in ["managers", "systems"]:
         for s_m_id in plugin_object.rf.get_system_properties(this_property) or list():
-            all_log_services.extend(discover_log_services(plugin_object, s_m_id))
+            all_log_services.extend(discover_log_services(s_m_id))
 
     if property_name is None:
         property_name = event_type.lower() + "s"
@@ -139,7 +147,7 @@ def get_event_log(plugin_object, event_type):
     for system_manager_id in system_manager_ids:
 
         if plugin_object.rf.vendor == "Huawei":
-            get_event_log_huawei(plugin_object, event_type, system_manager_id)
+            get_event_log_huawei(event_type, system_manager_id)
         else:
 
             for single_event_entries_redfish_path in event_entries_redfish_path:
@@ -159,9 +167,9 @@ def get_event_log(plugin_object, event_type):
                                                 "Entries/@odata.id", separator="/")
                 if log_service_data_entries is not None:
                     if plugin_object.rf.vendor == "HPE":
-                        get_event_log_hpe(plugin_object, event_type, log_service_data_entries)
+                        get_event_log_hpe(event_type, log_service_data_entries)
                     else:
-                        get_event_log_generic(plugin_object, event_type, log_service_data_entries)
+                        get_event_log_generic(event_type, log_service_data_entries)
 
     if plugin_object.rf.vendor != "Huawei" and log_services_parsed is False:
         plugin_object.add_output_data("UNKNOWN", f"No log services discovered where name matches '{event_type}'")
@@ -169,7 +177,9 @@ def get_event_log(plugin_object, event_type):
     return
 
 
-def get_event_log_hpe(plugin_object, event_type, redfish_path):
+def get_event_log_hpe(event_type, redfish_path):
+
+    plugin_object = PluginData()
 
     limit_of_returned_items = plugin_object.cli_args.max
     forced_limit = False
@@ -210,7 +220,7 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
 
         message = event_entry.get("Message")
 
-        if log_line_is_excluded(plugin_object, message) is True:
+        if log_line_is_excluded(message) is True:
             num_entry_discarded += 1
             continue
 
@@ -247,7 +257,7 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
             if forced_limit:
                 # set the timestamp to '1969-12-30 01:00:00+-TIMEZONE'
                 # This is an iLO specific case where some log entries return with timestamp '0'
-                # To put the this message even before (chronological) log entries with timestamp '0'
+                # To put this message even before (chronological) log entries with timestamp '0'
                 # we set it to 2 days before unix time '0'
                 message_date = datetime.datetime.fromtimestamp(0-3600*48).replace(tzinfo=get_local_timezone())
                 plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
@@ -267,7 +277,9 @@ def get_event_log_hpe(plugin_object, event_type, redfish_path):
     return
 
 
-def get_event_log_generic(plugin_object, event_type, redfish_path):
+def get_event_log_generic(event_type, redfish_path):
+
+    plugin_object = PluginData()
 
     num_entry = 0
     num_entry_discarded = 0
@@ -314,7 +326,7 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
         if message is not None:
             message = message.strip().strip("\n").strip()
 
-        if log_line_is_excluded(plugin_object, message) is True:
+        if log_line_is_excluded(message) is True:
             num_entry_discarded += 1
             continue
 
@@ -387,7 +399,9 @@ def get_event_log_generic(plugin_object, event_type, redfish_path):
     return
 
 
-def get_event_log_huawei(plugin_object, event_type, system_manager_id):
+def get_event_log_huawei(event_type, system_manager_id):
+
+    plugin_object = PluginData()
 
     num_entry = 0
     num_entry_discarded = 0
@@ -455,7 +469,7 @@ def get_event_log_huawei(plugin_object, event_type, system_manager_id):
         source = ""
         status = "OK"
 
-        if log_line_is_excluded(plugin_object, message) is True:
+        if log_line_is_excluded(message) is True:
             num_entry_discarded += 1
             continue
 

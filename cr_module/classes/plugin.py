@@ -112,7 +112,16 @@ class PluginData:
     __current_command = "global"
     __in_firmware_collection_mode = False
 
-    def __init__(self, cli_args=None, plugin_version=None):
+    # turns this class into a Singleton
+    def __new__(cls, cli_args=None, plugin_version=None):
+        it = cls.__dict__.get("__it__")
+        if it is not None:
+            return it
+        cls.__it__ = it = object.__new__(cls)
+        it.init(cli_args, plugin_version)
+        return it
+
+    def init(self, cli_args=None, plugin_version=None):
 
         if cli_args is None:
             raise Exception("No args passed to RedfishConnection()")

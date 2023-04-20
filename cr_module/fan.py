@@ -9,9 +9,13 @@
 
 from cr_module.common import get_status_data, grab
 from cr_module.classes.inventory import Fan
+from cr_module.classes.plugin import PluginData
 
 
-def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
+def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Fan")
 
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
@@ -20,7 +24,7 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
         plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
         return
 
-    system_power_state = get_system_power_state(plugin_object).upper()
+    system_power_state = get_system_power_state().upper()
 
     fan_num = 0
     if "Fans" in thermal_data:
@@ -161,7 +165,9 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
     return plugin_object
 
 
-def get_system_power_state(plugin_object):
+def get_system_power_state():
+
+    plugin_object = PluginData()
 
     for system in plugin_object.rf.get_system_properties("systems") or list():
         system_state = grab(plugin_object.rf.get(system), "PowerState")
