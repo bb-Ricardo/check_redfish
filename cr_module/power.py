@@ -10,6 +10,7 @@
 from cr_module.classes.inventory import PowerSupply
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 
 
 def get_single_chassi_power(redfish_url, chassi_id, power_data):
@@ -25,6 +26,8 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         return
 
     power_supplies = power_data.get("PowerSupplies", list())
+
+    system_power_state = get_system_power_state().upper()
 
     fujitsu_power_sensors = None
     if plugin_object.rf.vendor == "Fujitsu":
@@ -125,6 +128,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
             status_text = "Power supply {bay} {model}status is: {status}".format(
                 bay=str(bay), model=printed_model, status=printed_status)
+
+            if system_power_state != "ON" and health is None:
+                health = "OK"
 
             plugin_object.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health,
                                           status_text, location=f"Chassi {chassi_id}")
