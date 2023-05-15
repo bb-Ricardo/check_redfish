@@ -136,6 +136,10 @@ class PluginData:
 
         self.__in_firmware_collection_mode = True if enabled is True else False
 
+    def is_in_firmware_collection_mode(self):
+
+        return self.__in_firmware_collection_mode
+
     def _validate_inventory_file(self):
 
         file_name = self.cli_args.inventory_file

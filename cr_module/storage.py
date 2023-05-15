@@ -461,8 +461,9 @@ def get_storage_hpe(system):
                                               array_controller.get("@odata.id"), location=f"System {system_id}")
 
     else:
-        plugin_object.inventory.add_issue(StorageController,
-                                          f"No array controller data returned for API URL '{redfish_url}'")
+        if plugin_object.is_in_firmware_collection_mode() is False:
+            plugin_object.inventory.add_issue(StorageController,
+                                              f"No array controller data returned for API URL '{redfish_url}'")
         return
 
     # check controller batteries/Capacitors on iLO4 systems
@@ -1316,8 +1317,9 @@ def get_storage_generic(system):
     storage_controller_names_list = list(set(storage_controller_names_list))
 
     if len(storage_controller_names_list) == 0 and len(system_drives_list) == 0:
-        plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
-                                      location=f"System {system_id}")
+        if plugin_object.is_in_firmware_collection_mode() is False:
+            plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
+                                          location=f"System {system_id}")
 
     elif len(storage_controller_names_list) == 0 and len(system_drives_list) != 0:
 
