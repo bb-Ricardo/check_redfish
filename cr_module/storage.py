@@ -7,6 +7,8 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import hashlib
+
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
@@ -583,6 +585,7 @@ def get_storage_generic(system):
         temperature = None
         bay = None
         storage_port = None
+        predicted_media_life_left_percent = drive_response.get("PredictedMediaLifeLeftPercent")
         power_on_hours = drive_response.get("PowerOnHours")
         if drive_oem_data is not None:
             temperature = drive_oem_data.get("TemperatureCelsius")
@@ -594,6 +597,10 @@ def get_storage_generic(system):
             if power_on_hours is None:
                 power_on_hours = drive_oem_data.get("HoursOfPoweredUp") or drive_oem_data.get("PowerOnHours")
             bay = drive_oem_data.get("SlotNumber")
+
+            # Supermicro
+            if predicted_media_life_left_percent is None and drive_oem_data.get("PercentageDriveLifeUsed") is not None:
+                predicted_media_life_left_percent = 100 - int(drive_oem_data.get("PercentageDriveLifeUsed"))
 
         # Dell
         dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
@@ -607,6 +614,10 @@ def get_storage_generic(system):
             if physical_location.get("LocationType") in ["Slot", "Bay"]:
                 bay = physical_location.get("LocationOrdinalValue")
 
+        # Supermicro
+        if bay is None and "bay" in f"{drive_response.get('Name')}".lower():
+            bay = drive_response.get('Name').split(".")[-1]
+
         location = \
             grab(drive_response, "Location.0.Info") or \
             grab(drive_response, "PhysicalLocation.0.Info") or \
@@ -615,7 +626,10 @@ def get_storage_generic(system):
 
         interface_speed = None
         if drive_response.get("NegotiatedSpeedGbs") is not None:
-            interface_speed = int(drive_response.get("NegotiatedSpeedGbs")) * 1000
+            interface_speed = int(float(drive_response.get("NegotiatedSpeedGbs"))) * 1000
+
+        if interface_speed is None and drive_response.get("CapableSpeedGbs") is not None:
+            interface_speed = int(float(drive_response.get("CapableSpeedGbs"))) * 1000
 
         encrypted = None
         if drive_response.get("EncryptionStatus") is not None:
@@ -624,10 +638,15 @@ def get_storage_generic(system):
             else:
                 encrypted = False
 
+        pd_id = "{}:{}:{}".format(
+            controller_inventory.id,
+            drive_response.get("Id"),
+            hashlib.sha1(drive_link.encode("utf-8")).hexdigest())
+
         pd_inventory = PhysicalDrive(
             # drive id repeats per controller
             # prefix drive id with controller id
-            id="{}:{}".format(controller_inventory.id, drive_response.get("Id")),
+            id=pd_id,
             name=drive_response.get("Name"),
             health_status=status_data.get("Health"),
             operation_status=status_data.get("State"),
@@ -639,7 +658,7 @@ def get_storage_generic(system):
             type=drive_response.get("MediaType"),
             speed_in_rpm=drive_response.get("RotationalSpeedRpm") or drive_response.get("RotationSpeedRPM"),
             failure_predicted=drive_response.get("FailurePredicted"),
-            predicted_media_life_left_percent=drive_response.get("PredictedMediaLifeLeftPercent"),
+            predicted_media_life_left_percent=predicted_media_life_left_percent,
             part_number=drive_response.get("PartNumber"),
             size_in_byte=disk_size,
             power_on_hours=power_on_hours,
@@ -661,6 +680,9 @@ def get_storage_generic(system):
         plugin_object.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids",
                                        pd_inventory.id)
 
+        if pd_inventory.type is None and "SSD" in pd_inventory.id:
+            pd_inventory.type = "SSD"
+
         if pd_inventory.location is None or pd_inventory.name == pd_inventory.location:
             location_string = ""
         else:
@@ -668,6 +690,8 @@ def get_storage_generic(system):
 
         if pd_inventory.health_status is not None:
             drives_status_list.append(pd_inventory.health_status)
+
+        drive_mapping[drive_link] = pd_inventory
 
         size_string = "0GiB"
         if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
@@ -740,6 +764,9 @@ def get_storage_generic(system):
                     raid_level = oem_data.get("RaidLevel") or raid_level
                     volume_name = oem_data.get("Name") or name
 
+                if plugin_object.rf.vendor == "Supermicro":
+                    raid_level = oem_data.get("RaidType") or raid_level
+
                 if plugin_object.rf.vendor == "Cisco":
                     volume_state = oem_data.get("VolumeState")
 
@@ -769,14 +796,14 @@ def get_storage_generic(system):
 
             data_drives_links = grab(volume_data, "Links.Drives")
 
-            if data_drives_links is not None:
+            for data_drive in data_drives_links or list():
+                data_drive_link = data_drive.get("@odata.id").rstrip("/")
+                data_drive = drive_mapping.get(data_drive_link)
+                if data_drive is None:
+                    continue
 
-                for data_drive in data_drives_links:
-                    data_drive_id = ("{}:{}".format(
-                        controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
-
-                    ld_inventory.update("physical_drive_ids", data_drive_id, True)
-                    plugin_object.inventory.append(PhysicalDrive, data_drive_id, "logical_drive_ids", ld_inventory.id)
+                ld_inventory.update("physical_drive_ids", data_drive.id, True)
+                plugin_object.inventory.append(PhysicalDrive, data_drive.id, "logical_drive_ids", ld_inventory.id)
 
             if ld_inventory.health_status is not None:
                 volume_status_list.append(ld_inventory.health_status)
@@ -842,15 +869,15 @@ def get_storage_generic(system):
         # set relation between disk drives and enclosures
         data_drives_links = grab(enclosure_response, "Links.Drives")
 
-        if data_drives_links is not None:
+        for data_drive in data_drives_links or list():
+            data_drive_link = data_drive.get("@odata.id").rstrip("/")
+            data_drive = drive_mapping.get(data_drive_link)
+            if data_drive is None:
+                continue
 
-            for data_drive in data_drives_links:
-                data_drive_id = ("{}:{}".format(
-                    controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
-
-                enclosure_inventory.update("physical_drive_ids", data_drive_id, True)
-                plugin_object.inventory.append(PhysicalDrive, data_drive_id, "storage_enclosure_ids",
-                                               enclosure_inventory.id)
+            enclosure_inventory.update("physical_drive_ids", data_drive.id, True)
+            plugin_object.inventory.append(PhysicalDrive, data_drive.id, "storage_enclosure_ids",
+                                           enclosure_inventory.id)
 
         plugin_object.inventory.add(enclosure_inventory)
 
@@ -898,6 +925,7 @@ def get_storage_generic(system):
     storage_status_list = list()
     volume_status_list = list()
     enclosure_status_list = list()
+    drive_mapping = dict()
 
     if storage_response is not None:
 
@@ -1074,6 +1102,12 @@ def get_storage_generic(system):
                         plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
                                                       status_text, location=f"System {system_id}")
 
+                    # Supermicro
+                    if grab(controller_oem_data, "BBU") is not None:
+                        bbu_status = get_status_data(grab(controller_oem_data, "BBU.Status"))
+                        controller_inventory.backup_power_health = bbu_status.get("Health")
+                        if bbu_status.get("State") == "Enabled":
+                            controller_inventory.backup_power_present = True
                     # Dell
                     controller_oem_data = grab(controller_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
                     if grab(controller_oem_data, "DellControllerBattery") is not None:

@@ -536,7 +536,7 @@ class Inventory(object):
         for inv_item in self.base_structure[object_type.inventory_item_name]:
             if inv_item.id == object_type.id:
 
-                print(f"Object id '{object_type.id}' for '{object_type.__class__.__name__}' already used",
+                print(f"Object id '{object_type.id}' for '{object_type.__class__.__name__}' ({inv_item.name}) already used",
                       file=sys.stderr)
 
         self.base_structure[object_type.inventory_item_name].append(object_type)

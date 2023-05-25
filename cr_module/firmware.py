@@ -250,8 +250,13 @@ def get_firmware_info_fujitsu(system_id, bmc_only=False):
 
     for drive in plugin_object.inventory.get(PhysicalDrive):
 
+        # prevent printing of url hash at the end of the id
+        drive_id = drive.id
+        if len(drive_id.split(":")) > 2:
+            drive_id = ":".join(drive_id.split(":")[:-1])
+
         firmware_entries.append({
-            "id": f"Drive:{drive.id}",
+            "id": f"Drive:{drive_id}",
             "name": f"Drive {drive.name}",
             "version": f"{drive.firmware}",
             "location": f"Slot {drive.bay}"
@@ -409,6 +414,14 @@ def get_firmware_info_generic():
 
         if component_id is None:
             component_id = component_name
+
+        # mitigate issue for Supermicro on using IDs more then once
+        if plugin_object.rf.vendor == "Supermicro":
+            try:
+                int(component_id)
+                component_id = "{}:{}".format(component_name.replace(" ", "_"), component_id)
+            except ValueError:
+                pass
 
         # on Dell system skip power supplies and disk and collect them separately
         # only one of the disk and power supply is reported not all of them
