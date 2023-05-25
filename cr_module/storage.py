@@ -754,6 +754,9 @@ def get_storage_generic(system):
             volume_name = volume_data.get("Description")
             volume_state = status_data.get("State")
 
+            if volume_data.get("RAIDType") is not None:
+                raid_level = volume_data.get("RAIDType")
+
             oem_data = grab(volume_data, f"Oem.{plugin_object.rf.vendor_dict_key}")
             if oem_data is not None:
                 if plugin_object.rf.vendor == "Huawei":

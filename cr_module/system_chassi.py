@@ -255,13 +255,10 @@ def get_single_system_info(redfish_url):
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
 
-                    # skip unknown DIMM and CPU status for systems without DELL slot collection
-                    # CPU Status as name
-                    if dell_slot_collection is None or \
-                            ("Status" in dell_sensor.get('ElementName') and "CPU" in dell_sensor.get('ElementName')):
-                        if dell_sensor.get('CurrentState') == dell_sensor.get('HealthState') and \
-                                dell_sensor.get('HealthState').upper() == "UNKNOWN":
-                            continue
+                    # skip unknown DIMM and CPU status
+                    if dell_sensor.get('CurrentState') == dell_sensor.get('HealthState') and \
+                            dell_sensor.get('HealthState').upper() == "UNKNOWN":
+                        continue
 
                     num_members += 1
 
