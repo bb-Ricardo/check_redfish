@@ -281,6 +281,11 @@ def get_event_log_generic(event_type, redfish_path):
 
     plugin_object = PluginData()
 
+    # if a log entry has been auto cleared this amount of times within the alert level time range
+    # then issue an additional WARNING message
+    flapping_threshold_critical = 2
+    flapping_threshold_warning = 5
+
     num_entry = 0
     num_entry_discarded = 0
     data_now = datetime.datetime.now()
@@ -306,6 +311,7 @@ def get_event_log_generic(event_type, redfish_path):
 
     assoc_id_status = dict()
     processed_ids = list()
+    cleared_events = dict()
 
     # reverse list from newest to oldest entry
     if plugin_object.rf.vendor in ["Lenovo", "Supermicro"]:
@@ -341,12 +347,15 @@ def get_event_log_generic(event_type, redfish_path):
             severity = "OK"
 
         date = event_entry.get("Created", "1970-01-01T00:00:00-00:00")
+        entry_date = get_log_entry_time(date)
 
         status = "OK"
 
         # keep track of message IDs
         # newer message can clear a status for older messages
         if event_type == "System":
+
+            event_cleared = False
 
             # get log entry id to associate older log entries
             assoc_id = event_entry.get("SensorNumber")
@@ -355,6 +364,7 @@ def get_event_log_generic(event_type, redfish_path):
             if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
                 message += " (severity '%s' cleared)" % severity
                 severity = "OK"
+                event_cleared = True
             # Fujitsu uncleared messages
             elif plugin_object.rf.vendor == "Fujitsu" and event_entry.get("MessageId") == "0x180055":
                 message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
@@ -368,7 +378,12 @@ def get_event_log_generic(event_type, redfish_path):
             if event_entry.get("SensorNumber") is not None and severity == "OK":
                 assoc_id_status[assoc_id] = "cleared"
 
-        entry_date = get_log_entry_time(date)
+            # add cleared event to list
+            if event_cleared is True:
+                if cleared_events.get(message) is None:
+                    cleared_events[message] = list()
+
+                cleared_events[message].append(entry_date)
 
         if (date_critical is not None or date_warning is not None) and severity is not None:
 
@@ -387,6 +402,35 @@ def get_event_log_generic(event_type, redfish_path):
         # obey max results returned
         if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
             return
+
+    def check_flapping(event_message, list_of_dates, threshold_date, flapping_threshold):
+        if threshold_date is not None:
+            dates_in_flapping_range = [x for x in list_of_dates if x >= threshold_date.astimezone(x.tzinfo)]
+            if len(dates_in_flapping_range) >= flapping_threshold:
+                last_event_occurred = sorted(dates_in_flapping_range)[-1]
+                flap_msg = "Flapping event occurred '{}' time{} since".format(
+                    len(dates_in_flapping_range),
+                    "s" if len(dates_in_flapping_range) != 1 else ""
+                )
+                flap_msg = "{}: {} {}: {}".format(
+                    last_event_occurred,
+                    flap_msg,
+                    threshold_date.strftime("%F %T"),
+                    event_message
+                )
+                plugin_object.add_output_data("WARNING", flap_msg, is_log_entry=True,
+                                              log_entry_date=last_event_occurred)
+
+                return True
+
+        return False
+
+    # check flapping events
+    for event, date_list in cleared_events.items():
+        if check_flapping(event, date_list, date_critical, flapping_threshold_critical):
+            continue
+
+        check_flapping(event, date_list, date_warning, flapping_threshold_warning)
 
     # in case all log entries matched the filter
     if num_entry == 0:
