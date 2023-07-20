@@ -8,13 +8,11 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import datetime
-import os
 import json
 import sys
 
 from cr_module.classes import plugin_status_types
 
-from cr_module.common import grab
 from socket import gethostname
 
 
