@@ -8,10 +8,15 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import Processor
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 
 
-def get_single_system_procs(plugin_object, redfish_url):
+def get_single_system_procs(redfish_url):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Procs")
 
     systems_response = plugin_object.rf.get(redfish_url)
@@ -21,6 +26,8 @@ def get_single_system_procs(plugin_object, redfish_url):
         return
 
     system_id = systems_response.get("Id")
+
+    system_power_state = get_system_power_state().upper()
 
     if systems_response.get("ProcessorSummary"):
 
@@ -156,12 +163,15 @@ def get_single_system_procs(plugin_object, redfish_url):
 
                 num_procs += 1
 
+                plugin_status = proc_inventory.health_status
+                if system_power_state != "ON":
+                    plugin_status = "OK"
+
                 status_text = f"Processor {proc_inventory.socket} ({proc_inventory.model}) status is: " \
                               f"{proc_inventory.health_status}"
 
-                plugin_object.add_output_data("CRITICAL" if
-                                              proc_inventory.health_status not in ["OK", "WARNING"] else
-                                              proc_inventory.health_status, status_text, location=f"System {system_id}")
+                plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
+                                              status_text, location=f"System {system_id}")
 
             else:
                 plugin_object.add_output_data("UNKNOWN",

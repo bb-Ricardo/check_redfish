@@ -8,10 +8,15 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import Temperature
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 
 
-def get_single_chassi_temp(plugin_object, redfish_url, chassi_id, thermal_data):
+def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Temp")
 
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
@@ -19,6 +24,8 @@ def get_single_chassi_temp(plugin_object, redfish_url, chassi_id, thermal_data):
     if thermal_data.get("error"):
         plugin_object.add_data_retrieval_error(Temperature, thermal_data, redfish_url)
         return
+
+    system_power_state = get_system_power_state().upper()
 
     temp_num = 0
     if "Temperatures" in thermal_data:
@@ -108,6 +115,9 @@ def get_single_chassi_temp(plugin_object, redfish_url, chassi_id, thermal_data):
             critical_temp_text = "N/A"
             if critical_temp is not None:
                 critical_temp_text = "%.1f" % float(critical_temp)
+
+            if system_power_state != "ON":
+                status = "OK"
 
             status_text = f"Temp sensor {temp_inventory.name} status is: " \
                           f"{status} (%.1f °C) (max: {critical_temp_text} °C)" % current_temp

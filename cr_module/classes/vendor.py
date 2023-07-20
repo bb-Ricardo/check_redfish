@@ -174,7 +174,7 @@ class VendorAmiData(VendorGeneric):
     system_event_log_entries_path = ["{system_manager_id}/LogServices/BIOS"]
 
 
-class SupermicroData(VendorGeneric):
+class VendorSupermicro(VendorGeneric):
 
     name = "Supermicro"
 

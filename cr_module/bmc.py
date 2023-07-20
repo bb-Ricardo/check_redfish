@@ -7,14 +7,17 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import hashlib
+
 from cr_module.classes.inventory import Manager, NetworkPort
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module.firmware import get_firmware_info_fujitsu
 from cr_module.nic import get_interface_ip_addresses, format_interface_addresses
 
 
-def get_bmc_info(plugin_object):
-
+def get_bmc_info():
+    plugin_object = PluginData()
     plugin_object.set_current_command("BMC Info")
 
     managers = plugin_object.rf.get_system_properties("managers")
@@ -24,12 +27,12 @@ def get_bmc_info(plugin_object):
         return
 
     for manager in managers:
-        get_bmc_info_generic(plugin_object, manager)
+        get_bmc_info_generic(manager)
 
     return
 
 
-def get_bmc_info_generic(plugin_object, redfish_url):
+def get_bmc_info_generic(redfish_url):
     """
     Possible Info to add
     * NTP Status
@@ -38,6 +41,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     * BIOS settings (maybe, varies a lot between vendors)
     """
 
+    plugin_object = PluginData()
     view_response = plugin_object.rf.get_view(f"{redfish_url}{plugin_object.rf.vendor_data.expand_string}")
 
     if view_response.get("error"):
@@ -142,7 +146,10 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                 if plugin_object.rf.vendor == "Dell":
                     interface_id = manager_nic.get("Id")
                 else:
-                    interface_id = "{}:{}".format(manager_inventory.id, manager_nic.get("Id"))
+                    interface_id = "{}:{}:{}".format(
+                        manager_inventory.id, manager_nic.get("Id"),
+                        hashlib.sha1(manager_nic_member.get("@odata.id").encode("utf-8")).hexdigest()
+                    )
 
                 vlan_id = grab(manager_nic, "VLAN.VLANId")
                 if vlan_id is None:
@@ -152,6 +159,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                 if vlan_enabled is None:
                     vlan_enabled = grab(manager_nic, "VLANEnable")
 
+                mac_address = manager_nic.get("PermanentMACAddress") or manager_nic.get("MACAddress")
                 network_inventory = NetworkPort(
                     id=interface_id,
                     name=manager_nic.get("Name"),
@@ -161,7 +169,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                     autoneg=manager_nic.get("AutoNeg"),
                     full_duplex=manager_nic.get("FullDuplex"),
                     hostname=manager_nic.get("HostName"),
-                    addresses=format_interface_addresses(manager_nic.get("PermanentMACAddress")),
+                    addresses=format_interface_addresses(mac_address),
                     manager_ids=manager_inventory.id,
                     system_ids=manager_inventory.system_ids,
                     chassi_ids=manager_inventory.chassi_ids,
@@ -218,7 +226,11 @@ def get_bmc_info_generic(plugin_object, redfish_url):
                 if network_inventory.autoneg is not None:
                     autoneg = "on" if network_inventory.autoneg is True else "off"
 
-                nic_status_text = f"NIC {network_inventory.id} '{host_name}' (IPs: {ip_addresses_string}) "
+                nic_name = network_inventory.id
+                if len(nic_name.split(":")) > 2:
+                    nic_name = ":".join(nic_name.split(":")[:-1])
+
+                nic_status_text = f"NIC {nic_name} '{host_name}' (IPs: {ip_addresses_string}) "
                 nic_status_text += f"(speed: {network_inventory.current_speed}, " \
                                    f"autoneg: {autoneg}, duplex: {duplex}) status: {nic_status}"
 
@@ -412,7 +424,7 @@ def get_bmc_info_generic(plugin_object, redfish_url):
     # get running firmware information from Fujitsu server
     if plugin_object.rf.vendor == "Fujitsu":
 
-        for bmc_firmware in get_firmware_info_fujitsu(plugin_object, redfish_url, True):
+        for bmc_firmware in get_firmware_info_fujitsu(redfish_url, True):
             plugin_object.add_output_data("OK", "BMC Firmware: %s: %s" %
                                           (bmc_firmware.get("name"), bmc_firmware.get("version")),
                                           location=f"Manager {manager_inventory.id}")

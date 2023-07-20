@@ -10,13 +10,16 @@
 from cr_module.classes.inventory import (
     Firmware, PhysicalDrive, LogicalDrive, StorageController, StorageEnclosure, PowerSupply
 )
+from cr_module.classes.plugin import PluginData
 from cr_module.system_chassi import get_chassi_data
 from cr_module.common import grab, get_status_data
 from cr_module.storage import get_storage
 
 
-# noinspection PyShadowingNames
-def get_firmware_info(plugin_object):
+def get_firmware_info():
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Firmware Info")
 
     # call dedicated firmware functions for HPE iLO4 and Fujitsu
@@ -32,12 +35,12 @@ def get_firmware_info(plugin_object):
         for system_id in system_ids:
 
             if plugin_object.rf.vendor == "Fujitsu":
-                get_firmware_info_fujitsu(plugin_object, system_id)
+                get_firmware_info_fujitsu(system_id)
             else:
-                get_firmware_info_hpe_ilo4(plugin_object, system_id)
+                get_firmware_info_hpe_ilo4(system_id)
 
     else:
-        get_firmware_info_generic(plugin_object)
+        get_firmware_info_generic()
 
     # return gathered firmware information
     firmware_health_summary = "OK"
@@ -96,8 +99,9 @@ def get_firmware_info(plugin_object):
     return
 
 
-# noinspection PyShadowingNames
-def get_firmware_info_hpe_ilo4(plugin_object, system_id):
+def get_firmware_info_hpe_ilo4(system_id):
+
+    plugin_object = PluginData()
 
     redfish_url = f"{system_id}/FirmwareInventory/"
 
@@ -127,7 +131,7 @@ def get_firmware_info_hpe_ilo4(plugin_object, system_id):
 
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
         plugin_object.in_firmware_collection_mode(True)
-        get_storage(plugin_object)
+        get_storage()
         plugin_object.in_firmware_collection_mode(False)
 
     for drive in plugin_object.inventory.get(PhysicalDrive):
@@ -164,9 +168,10 @@ def get_firmware_info_hpe_ilo4(plugin_object, system_id):
     return
 
 
-# noinspection PyShadowingNames
-def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
+def get_firmware_info_fujitsu(system_id, bmc_only=False):
     # there is room for improvement
+
+    plugin_object = PluginData()
 
     # list of dicts: keys: {name, version, location}
     firmware_entries = list()
@@ -229,9 +234,9 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
     # get power supply and storage firmware
     plugin_object.in_firmware_collection_mode(True)
     if any(x in plugin_object.cli_args.requested_query for x in ['power', 'all']) is False:
-        get_chassi_data(plugin_object, PowerSupply)
+        get_chassi_data(PowerSupply)
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
-        get_storage(plugin_object)
+        get_storage()
     plugin_object.in_firmware_collection_mode(False)
 
     for power_supply in plugin_object.inventory.get(PowerSupply):
@@ -245,8 +250,13 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
 
     for drive in plugin_object.inventory.get(PhysicalDrive):
 
+        # prevent printing of url hash at the end of the id
+        drive_id = drive.id
+        if len(drive_id.split(":")) > 2:
+            drive_id = ":".join(drive_id.split(":")[:-1])
+
         firmware_entries.append({
-            "id": f"Drive:{drive.id}",
+            "id": f"Drive:{drive_id}",
             "name": f"Drive {drive.name}",
             "version": f"{drive.firmware}",
             "location": f"Slot {drive.bay}"
@@ -331,7 +341,9 @@ def get_firmware_info_fujitsu(plugin_object, system_id, bmc_only=False):
     return
 
 
-def get_firmware_info_generic(plugin_object):
+def get_firmware_info_generic():
+
+    plugin_object = PluginData()
 
     update_service_destination = plugin_object.rf.connection.root.get("UpdateService")
     if update_service_destination is None:
@@ -403,6 +415,14 @@ def get_firmware_info_generic(plugin_object):
         if component_id is None:
             component_id = component_name
 
+        # mitigate issue for Supermicro on using IDs more then once
+        if plugin_object.rf.vendor == "Supermicro":
+            try:
+                int(component_id)
+                component_id = "{}:{}".format(component_name.replace(" ", "_"), component_id)
+            except ValueError:
+                pass
+
         # on Dell system skip power supplies and disk and collect them separately
         # only one of the disk and power supply is reported not all of them
         if plugin_object.rf.vendor == "Dell" and component_name is not None:
@@ -456,9 +476,9 @@ def get_firmware_info_generic(plugin_object):
         get_power = True
         plugin_object.in_firmware_collection_mode(True)
         if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
-            get_storage(plugin_object)
+            get_storage()
         if any(x in plugin_object.cli_args.requested_query for x in ['power', 'all']) is False:
-            get_chassi_data(plugin_object, PowerSupply)
+            get_chassi_data(PowerSupply)
         plugin_object.in_firmware_collection_mode(False)
 
         # vendor specific conditions

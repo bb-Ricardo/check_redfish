@@ -8,10 +8,15 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 from cr_module.classes.inventory import Fan
+from cr_module.classes.plugin import PluginData
 
 
-def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
+def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Fan")
 
     num_chassis = len(plugin_object.rf.get_system_properties("chassis") or list())
@@ -19,6 +24,8 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
     if thermal_data.get("error"):
         plugin_object.add_data_retrieval_error(Fan, thermal_data, redfish_url)
         return
+
+    system_power_state = get_system_power_state().upper()
 
     fan_num = 0
     if "Fans" in thermal_data:
@@ -104,6 +111,9 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
             if fan_inventory.health_status is None:
                 fan_status = "OK" if fan_inventory.operation_status == "Enabled" else fan_inventory.operation_status
 
+            if system_power_state != "ON":
+                fan_status = "OK"
+
             fan_num += 1
 
             fan_name = fan_inventory.name
@@ -153,6 +163,6 @@ def get_single_chassi_fan(plugin_object, redfish_url, chassi_id, thermal_data):
 
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
-    return plugin_object
+    return
 
 # EOF

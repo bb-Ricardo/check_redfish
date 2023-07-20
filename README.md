@@ -391,16 +391,18 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.40) should work
 * ProLiant DL560 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
+* ProLiant XL450 Gen10
 
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
-* ThinkSystem SR650 V2 (BMC Version 12I-1.15
+* ThinkSystem SR650 V2 (BMC Version 12I-1.15)
 * ThinkAgile HX7520 Appliance (Lenovo XClarity Controller v5.4)
 * ThinkAgile HX3720 Appliance (Lenovo XClarity Controller v4.2)
 
 ### Dell
 * PowerEdge R630   (iDRAC 8 Version 2.70.70.70)
 * PowerEdge R640   (iDrac 9 Version 4.22.00.00)
+* PowerEdge R6525  (iDRAC 9 Version 5.10.50.00)
 * PowerEdge R740   (iDRAC 9 Version 3.32.32.32)
 * PowerEdge R740xd (iDRAC 9 Version 4.00.00.00)
 * PowerEdge R7515  (iDRAC 9 Version 4.10.10.10)
@@ -411,6 +413,7 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.40) should work
 ### Huawei
 * TaiShan 2280 V2 (iBMC Version 3.63)
 * X8600 Blade     (iBMC Version 3.04)
+* G560 V5
 
 ### Fujitsu
 IMPORTANT:
@@ -432,8 +435,9 @@ Models:
 * Inspur NF5280 M6 (4.12.04)
 
 ### SuperMicro (limited support)
-* SuperServer 5028D-TN4T (BMC Version 3.88)
-* SuperServer E300-9D-8CN8TP (BMC Version 01.73.12)
+* SuperServer 5028D-TN4T       (BMC Version 3.88)
+* SuperServer E300-9D-8CN8TP   (BMC Version 01.73.12)
+* SuperServer SSG-620P-E1CR24H (BMC Version 01.01.24)
 
 ### GIGABYTE (limited support)
 * H262-Z61

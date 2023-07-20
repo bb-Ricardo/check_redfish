@@ -7,12 +7,19 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import hashlib
+
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module.firmware_issues import component_has_firmware_issues
+from cr_module import get_system_power_state
 
 
-def get_storage(plugin_object):
+def get_storage():
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Storage")
 
     systems = plugin_object.rf.get_system_properties("systems")
@@ -24,19 +31,22 @@ def get_storage(plugin_object):
     for system in systems:
 
         if plugin_object.rf.vendor == "HPE":
-            get_storage_hpe(plugin_object, system)
+            get_storage_hpe(system)
 
         """
             Newer HPe systems finally moved to /Storage as well instead of /SmartStorage
             If no physical drives were returned for SmartStorage then we try /Storage as well
         """
         if len(plugin_object.inventory.get(PhysicalDrive)) == 0:
-            get_storage_generic(plugin_object, system)
+            get_storage_generic(system)
 
     return
 
 
-def get_storage_hpe(plugin_object, system):
+def get_storage_hpe(system):
+
+    plugin_object = PluginData()
+
     def get_disks(link, disk_type="DiskDrives"):
 
         disks_response = plugin_object.rf.get(f"{link}/{disk_type}/?$expand=.")
@@ -150,6 +160,9 @@ def get_storage_hpe(plugin_object, system):
                 drive_status_reasons += f" FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
                                         f"has known issues and needs to be upgraded"
 
+            elif system_power_state != "ON":
+                pd_inventory.health_status = "OK"
+
             status_text = f"Physical Drive ({pd_inventory.location}) {size}GB " \
                           f"status: {pd_inventory.health_status}{drive_status_reasons}"
 
@@ -232,6 +245,9 @@ def get_storage_hpe(plugin_object, system):
 
             ld_list.append(ld_inventory)
 
+            if system_power_state != "ON":
+                ld_inventory.health_status = "OK"
+
             status_text = f"Logical Drive ({ld_inventory.id}) %.1fGB (RAID {ld_inventory.raid_type}) " \
                           f"status: {ld_inventory.health_status}" % printed_size
 
@@ -310,6 +326,9 @@ def get_storage_hpe(plugin_object, system):
 
             enclosure_list.append(enclosure_inventory)
 
+            if system_power_state != "ON":
+                enclosure_inventory.health_status = "OK"
+
             status_text = f"StorageEnclosure ({enclosure_inventory.location}) " \
                           f"status: {enclosure_inventory.health_status}"
 
@@ -329,6 +348,8 @@ def get_storage_hpe(plugin_object, system):
     if storage_response.get("error"):
         plugin_object.add_data_retrieval_error(StorageController, storage_response, redfish_url)
         return
+
+    system_power_state = get_system_power_state().upper()
 
     # needed to count summary
     controller_list = list()
@@ -395,6 +416,9 @@ def get_storage_hpe(plugin_object, system):
 
                 controller_list.append(controller_inventory)
 
+                if system_power_state != "ON":
+                    controller_inventory.health_status = "OK"
+
                 status_text = f"{controller_inventory.model} (FW: {controller_inventory.firmware}) " \
                               f"status is: {controller_inventory.health_status}"
 
@@ -419,6 +443,9 @@ def get_storage_hpe(plugin_object, system):
                 else:
                     cache_status = controller_inventory.backup_power_health
 
+                if system_power_state != "ON":
+                    cache_status = "OK"
+
                 # only report cache status if "CacheMemorySizeMiB" is populated
                 if "CacheMemorySizeMiB" in list(controller_response.keys()):
                     plugin_object.add_output_data("CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status,
@@ -436,8 +463,9 @@ def get_storage_hpe(plugin_object, system):
                                               array_controller.get("@odata.id"), location=f"System {system_id}")
 
     else:
-        plugin_object.inventory.add_issue(StorageController,
-                                          f"No array controller data returned for API URL '{redfish_url}'")
+        if plugin_object.is_in_firmware_collection_mode() is False:
+            plugin_object.inventory.add_issue(StorageController,
+                                              f"No array controller data returned for API URL '{redfish_url}'")
         return
 
     # check controller batteries/Capacitors on iLO4 systems
@@ -509,7 +537,10 @@ def get_storage_hpe(plugin_object, system):
     return
 
 
-def get_storage_generic(plugin_object, system):
+def get_storage_generic(system):
+
+    plugin_object = PluginData()
+
     def get_component_status(this_status):
         return_status = "CRITICAL"
         if this_status in ["OK", None]:
@@ -554,6 +585,7 @@ def get_storage_generic(plugin_object, system):
         temperature = None
         bay = None
         storage_port = None
+        predicted_media_life_left_percent = drive_response.get("PredictedMediaLifeLeftPercent")
         power_on_hours = drive_response.get("PowerOnHours")
         if drive_oem_data is not None:
             temperature = drive_oem_data.get("TemperatureCelsius")
@@ -565,6 +597,10 @@ def get_storage_generic(plugin_object, system):
             if power_on_hours is None:
                 power_on_hours = drive_oem_data.get("HoursOfPoweredUp") or drive_oem_data.get("PowerOnHours")
             bay = drive_oem_data.get("SlotNumber")
+
+            # Supermicro
+            if predicted_media_life_left_percent is None and drive_oem_data.get("PercentageDriveLifeUsed") is not None:
+                predicted_media_life_left_percent = 100 - int(drive_oem_data.get("PercentageDriveLifeUsed"))
 
         # Dell
         dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
@@ -578,6 +614,10 @@ def get_storage_generic(plugin_object, system):
             if physical_location.get("LocationType") in ["Slot", "Bay"]:
                 bay = physical_location.get("LocationOrdinalValue")
 
+        # Supermicro
+        if bay is None and "bay" in f"{drive_response.get('Name')}".lower():
+            bay = drive_response.get('Name').split(".")[-1]
+
         location = \
             grab(drive_response, "Location.0.Info") or \
             grab(drive_response, "PhysicalLocation.0.Info") or \
@@ -586,7 +626,10 @@ def get_storage_generic(plugin_object, system):
 
         interface_speed = None
         if drive_response.get("NegotiatedSpeedGbs") is not None:
-            interface_speed = int(drive_response.get("NegotiatedSpeedGbs")) * 1000
+            interface_speed = int(float(drive_response.get("NegotiatedSpeedGbs"))) * 1000
+
+        if interface_speed is None and drive_response.get("CapableSpeedGbs") is not None:
+            interface_speed = int(float(drive_response.get("CapableSpeedGbs"))) * 1000
 
         encrypted = None
         if drive_response.get("EncryptionStatus") is not None:
@@ -595,10 +638,15 @@ def get_storage_generic(plugin_object, system):
             else:
                 encrypted = False
 
+        pd_id = "{}:{}:{}".format(
+            controller_inventory.id,
+            drive_response.get("Id"),
+            hashlib.sha1(drive_link.encode("utf-8")).hexdigest())
+
         pd_inventory = PhysicalDrive(
             # drive id repeats per controller
             # prefix drive id with controller id
-            id="{}:{}".format(controller_inventory.id, drive_response.get("Id")),
+            id=pd_id,
             name=drive_response.get("Name"),
             health_status=status_data.get("Health"),
             operation_status=status_data.get("State"),
@@ -610,7 +658,7 @@ def get_storage_generic(plugin_object, system):
             type=drive_response.get("MediaType"),
             speed_in_rpm=drive_response.get("RotationalSpeedRpm") or drive_response.get("RotationSpeedRPM"),
             failure_predicted=drive_response.get("FailurePredicted"),
-            predicted_media_life_left_percent=drive_response.get("PredictedMediaLifeLeftPercent"),
+            predicted_media_life_left_percent=predicted_media_life_left_percent,
             part_number=drive_response.get("PartNumber"),
             size_in_byte=disk_size,
             power_on_hours=power_on_hours,
@@ -632,6 +680,9 @@ def get_storage_generic(plugin_object, system):
         plugin_object.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids",
                                        pd_inventory.id)
 
+        if pd_inventory.type is None and "SSD" in pd_inventory.id:
+            pd_inventory.type = "SSD"
+
         if pd_inventory.location is None or pd_inventory.name == pd_inventory.location:
             location_string = ""
         else:
@@ -639,6 +690,8 @@ def get_storage_generic(plugin_object, system):
 
         if pd_inventory.health_status is not None:
             drives_status_list.append(pd_inventory.health_status)
+
+        drive_mapping[drive_link] = pd_inventory
 
         size_string = "0GiB"
         if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
@@ -654,8 +707,11 @@ def get_storage_generic(plugin_object, system):
                       f"{pd_inventory.type} / " \
                       f"{pd_inventory.interface_type}) {size_string} status: {pd_inventory.health_status}{fw_issues}"
 
-        plugin_object.add_output_data(get_component_status(pd_inventory.health_status), status_text,
-                                      location=f"System {system_id}")
+        pd_status = get_component_status(pd_inventory.health_status)
+        if system_power_state != "ON":
+            pd_status = "OK"
+
+        plugin_object.add_output_data(pd_status, status_text, location=f"System {system_id}")
 
     def get_volumes(volumes_link):
 
@@ -698,6 +754,9 @@ def get_storage_generic(plugin_object, system):
             volume_name = volume_data.get("Description")
             volume_state = status_data.get("State")
 
+            if volume_data.get("RAIDType") is not None:
+                raid_level = volume_data.get("RAIDType")
+
             oem_data = grab(volume_data, f"Oem.{plugin_object.rf.vendor_dict_key}")
             if oem_data is not None:
                 if plugin_object.rf.vendor == "Huawei":
@@ -707,6 +766,9 @@ def get_storage_generic(plugin_object, system):
                 if plugin_object.rf.vendor in ["Fujitsu", "Lenovo"]:
                     raid_level = oem_data.get("RaidLevel") or raid_level
                     volume_name = oem_data.get("Name") or name
+
+                if plugin_object.rf.vendor == "Supermicro":
+                    raid_level = oem_data.get("RaidType") or raid_level
 
                 if plugin_object.rf.vendor == "Cisco":
                     volume_state = oem_data.get("VolumeState")
@@ -737,14 +799,14 @@ def get_storage_generic(plugin_object, system):
 
             data_drives_links = grab(volume_data, "Links.Drives")
 
-            if data_drives_links is not None:
+            for data_drive in data_drives_links or list():
+                data_drive_link = data_drive.get("@odata.id").rstrip("/")
+                data_drive = drive_mapping.get(data_drive_link)
+                if data_drive is None:
+                    continue
 
-                for data_drive in data_drives_links:
-                    data_drive_id = ("{}:{}".format(
-                        controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
-
-                    ld_inventory.update("physical_drive_ids", data_drive_id, True)
-                    plugin_object.inventory.append(PhysicalDrive, data_drive_id, "logical_drive_ids", ld_inventory.id)
+                ld_inventory.update("physical_drive_ids", data_drive.id, True)
+                plugin_object.inventory.append(PhysicalDrive, data_drive.id, "logical_drive_ids", ld_inventory.id)
 
             if ld_inventory.health_status is not None:
                 volume_status_list.append(ld_inventory.health_status)
@@ -757,8 +819,11 @@ def get_storage_generic(plugin_object, system):
             status_text = "Logical Drive %s (%s) %.0fGiB (%s) status: %s" % \
                           (name, ld_inventory.name, printed_size, ld_inventory.raid_type, ld_inventory.health_status)
 
-            plugin_object.add_output_data(get_component_status(ld_inventory.health_status), status_text,
-                                          location=f"System {system_id}")
+            ld_status = get_component_status(ld_inventory.health_status)
+            if system_power_state != "ON":
+                ld_status = "OK"
+
+            plugin_object.add_output_data(ld_status, status_text, location=f"System {system_id}")
 
     def get_enclosures(enclosure_link):
 
@@ -807,15 +872,15 @@ def get_storage_generic(plugin_object, system):
         # set relation between disk drives and enclosures
         data_drives_links = grab(enclosure_response, "Links.Drives")
 
-        if data_drives_links is not None:
+        for data_drive in data_drives_links or list():
+            data_drive_link = data_drive.get("@odata.id").rstrip("/")
+            data_drive = drive_mapping.get(data_drive_link)
+            if data_drive is None:
+                continue
 
-            for data_drive in data_drives_links:
-                data_drive_id = ("{}:{}".format(
-                    controller_inventory.id, data_drive.get("@odata.id").rstrip("/").split("/")[-1]))
-
-                enclosure_inventory.update("physical_drive_ids", data_drive_id, True)
-                plugin_object.inventory.append(PhysicalDrive, data_drive_id, "storage_enclosure_ids",
-                                               enclosure_inventory.id)
+            enclosure_inventory.update("physical_drive_ids", data_drive.id, True)
+            plugin_object.inventory.append(PhysicalDrive, data_drive.id, "storage_enclosure_ids",
+                                           enclosure_inventory.id)
 
         plugin_object.inventory.add(enclosure_inventory)
 
@@ -828,8 +893,11 @@ def get_storage_generic(plugin_object, system):
         status_text = f"{chassis_type} {enclosure_inventory.name} (Power: {power_state}) " \
                       f"status: {enclosure_inventory.health_status}"
 
-        plugin_object.add_output_data(get_component_status(enclosure_inventory.health_status), status_text,
-                                      location=f"System {system_id}")
+        enc_status = get_component_status(enclosure_inventory.health_status)
+        if system_power_state != "ON":
+            enc_status = "OK"
+
+        plugin_object.add_output_data(enc_status, status_text, location=f"System {system_id}")
 
     plugin_object.set_current_command("Storage")
 
@@ -840,6 +908,8 @@ def get_storage_generic(plugin_object, system):
         return
 
     system_id = system_response.get("Id")
+
+    system_power_state = get_system_power_state().upper()
 
     storage_response = None
 
@@ -858,6 +928,7 @@ def get_storage_generic(plugin_object, system):
     storage_status_list = list()
     volume_status_list = list()
     enclosure_status_list = list()
+    drive_mapping = dict()
 
     if storage_response is not None:
 
@@ -984,8 +1055,11 @@ def get_storage_generic(plugin_object, system):
                                   f"(FW: {controller_inventory.firmware}) " \
                                   f"status is: {controller_inventory.health_status}"
 
-                    plugin_object.add_output_data(get_component_status(controller_inventory.health_status),
-                                                  status_text, location=f"System {system_id}")
+                    controller_status = get_component_status(controller_inventory.health_status)
+                    if system_power_state != "ON":
+                        controller_status = "OK"
+
+                    plugin_object.add_output_data(controller_status, status_text, location=f"System {system_id}")
 
                     # Huawei
                     if grab(controller_oem_data, "CapacitanceStatus") is not None:
@@ -998,6 +1072,9 @@ def get_storage_generic(plugin_object, system):
 
                         if cap_status != "OK" and cap_fault_details is not None:
                             cap_status_text += f" : {cap_fault_details}"
+
+                        if system_power_state != "ON":
+                            cap_status = "OK"
 
                         plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
                                                       cap_status_text, location=f"System {system_id}")
@@ -1022,9 +1099,18 @@ def get_storage_generic(plugin_object, system):
                                       f"Voltage: {cap_voltage:.2f}V) " \
                                       f"status: {cap_status}"
 
+                        if system_power_state != "ON":
+                            cap_status = "OK"
+
                         plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
                                                       status_text, location=f"System {system_id}")
 
+                    # Supermicro
+                    if grab(controller_oem_data, "BBU") is not None:
+                        bbu_status = get_status_data(grab(controller_oem_data, "BBU.Status"))
+                        controller_inventory.backup_power_health = bbu_status.get("Health")
+                        if bbu_status.get("State") == "Enabled":
+                            controller_inventory.backup_power_present = True
                     # Dell
                     controller_oem_data = grab(controller_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
                     if grab(controller_oem_data, "DellControllerBattery") is not None:
@@ -1033,6 +1119,9 @@ def get_storage_generic(plugin_object, system):
                         controller_inventory.backup_power_health = cap_status
 
                         status_text = f"{cap_name} Status: {cap_status}"
+
+                        if system_power_state != "ON":
+                            cap_status = "OK"
 
                         plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
                                                       status_text, location=f"System {system_id}")
@@ -1063,8 +1152,11 @@ def get_storage_generic(plugin_object, system):
 
                 status_text = f"Controller {controller_inventory.name} status is: {controller_inventory.health_status}"
 
-                plugin_object.add_output_data(get_component_status(controller_inventory.health_status),
-                                              status_text, location=f"System {system_id}")
+                controller_status = get_component_status(controller_inventory.health_status)
+                if system_power_state != "ON":
+                    controller_status = "OK"
+
+                plugin_object.add_output_data(controller_status, status_text, location=f"System {system_id}")
 
             for controller_drive in controller_response.get("Drives", list()):
                 system_drives_list.append(controller_drive.get("@odata.id"))
@@ -1224,8 +1316,11 @@ def get_storage_generic(plugin_object, system):
 
                         status_text += f" status: {status}"
 
-                        plugin_object.add_output_data(get_component_status(status), status_text,
-                                                      location=f"System {system_id}")
+                        drive_status = get_component_status(status)
+                        if system_power_state != "ON":
+                            drive_status = "OK"
+
+                        plugin_object.add_output_data(drive_status, status_text, location=f"System {system_id}")
 
     # check additional drives
     system_drives = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.StorageViewsSummary.Drives")
@@ -1259,8 +1354,9 @@ def get_storage_generic(plugin_object, system):
     storage_controller_names_list = list(set(storage_controller_names_list))
 
     if len(storage_controller_names_list) == 0 and len(system_drives_list) == 0:
-        plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
-                                      location=f"System {system_id}")
+        if plugin_object.is_in_firmware_collection_mode() is False:
+            plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
+                                          location=f"System {system_id}")
 
     elif len(storage_controller_names_list) == 0 and len(system_drives_list) != 0:
 

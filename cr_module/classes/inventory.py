@@ -13,8 +13,10 @@ import json
 import sys
 
 from cr_module.classes import plugin_status_types
+
 from cr_module.common import grab
 from socket import gethostname
+
 
 # inventory definition
 inventory_layout_version_string = "1.4.0"
@@ -538,7 +540,7 @@ class Inventory(object):
         for inv_item in self.base_structure[object_type.inventory_item_name]:
             if inv_item.id == object_type.id:
 
-                print(f"Object id '{object_type.id}' for '{object_type.__class__.__name__}' already used",
+                print(f"Object id '{object_type.id}' for '{object_type.__class__.__name__}' ({inv_item.name}) already used",
                       file=sys.stderr)
 
         self.base_structure[object_type.inventory_item_name].append(object_type)

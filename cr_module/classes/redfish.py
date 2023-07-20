@@ -572,7 +572,7 @@ class RedfishConnection:
 
         if vendor_string in ["Supermicro"]:
 
-            self.vendor_data = SupermicroData()
+            self.vendor_data = VendorSupermicro()
 
         # Cisco does not provide a OEM property in root object
         if "CIMC" in str(self.get_system_properties("managers")):

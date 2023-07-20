@@ -8,10 +8,15 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes.inventory import Memory
+from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
+from cr_module import get_system_power_state
 
 
-def get_single_system_mem(plugin_object, redfish_url):
+def get_single_system_mem(redfish_url):
+
+    plugin_object = PluginData()
+
     plugin_object.set_current_command("Mem")
 
     systems_response = plugin_object.rf.get(redfish_url)
@@ -21,6 +26,8 @@ def get_single_system_mem(plugin_object, redfish_url):
         return
 
     system_id = systems_response.get("Id")
+
+    system_power_state = get_system_power_state().upper()
 
     if systems_response.get("MemorySummary"):
 
@@ -151,6 +158,10 @@ def get_single_system_mem(plugin_object, redfish_url):
                 else:
                     plugin_status = mem_inventory.health_status
                     status_text = plugin_status
+
+                if system_power_state != "ON":
+                    plugin_status = "OK"
+                    status_text = mem_inventory.health_status
 
                 status_text = f"Memory module {mem_inventory.name} (%.1fGB) status is: {status_text}" % (
                             mem_inventory.size_in_mb / 1024)
