@@ -14,6 +14,10 @@ import sys
 
 from cr_module.classes import plugin_status_types
 
+from cr_module.common import grab
+from socket import gethostname
+
+
 # inventory definition
 inventory_layout_version_string = "1.4.0"
 
@@ -618,7 +622,7 @@ class Inventory(object):
             "duration_of_data_collection_in_seconds": (datetime.datetime.utcnow()-self.inventory_start).total_seconds(),
             "inventory_layout_version": inventory_layout_version_string,
             "data_retrieval_issues": self.data_retrieval_issues,
-            "host_that_collected_inventory": os.uname()[1],
+            "host_that_collected_inventory": gethostname(),
             "script_version": self.plugin_version,
             "inventory_id": self.inventory_id,
             "inventory_name": self.inventory_name,
