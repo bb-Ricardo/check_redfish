@@ -53,7 +53,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.5.0 (2023-02-24)
+Version: 1.6.0 (2023-09-07)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -125,7 +125,6 @@ query inventory information (no health check):
   --inventory_file INVENTORY_FILE
                         set file to write the inventory output to. Otherwise
                         stdout will be used.
-
 ```
 
 ## General usage
