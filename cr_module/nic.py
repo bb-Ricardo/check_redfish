@@ -373,14 +373,23 @@ def get_system_nics(redfish_url):
                 for controller in adapter_controllers:
                     firmware = grab(controller, "FirmwarePackageVersion")
 
-                    network_ports.extend(
-                        grab(controller, "Links.NetworkPorts") or grab(controller, "Link.NetworkPorts")
-                    )
-                    network_functions.extend(
-                        grab(controller, "Links.NetworkDeviceFunctions") or
-                        grab(controller, "Link.NetworkDeviceFunctions") or
-                        list()
-                    )
+                    this_controller_network_ports = \
+                        grab(controller, "Links.NetworkPorts") or \
+                        grab(controller, "Link.NetworkPorts") or list()
+
+                    if isinstance(this_controller_network_ports, list):
+                        network_ports.extend(this_controller_network_ports)
+                    else:
+                        network_ports.append(this_controller_network_ports)
+
+                    this_controller_network_functions = \
+                        grab(controller, "Links.NetworkDeviceFunctions") or \
+                        grab(controller, "Link.NetworkDeviceFunctions") or list()
+
+                    if isinstance(this_controller_network_functions, list):
+                        network_functions.extend(this_controller_network_functions)
+                    else:
+                        network_functions.append(this_controller_network_functions)
 
                 num_ports = len(network_ports)
 
