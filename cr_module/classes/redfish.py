@@ -356,7 +356,12 @@ class RedfishConnection:
 
     def terminate_session(self):
 
-        self.connection.logout()
+        # don't bail out if session logout fails.
+        # might leave dead sessions on the BMC
+        try:
+            self.connection.logout()
+        except Exception:
+            pass
 
     def _rf_get(self, redfish_path):
 
