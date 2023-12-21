@@ -376,7 +376,7 @@ will be treated as **OK** if Status.State is set to **Enabled**
 This plugin is currently tested with following systems
 
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.40) should work
+Almost all Server which have iLO4 (>=2.50), iLO5 (>=1.40) or iLO6 should work
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
@@ -390,6 +390,7 @@ Almost all Server which have iLO4 (>=2.50) or iLO5 (>=1.40) should work
 * ProLiant DL560 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
+* ProLiant RL300 Gen11
 * ProLiant XL450 Gen10
 
 ### Lenovo
