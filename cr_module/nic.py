@@ -79,13 +79,71 @@ def format_interface_addresses(addresses):
     return output_list
 
 
+def get_ethernet_interfaces_data(redfish_path_to_interfaces):
+
+    plugin_object = PluginData()
+    return_data = list()
+
+    ethernet_interface_response = \
+        plugin_object.rf.get_view(f"{redfish_path_to_interfaces}{plugin_object.rf.vendor_data.expand_string}")
+
+    if ethernet_interface_response.get("error"):
+        plugin_object.add_data_retrieval_error(NetworkPort, ethernet_interface_response, redfish_path_to_interfaces)
+        return return_data
+
+    # HPE specific
+    if ethernet_interface_response.get("EthernetInterfaces") is not None:
+        ethernet_interface_members = ethernet_interface_response.get("EthernetInterfaces")
+    else:
+        ethernet_interface_members = ethernet_interface_response.get("Members")
+
+    if ethernet_interface_members and len(ethernet_interface_members) > 0:
+
+        for interface in ethernet_interface_members:
+
+            if interface.get("Id") is not None:
+                interface_member = interface
+            else:
+                interface_member = plugin_object.rf.get(interface.get("@odata.id"))
+
+                if interface_member.get("error"):
+                    plugin_object.add_data_retrieval_error(NetworkPort, interface_member,
+                                                           interface.get("@odata.id"))
+                    continue
+
+                if not interface_member.get("Id"):
+                    continue
+
+            return_data.append(interface_member)
+
+    return return_data
+
+
+def get_hpe_network_port_data(network_port):
+
+    status_data = get_status_data(network_port.get("Status"))
+
+    return NetworkPort(
+        os_name=network_port.get("Name"),
+        health_status=status_data.get("Health"),
+        operation_status=status_data.get("State"),
+        addresses=format_interface_addresses(grab(network_port, "MacAddress")),
+        ipv4_addresses=get_interface_ip_addresses(network_port, "IPv4Addresses"),
+        ipv6_addresses=get_interface_ip_addresses(network_port, "IPv6Addresses"),
+        full_duplex=grab(network_port, "FullDuplex"),
+        current_speed=grab(network_port, "SpeedMbps"),
+        link_status=f"{network_port.get('LinkStatus') or ''}".replace("Link", "")
+    )
+
+
 # noinspection PyShadowingNames
 def get_system_nics(redfish_url):
 
     plugin_object = PluginData()
+    chassi_network_adapter_ports = list()
 
     # noinspection PyShadowingNames
-    def get_network_port(port_data=None, network_function_id=None, return_data=False):
+    def get_network_port(port_data=None, network_function_id=None, return_data=False, add_to_inventory=True):
 
         # could be
         #  * a string
@@ -114,27 +172,7 @@ def get_system_nics(redfish_url):
         if port_response is None:
             return NetworkPort()
 
-        # get health status
-        status_data = get_status_data(port_response.get("Status"))
-
-        # get Link speed
-        current_speed = \
-            port_response.get("CurrentLinkSpeedMbps") or \
-            grab(port_response, "SupportedLinkCapabilities.0.LinkSpeedMbps") or \
-            grab(port_response, "SupportedLinkCapabilities.LinkSpeedMbps")
-
-        if isinstance(current_speed, str):
-            current_speed = current_speed.replace("Gbps", "000")
-
-        if str(current_speed) == "-":
-            current_speed = None
-
-        # get port number
-        if port_response.get("PhysicalPortNumber"):
-            nic_port_name = "Port " + port_response.get("PhysicalPortNumber")
-        else:
-            nic_port_name = port_response.get("Name")
-
+        # get Port ID
         if plugin_object.rf.vendor == "Cisco" and network_function_id is not None:
             port_id = f"{network_function_id}.{port_response.get('Id')}"
         else:
@@ -149,17 +187,66 @@ def get_system_nics(redfish_url):
             # print(f"ALREADY in INVENTORY: {port_id}")
             return
 
+        # get health status
+        status_data = get_status_data(port_response.get("Status"))
+
+        # get Link speed
+        current_speed = \
+            port_response.get("CurrentLinkSpeedMbps") or \
+            grab(port_response, "SupportedLinkCapabilities.0.LinkSpeedMbps") or \
+            grab(port_response, "SupportedLinkCapabilities.LinkSpeedMbps")
+
+        if current_speed is None and isinstance(port_response.get("CurrentSpeedGbps"), (int, float)) is True:
+            current_speed = int(port_response.get("CurrentSpeedGbps") * 1000)
+
+        capable_speed = max(grab(port_response, "SupportedLinkCapabilities.0.CapableLinkSpeedMbps") or [0])
+
+        if capable_speed is None and isinstance(port_response.get("MaxSpeedGbps"), (int, float)) is True:
+            capable_speed = int(port_response.get("MaxSpeedGbps") * 1000)
+
+        if isinstance(current_speed, str):
+            current_speed = current_speed.replace("Gbps", "000")
+
+        if str(current_speed) == "-":
+            current_speed = None
+
+        if str(capable_speed) in ["-", "0"]:
+            capable_speed = None
+
+        autoneg = grab(port_response, "SupportedLinkCapabilities.0.AutoSpeedNegotiation")
+        if autoneg is None:
+            autoneg = grab(port_response, "LinkConfiguration.0.AutoSpeedNegotiationEnabled")
+
+        addresses = format_interface_addresses(grab(port_response, "AssociatedNetworkAddresses") or
+                                               grab(port_response, "Ethernet.AssociatedMACAddresses"))
+
+        link_type = port_response.get("ActiveLinkTechnology") or \
+            port_response.get("LinkNetworkTechnology") or \
+            grab(port_response, "SupportedLinkCapabilities.0.LinkNetworkTechnology")
+
+        # get port number
+        port_num = port_response.get("PhysicalPortNumber") or port_response.get("PortId")
+        if port_num is not None:
+            nic_port_name = f"Port {port_num}"
+        else:
+            nic_port_name = port_response.get("Name")
+
+        operation_status = status_data.get("State")
+
+        if operation_status is None and port_response.get("SignalDetected") is True:
+            operation_status = "Enabled"
+
         network_port_inventory = NetworkPort(
             id=port_id,
             name=port_response.get("Name"),
             port_name=nic_port_name,
             health_status=status_data.get("Health"),
-            operation_status=status_data.get("State"),
-            addresses=format_interface_addresses(grab(port_response, "AssociatedNetworkAddresses")),
-            link_type=port_response.get("ActiveLinkTechnology"),
-            autoneg=grab(port_response, "SupportedLinkCapabilities.0.AutoSpeedNegotiation"),
+            operation_status=operation_status,
+            addresses=addresses,
+            link_type=link_type,
+            autoneg=autoneg,
             current_speed=current_speed,
-            capable_speed=grab(port_response, "SupportedLinkCapabilities.0.CapableLinkSpeedMbps.0"),
+            capable_speed=capable_speed,
             link_status=f"{port_response.get('LinkStatus') or ''}".replace("Link", ""),
             system_ids=system_id
         )
@@ -169,7 +256,8 @@ def get_system_nics(redfish_url):
         network_port_inventory.add_relation(plugin_object.rf.get_system_properties(),
                                             port_response.get("RelatedItem"))
 
-        plugin_object.inventory.add(network_port_inventory)
+        if add_to_inventory is True:
+            plugin_object.inventory.add(network_port_inventory)
 
         if plugin_object.cli_args.verbose:
             network_port_inventory.source_data = {"port": port_response}
@@ -295,6 +383,27 @@ def get_system_nics(redfish_url):
         network_adapter_path = grab(system_response,
                                     f"Oem/{plugin_object.rf.vendor_dict_key}/Links/NetworkAdapters/@odata.id",
                                     separator="/")
+
+        redfish_chassi_url = grab(system_response, "Links/Chassis/0/@odata.id", separator="/")
+
+        chassi_response = plugin_object.rf.get(redfish_chassi_url)
+
+        chassi_network_adapter_path = None
+        if system_response.get("error") is None:
+            chassi_network_adapter_path = grab(chassi_response, "NetworkAdapters/@odata.id", separator="/")
+
+        # ILO 6 moves the NetworkAdapters to the chassi
+        if network_adapter_path is None:
+            network_adapter_path = chassi_network_adapter_path
+        else:
+            adapter_id = None
+            for network_adapter_data in get_ethernet_interfaces_data(chassi_network_adapter_path):
+                if network_adapter_data.get("NetworkPorts") is not None:
+                    port_link = grab(network_adapter_data, "NetworkPorts/@odata.id", separator="/")
+                    for port in get_ethernet_interfaces_data(port_link):
+                        chassi_network_adapter_ports.append(
+                            get_network_port(port, return_data=True, add_to_inventory=False))
+
     else:
         # assume default urls
         ethernet_interfaces_path = f"{redfish_url}/EthernetInterfaces"
@@ -333,65 +442,70 @@ def get_system_nics(redfish_url):
             network_ports = list()
             network_functions = list()
 
-            if adapter_path is None:
-
-                status_data = get_status_data(nic_member.get("Status"))
-                adapter_id = nic_member.get("Id")
-                manufacturer = None
-                name = nic_member.get("Name")
-                model = nic_member.get("Model")
-                part_number = nic_member.get("PartNumber")
-                serial = nic_member.get("SerialNumber")
-                firmware = grab(nic_member, "Firmware.Current.VersionString")
-
-                source_data = nic_member
-                num_ports = len(nic_member.get("PhysicalPorts") or list())
-            else:
+            if adapter_path is not None:
                 adapter_response = plugin_object.rf.get(adapter_path)
 
                 if adapter_response.get("error"):
                     plugin_object.add_data_retrieval_error(NetworkAdapter, adapter_response, adapter_path)
                     continue
+            else:
+                adapter_response = nic_member
 
-                source_data = adapter_response
+            for port in adapter_response.get("PhysicalPorts") or list():
+                network_ports.append(port)
 
-                status_data = get_status_data(adapter_response.get("Status"))
+            source_data = adapter_response
 
-                adapter_id = adapter_response.get("Id")
-                manufacturer = adapter_response.get("Manufacturer")
-                name = adapter_response.get("Name")
-                model = adapter_response.get("Model")
-                part_number = adapter_response.get("PartNumber")
-                serial = adapter_response.get("SerialNumber")
-                firmware = grab(adapter_response, "Firmware.Current.VersionString")
+            status_data = get_status_data(adapter_response.get("Status"))
 
-                adapter_controllers = adapter_response.get("Controllers") or list()
+            adapter_id = adapter_response.get("Id")
+            manufacturer = adapter_response.get("Manufacturer")
+            name = adapter_response.get("Name")
+            model = adapter_response.get("Model")
+            part_number = adapter_response.get("PartNumber")
+            serial = adapter_response.get("SerialNumber")
+            firmware = grab(adapter_response, "Firmware.Current.VersionString")
 
-                if isinstance(adapter_controllers, dict):
-                    adapter_controllers = [adapter_controllers]
+            adapter_controllers = adapter_response.get("Controllers") or list()
 
-                for controller in adapter_controllers:
-                    firmware = grab(controller, "FirmwarePackageVersion")
+            if isinstance(adapter_controllers, dict):
+                adapter_controllers = [adapter_controllers]
 
-                    this_controller_network_ports = \
-                        grab(controller, "Links.NetworkPorts") or \
-                        grab(controller, "Link.NetworkPorts") or list()
+            for controller in adapter_controllers:
+                firmware = grab(controller, "FirmwarePackageVersion")
 
-                    if isinstance(this_controller_network_ports, list):
-                        network_ports.extend(this_controller_network_ports)
-                    else:
-                        network_ports.append(this_controller_network_ports)
+                this_controller_network_ports = \
+                    grab(controller, "Links.NetworkPorts") or \
+                    grab(controller, "Link.NetworkPorts") or list()
 
-                    this_controller_network_functions = \
-                        grab(controller, "Links.NetworkDeviceFunctions") or \
-                        grab(controller, "Link.NetworkDeviceFunctions") or list()
+                if isinstance(this_controller_network_ports, list):
+                    network_ports.extend(this_controller_network_ports)
+                else:
+                    network_ports.append(this_controller_network_ports)
 
-                    if isinstance(this_controller_network_functions, list):
-                        network_functions.extend(this_controller_network_functions)
-                    else:
-                        network_functions.append(this_controller_network_functions)
+                this_controller_network_functions = \
+                    grab(controller, "Links.NetworkDeviceFunctions") or \
+                    grab(controller, "Link.NetworkDeviceFunctions") or list()
 
-                num_ports = len(network_ports)
+                if isinstance(this_controller_network_functions, list):
+                    network_functions.extend(this_controller_network_functions)
+                else:
+                    network_functions.append(this_controller_network_functions)
+
+            if adapter_response.get("Ports") is not None:
+                port_data = plugin_object.rf.get(grab(adapter_response, "Ports/@odata.id", separator="/"))
+                if port_data.get("error") is None:
+                    network_ports.extend(port_data.get("Members"))
+
+            """ # currently only used within iLO 6 and no useful info provided at the moment
+            if adapter_response.get("NetworkDeviceFunctions") is not None:
+                network_functions_data = plugin_object.rf.get(grab(adapter_response,
+                                                                   "NetworkDeviceFunctions/@odata.id", separator="/"))
+                if network_functions_data is not None:
+                    network_functions.extend(network_functions_data.get("Members"))
+            """
+
+            num_ports = len(network_ports)
 
             adapter_inventory = NetworkAdapter(
                 id=adapter_id,
@@ -421,106 +535,137 @@ def get_system_nics(redfish_url):
             if discovered_network_ports == 0:
                 for network_port in network_ports:
                     port_inventory_data = get_network_port(network_port, return_data=True)
-
                     if port_inventory_data is not None:
                         adapter_inventory.update("port_ids", port_inventory_data.id, True)
 
                         port_inventory_data.update("adapter_id", adapter_inventory.id)
 
             # special case for HPE
-            if plugin_object.rf.vendor == "HPE" and len(nic_member.get("PhysicalPorts") or list()) > 0:
+            if plugin_object.rf.vendor == "HPE" and len(network_ports) > 0:
 
-                num_port = 0
-                for network_port in nic_member.get("PhysicalPorts") or list():
-                    num_port += 1
+                # network_ports contains the links to the data in chassi, we need to grep the system ethernet data
+                if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6":
 
-                    port_id = f"{adapter_inventory.id}.{num_port}"
+                    for network_port in get_ethernet_interfaces_data(ethernet_interfaces_path):
 
-                    status_data = get_status_data(network_port.get("Status"))
+                        # extract MAC from ethernet interface data
+                        port_mac = format_interface_addresses(network_port.get("MACAddress") or
+                                                              network_port.get("MacAddress"))
+                        if port_mac is None or len(port_mac) == 0:
+                            continue
 
-                    network_port_inventory = NetworkPort(
-                        id=port_id,
-                        adapter_id=adapter_inventory.id,
-                        os_name=network_port.get("Name"),
-                        port_name=num_port,
-                        health_status=status_data.get("Health"),
-                        operation_status=status_data.get("State"),
-                        addresses=format_interface_addresses(grab(network_port, "MacAddress")),
-                        ipv4_addresses=get_interface_ip_addresses(network_port, "IPv4Addresses"),
-                        ipv6_addresses=get_interface_ip_addresses(network_port, "IPv6Addresses"),
-                        full_duplex=grab(network_port, "FullDuplex"),
-                        current_speed=grab(network_port, "SpeedMbps"),
-                        link_status=f"{network_port.get('LinkStatus') or ''}".replace("Link", ""),
-                        system_ids=system_id
-                    )
+                        # look up network ports in inventory with same MAC address
+                        matches = [x for x in plugin_object.inventory.get(NetworkPort) if port_mac[0] in x.addresses]
+                        if len(matches) == 0:
+                            continue
 
-                    adapter_inventory.update("port_ids", port_id, True)
+                        # we found a matching existing port and need to extract the HPE specific data for
+                        # EthernetInterface port
+                        network_port_inventory = get_hpe_network_port_data(network_port)
 
-                    plugin_object.inventory.add(network_port_inventory)
+                        current_port = matches[0]
 
-                    if plugin_object.cli_args.verbose:
-                        network_port_inventory.source_data = {"port": network_port}
+                        # enrich existing port with additional data
+                        current_port.full_duplex = network_port_inventory.full_duplex
+                        current_port.os_name = network_port_inventory.os_name
+                        current_port.ipv4_addresses = network_port_inventory.ipv4_addresses
+                        current_port.ipv6_addresses = network_port_inventory.ipv6_addresses
+
+                        if current_port.health_status is None:
+                            current_port.health_status = network_port_inventory.health_status
+                        if current_port.operation_status is None:
+                            current_port.operation_status = network_port_inventory.operation_status
+                        if current_port.current_speed is None:
+                            current_port.current_speed = network_port_inventory.current_speed
+                        if current_port.link_status is None:
+                            current_port.link_status = network_port_inventory.link_status
+
+                        if plugin_object.cli_args.verbose:
+                            current_port.source_data["ethernet_interface_port"] = network_port
+
+                else:
+                    num_port = 0
+                    for network_port in network_ports:
+                        num_port += 1
+
+                        network_port_inventory = get_hpe_network_port_data(network_port)
+                        network_port_inventory.id = f"{adapter_inventory.id}.{num_port}"
+                        network_port_inventory.adapter_id = adapter_inventory.id
+                        network_port_inventory.system_ids = system_id
+                        network_port_inventory.port_name = num_port
+
+                        adapter_inventory.update("port_ids", network_port_inventory.id, append=True)
+
+                        plugin_object.inventory.add(network_port_inventory)
+
+                        if plugin_object.cli_args.verbose:
+                            network_port_inventory.source_data = {"port": network_port}
+
+                        port_mac = format_interface_addresses(network_port.get("MACAddress") or
+                                                              network_port.get("MacAddress"))
+                        corresponding_chassi_port = None
+                        for chassi_network_adapter_port in chassi_network_adapter_ports:
+                            if len(port_mac) > 0 and port_mac[0] in chassi_network_adapter_port.addresses:
+                                corresponding_chassi_port = chassi_network_adapter_port
+                                break
+
+                        # enrich possible missing port data
+                        if corresponding_chassi_port:
+
+                            if network_port_inventory.autoneg is None:
+                                network_port_inventory.autoneg = corresponding_chassi_port.autoneg
+                            if network_port_inventory.link_type is None:
+                                network_port_inventory.link_type = corresponding_chassi_port.link_type
+                            if network_port_inventory.current_speed is None:
+                                network_port_inventory.current_speed = corresponding_chassi_port.current_speed
+                            if network_port_inventory.capable_speed is None:
+                                network_port_inventory.capable_speed = corresponding_chassi_port.capable_speed
+                            if network_port_inventory.operation_status is None:
+                                network_port_inventory.operation_status = corresponding_chassi_port.operation_status
+                            if network_port_inventory.name is None:
+                                network_port_inventory.name = corresponding_chassi_port.port_name
+
+                            if plugin_object.cli_args.verbose:
+                                network_port_inventory.source_data["ethernet_interface_port"] = \
+                                    corresponding_chassi_port.source_data.get("port")
 
             if plugin_object.cli_args.verbose:
                 adapter_inventory.source_data = source_data
 
             plugin_object.inventory.add(adapter_inventory)
 
+    # if no network ports have been discovered, try the system/EthernetInterfaces
     if len(plugin_object.inventory.get(NetworkPort)) == 0:
-        ethernet_interface_response = \
-            plugin_object.rf.get_view(f"{ethernet_interfaces_path}{plugin_object.rf.vendor_data.expand_string}")
 
-        if ethernet_interface_response.get("error"):
-            plugin_object.add_data_retrieval_error(NetworkPort, ethernet_interface_response, ethernet_interfaces_path)
-            return
+        ethernet_interface_list = get_ethernet_interfaces_data(ethernet_interfaces_path)
 
-        # HPE specific
-        if ethernet_interface_response.get("EthernetInterfaces") is not None:
-            ethernet_interface_members = ethernet_interface_response.get("EthernetInterfaces")
-        else:
-            ethernet_interface_members = ethernet_interface_response.get("Members")
+        for interface_member in ethernet_interface_list:
 
-        if ethernet_interface_members and len(ethernet_interface_members) > 0:
+            # get health status
+            status_data = get_status_data(interface_member.get("Status"))
 
-            for interface in ethernet_interface_members:
+            addresses = interface_member.get("PermanentMACAddress") or interface_member.get("MACAddress")
 
-                if interface.get("Id") is not None:
-                    interface_member = interface
-                else:
-                    interface_member = plugin_object.rf.get(interface.get("@odata.id"))
+            port_inventory = NetworkPort(
+                id=interface_member.get("Id"),
+                name=interface_member.get("Name"),
+                health_status=status_data.get("Health"),
+                operation_status=status_data.get("State"),
+                link_status=interface_member.get("LinkStatus"),
+                addresses=format_interface_addresses(addresses),
+                current_speed=interface_member.get("SpeedMbps"),
+                system_ids=system_id
+            )
 
-                    if interface_member.get("error"):
-                        plugin_object.add_data_retrieval_error(NetworkPort, interface_member,
-                                                               interface.get("@odata.id"))
-                        continue
+            if plugin_object.cli_args.verbose:
+                port_inventory.source_data = interface_member
 
-                if interface_member.get("Id"):
+            # add relations
+            port_inventory.add_relation(plugin_object.rf.get_system_properties(), interface_member.get("Links"))
+            port_inventory.add_relation(plugin_object.rf.get_system_properties(),
+                                        interface_member.get("RelatedItem"))
 
-                    # get health status
-                    status_data = get_status_data(interface_member.get("Status"))
-
-                    addresses = interface_member.get("PermanentMACAddress") or interface_member.get("MACAddress")
-
-                    port_inventory = NetworkPort(
-                        id=interface_member.get("Id"),
-                        name=interface_member.get("Name"),
-                        health_status=status_data.get("Health"),
-                        operation_status=status_data.get("State"),
-                        link_status=interface_member.get("LinkStatus"),
-                        addresses=format_interface_addresses(addresses),
-                        current_speed=interface_member.get("SpeedMbps"),
-                        system_ids=system_id
-                    )
-
-                    if plugin_object.cli_args.verbose:
-                        port_inventory.source_data = interface_member
-
-                    # add relations
-                    port_inventory.add_relation(plugin_object.rf.get_system_properties(), interface_member.get("Links"))
-                    port_inventory.add_relation(plugin_object.rf.get_system_properties(),
-                                                interface_member.get("RelatedItem"))
-
-                    plugin_object.inventory.add(port_inventory)
+            plugin_object.inventory.add(port_inventory)
 
     # noinspection PyShadowingNames
     def add_port_status(port_inventory_item):
@@ -603,6 +748,9 @@ def get_system_nics(redfish_url):
                 add_port_status(network_port)
 
     for network_port in port_inventory:
+        network_port.addresses.sort()
+        network_port.ipv4_addresses.sort()
+        network_port.ipv6_addresses.sort()
         if network_port.adapter_id is None:
             add_port_status(network_port)
 
