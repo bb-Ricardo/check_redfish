@@ -285,7 +285,22 @@ class PluginData:
         command_summary_locations = dict()
         problem_command = list()
 
-        for command in sorted(self.__output_data.get_commands()):
+        output_order = [
+            'System Info',
+            'BMC Info',
+            'Procs',
+            'Mem',
+            'Storage',
+            'NICs',
+            'Power',
+            'Temp',
+            'Fan',
+            'System Event Log',
+            'Manager Event Log',
+            'Firmware Info'
+        ]
+
+        for command in sorted(self.__output_data.get_commands(), key=lambda x: output_order.index(x)):
 
             command_locations[command] = self.__output_data.get_locations(command, summary=False)
             command_summary_locations[command] = self.__output_data.get_locations(command, summary=True)
