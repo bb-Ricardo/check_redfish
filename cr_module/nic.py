@@ -397,12 +397,14 @@ def get_system_nics(redfish_url):
             network_adapter_path = chassi_network_adapter_path
         else:
             adapter_id = None
-            for network_adapter_data in get_ethernet_interfaces_data(chassi_network_adapter_path):
-                if network_adapter_data.get("NetworkPorts") is not None:
-                    port_link = grab(network_adapter_data, "NetworkPorts/@odata.id", separator="/")
-                    for port in get_ethernet_interfaces_data(port_link):
-                        chassi_network_adapter_ports.append(
-                            get_network_port(port, return_data=True, add_to_inventory=False))
+            if chassi_network_adapter_path is not None:
+                for network_adapter_data in get_ethernet_interfaces_data(chassi_network_adapter_path):
+                    if network_adapter_data.get("NetworkPorts") is not None:
+                        port_link = grab(network_adapter_data, "NetworkPorts/@odata.id", separator="/")
+                        if port_link is not None:
+                            for port in get_ethernet_interfaces_data(port_link):
+                                chassi_network_adapter_ports.append(
+                                    get_network_port(port, return_data=True, add_to_inventory=False))
 
     else:
         # assume default urls
