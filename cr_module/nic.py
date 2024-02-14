@@ -29,23 +29,45 @@ def get_network_interfaces():
 
 
 def get_interface_ip_addresses(interface_data, protocol_type):
+
     list_of_addresses = list()
+
+    def format_and_add_ip_address(address_data):
+        address_to_add: str = address_data.get("Address")
+
+        if address_to_add is None or address_to_add in ['', '::', '0.0.0.0']:
+            return
+
+        prefix_len = None
+
+        # get IPv4 prefix length from subnet mask
+        if '.' in address_to_add and address_data.get("SubnetMask") is not None:
+            # noinspection PyBroadException
+            try:
+                prefix_len = sum(bin(int(x)).count('1') for x in address_data.get("SubnetMask").split('.'))
+            except Exception:
+                pass
+
+        if ':' in address_to_add and address_data.get("PrefixLength") is not None:
+            address_to_add = address_to_add.lower()
+            prefix_len = address_data.get("PrefixLength")
+
+        if prefix_len is not None:
+            list_of_addresses.append(f"{address_to_add}/{prefix_len}")
+        else:
+            list_of_addresses.append(address_to_add)
 
     ip_addresses = grab(interface_data, protocol_type)
 
     # Cisco
     if isinstance(ip_addresses, dict):
-        if ip_addresses.get("Address") is not None:
-            list_of_addresses.append(ip_addresses.get("Address"))
+        format_and_add_ip_address(ip_addresses)
 
     if isinstance(ip_addresses, list):
         for ip_address in ip_addresses:
-            if ip_address.get("Address") is not None:
-                list_of_addresses.append(ip_address.get("Address"))
+            format_and_add_ip_address(ip_address)
 
-    list_of_addresses = list(set(list_of_addresses))
-
-    return [address for address in list_of_addresses if address not in ['', '::', '0.0.0.0']]
+    return list(set(list_of_addresses))
 
 
 def format_interface_addresses(addresses):
@@ -686,7 +708,7 @@ def get_system_nics(redfish_url):
         ip_addresses_string = None
         ip_addresses = [*port_inventory_item.ipv4_addresses, *port_inventory_item.ipv6_addresses]
         if len(ip_addresses) > 0:
-            ip_addresses_string = "/".join(ip_addresses)
+            ip_addresses_string = ", ".join(ip_addresses)
 
         duplex = autoneg = None
         if port_inventory_item.full_duplex is not None:

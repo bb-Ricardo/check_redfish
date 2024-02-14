@@ -214,7 +214,7 @@ def get_bmc_info_generic(redfish_url):
                 ip_addresses_string = None
                 ip_addresses = [*network_inventory.ipv4_addresses, *network_inventory.ipv6_addresses]
                 if len(ip_addresses) > 0:
-                    ip_addresses_string = "/".join(ip_addresses)
+                    ip_addresses_string = ", ".join(ip_addresses)
 
                 duplex = autoneg = None
                 if network_inventory.full_duplex is not None:
