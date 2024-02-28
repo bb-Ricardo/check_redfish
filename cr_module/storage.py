@@ -163,6 +163,10 @@ def get_storage_hpe(system):
             elif system_power_state != "ON":
                 pd_inventory.health_status = "OK"
 
+            # set drive status to CRITICAL if a failure_predicted as been encountered
+            if pd_inventory.failure_predicted is True:
+                pd_inventory.health_status = "CRITICAL"
+
             status_text = f"Physical Drive ({pd_inventory.location}) {size}GB " \
                           f"status: {pd_inventory.health_status}{drive_status_reasons}"
 
@@ -694,9 +698,6 @@ def get_storage_generic(system):
         else:
             location_string = f"{pd_inventory.location} "
 
-        if pd_inventory.health_status is not None:
-            drives_status_list.append(pd_inventory.health_status)
-
         drive_mapping[drive_link] = pd_inventory
 
         size_string = "0GiB"
@@ -708,6 +709,13 @@ def get_storage_generic(system):
             pd_inventory.health_status = "CRITICAL"
             fw_issues += f" FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
                          f"has known issues and needs to be upgraded"
+
+        # set drive status to CRITICAL if a failure_predicted as been encountered
+        if pd_inventory.failure_predicted is True:
+            pd_inventory.health_status = "CRITICAL"
+
+        if pd_inventory.health_status is not None:
+            drives_status_list.append(pd_inventory.health_status)
 
         status_text = f"Physical Drive {pd_inventory.name} {location_string}({pd_inventory.model} / " \
                       f"{pd_inventory.type} / " \
