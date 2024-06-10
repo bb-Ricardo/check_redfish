@@ -866,7 +866,7 @@ def get_storage_generic(system):
 
     if storage_response is not None:
 
-        for storage_member in storage_response.get("Members"):
+        for storage_member in storage_response.get("Members") or list():
 
             if storage_member.get("@odata.context") or "Name" in list(storage_member.keys()):
                 controller_response = storage_member
