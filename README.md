@@ -53,7 +53,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.7.2 (2024-02-28)
+Version: 1.7.3 (2024-06-21)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -358,7 +358,7 @@ In case you need more information or want to debug the data you can add the verb
 option. This will also add the `source_data` attribute for each inventory item.
 
 ### Inventory attributes
-You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L182)
+You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L183)
 
 ### Inventory file
 It is also possible to use the cli option `--inventory_file` to write the inventory data to a file.

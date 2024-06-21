@@ -203,7 +203,7 @@ def get_system_nics(redfish_url):
         if plugin_object.rf.vendor != "Dell":
             port_id = f"{adapter_id}.{port_id}"
 
-        # check if port has already be added
+        # check if port has already been added
         if port_id in [p.id for p in plugin_object.inventory.get(NetworkPort)]:
             # silently ignore that network port has already been parsed
             # print(f"ALREADY in INVENTORY: {port_id}")

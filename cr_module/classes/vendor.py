@@ -117,7 +117,7 @@ class VendorDellData(VendorGeneric):
     system_event_log_location = "managers"
 
     # ATTENTION: for Dell we only provide the "base" path.
-    #            the Entries path will be discovered in the the according function
+    #            the Entries path will be discovered in the according function
     manager_event_log_entries_path = ["{system_manager_id}/LogServices/Lclog"]
     system_event_log_entries_path = ["{system_manager_id}/LogServices/Sel"]
 

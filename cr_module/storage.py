@@ -1139,7 +1139,7 @@ def get_storage_generic(system):
                         continue
 
                 # this controller has already been checked
-                # check if controller Id or Name have already be recorded
+                # now check if controller ID or Name has already been recorded
                 skip_controller = False
                 if simple_storage_controller_response.get("@odata.id").rstrip("/") in storage_controller_id_list or \
                         simple_storage_controller_response.get("Id") in \

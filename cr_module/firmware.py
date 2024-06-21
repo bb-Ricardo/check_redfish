@@ -415,7 +415,7 @@ def get_firmware_info_generic():
         if component_id is None:
             component_id = component_name
 
-        # mitigate issue for Supermicro on using IDs more then once
+        # mitigate issue for Supermicro on using IDs more than once
         if plugin_object.rf.vendor == "Supermicro":
             try:
                 int(component_id)

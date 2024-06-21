@@ -82,7 +82,7 @@ class RedfishConnection:
             self.password = self.cli_args.password
             return
 
-        # 2. a authentication file is defined, lets try to parse it
+        # 2. an authentication file is defined, lets try to parse it
         if self.cli_args.authfile is not None:
 
             try:
@@ -235,8 +235,7 @@ class RedfishConnection:
         if self.connection is None:
             raise Exception("session not initialized")
 
-        # unset root attribute
-        # root attribute is an RisObject which can't be pickled
+        # unset root attribute as it's a RisObject which can't be pickled
         root_data = self.connection.root
         self.connection.root = None
 

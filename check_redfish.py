@@ -16,8 +16,8 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
-__version__ = "1.7.2"
-__version_date__ = "2024-02-28"
+__version__ = "1.7.3"
+__version_date__ = "2024-06-21"
 __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -138,7 +138,7 @@ def parse_command_line():
         parser.error("You need to specify at least one query command.")
 
     # need to check this our self otherwise it's not
-    # possible to put the help command into a arguments group
+    # possible to put the help command into an arguments group
     if result.host is None:
         parser.error("No remote host defined")
 

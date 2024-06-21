@@ -68,7 +68,7 @@ def component_has_firmware_issues(inventory_type, model, firmware_version):
         Returns
         -------
         bool
-            True if affect, False otherwise
+            True if affected, False otherwise
     """
 
     if model is None or firmware_version is None:

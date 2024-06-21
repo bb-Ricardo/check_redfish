@@ -19,7 +19,7 @@ def grab(structure=None, path=None, separator="."):
     """
         get data from a complex object/json structure with a
         "." separated path information. If a part of a path
-        is not not present then this function returns "None".
+        is not present then this function returns "None".
 
         example structure:
             data_structure = {
@@ -128,7 +128,7 @@ def get_status_data(status_data=None):
         else:
             return_data["State"] = status_data
 
-    # If status data is a dict then try to match the keys case insensitive.
+    # If status data is a dict then try to match the keys case-insensitive.
     elif isinstance(status_data, dict):
         for status_key, status_value in status_data.items():
             for key in return_data.keys():
