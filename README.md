@@ -376,13 +376,16 @@ will be treated as **OK** if Status.State is set to **Enabled**
 This plugin is currently tested with following systems
 
 ### Hewlett Packard Enterprise
-Almost all Server which have iLO4 (>=2.50), iLO5 (>=1.40) or iLO6 should work
+Almost all HPE server with iLO4 (>=2.50), iLO5 (>=1.40) or iLO6 should work
+
 IMPORTANT:
 * newer iLO5 firmware reports some storage components twice as the data is present in two locations
+
 Models:
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
+* ProLiant DL325 Gen10
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10
