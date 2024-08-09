@@ -31,6 +31,7 @@ default_conn_timeout = 7
 class RedfishConnection:
 
     session_file_path = None
+    session_file_lock = None
     session_was_restored = False
     connection = None
     username = None
@@ -54,13 +55,13 @@ class RedfishConnection:
 
         if self.cli_args.nosession is False:
             self.session_file_path = self.get_session_file_name()
+            self.session_file_lock = self.session_file_path + ".lock"
             self.restore_session_from_file()
 
         self.init_connection()
 
     @staticmethod
     def exit_on_error(message, level="UNKNOWN"):
-
         print("[%s]: %s" % (level, message))
         exit(plugin_status_types.get(level))
 
@@ -226,7 +227,51 @@ class RedfishConnection:
         self.session_was_restored = True
 
         return
-
+    
+    def remove_session_lock(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return
+        try:
+            if os.path.exists(self.session_file_lock):
+                os.remove(self.session_file_lock)
+        except Exception as e:
+            self.exit_on_error(f"Unable to remove session lock '{self.session_file_lock}': {e}", "CRITICAL")
+        return
+    
+    def is_session_locked(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return False
+        if os.path.exists(self.session_file_lock) is False:
+            return False
+        return os.path.exists(self.session_file_lock)
+        pid = None
+        try:
+            with open(self.session_file_lock, 'r') as lock_file:
+                pid = lock_file.read().strip()
+        except Exception as e:
+            self.exit_on_error(f"Unable to read session lock '{self.session_file_lock}': {e}", "CRITICAL")
+        if isinstance(pid, int) is None:
+            self.exit_on_error(f"Session lock is empty '{self.session_file_lock}'", "CRITICAL")
+        try:
+            # Sending signal 0 does not kill the process
+            # It is used to check if a process with the given PID exists
+            print(pid)
+            os.kill(int(pid), 0)
+        except OSError:
+            return False  # The process is not running
+        return True # The process is running
+    
+    def write_session_lock(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return
+        if os.path.exists(self.session_file_lock) is False:
+            try:
+                with open(self.session_file_lock, 'w') as file:
+                    file.write(str(os.getpid()))
+            except Exception as e:
+                self.exit_on_error(f"Unable to write session lock '{self.session_file_lock}': {e}", "CRITICAL")
+        return
+        
     def save_session_to_file(self):
 
         if self.session_file_path is None:
@@ -292,7 +337,8 @@ class RedfishConnection:
         return
 
     def init_connection(self, reset=False):
-
+        if self.is_session_locked():
+            self.exit_on_error("Session is connecting... On the next run the status should be checked.", "UNKNOWN")
         # reset connection
         if reset is True:
             self.connection = None
@@ -317,7 +363,7 @@ class RedfishConnection:
         # if we have a connection object then just return
         if self.connection is not None:
             return
-
+        self.write_session_lock()
         self.get_credentials()
 
         # initialize connection
@@ -325,32 +371,41 @@ class RedfishConnection:
             self.connection = redfish.redfish_client(base_url=f"https://{self.cli_args.host}",
                                                      max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
+            self.remove_session_lock()
             self.exit_on_error(f"Host '{ self.cli_args.host}' down or unreachable.", "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
+            self.remove_session_lock()
             self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                "CRITICAL")
         except Exception as e:
+            self.remove_session_lock()
             self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if not self.connection:
+            self.remove_session_lock()
             raise Exception("Unable to establish connection.")
 
         if self.username is not None or self.password is not None:
             try:
                 self.connection.login(username=self.username, password=self.password, auth="session")
             except redfish.rest.v1.RetriesExhaustedError:
+                self.remove_session_lock()
                 self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                    "CRITICAL")
             except redfish.rest.v1.InvalidCredentialsError:
+                self.remove_session_lock()
                 self.exit_on_error("Username or password invalid.", "CRITICAL")
             except Exception as e:
+                self.remove_session_lock()
                 self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if self.connection is not None:
             self.connection.system_properties = None
             if self.cli_args.nosession is False:
                 self.save_session_to_file()
-
+                
+        self.remove_session_lock()
+    
         return
 
     def terminate_session(self):
