@@ -57,6 +57,7 @@ def parse_command_line():
     group.add_argument("-f", "--authfile", help="authentication file with user name and password")
     group.add_argument("--sessionfile", help="define name of session file")
     group.add_argument("--sessionfiledir", help="define directory where the plugin saves session files")
+    group.add_argument("--sessionlock", action='store_true', help="prevents multiple sessions and locks the session file when connecting")
     group.add_argument("--nosession", action='store_true',
                        help="Don't establish a persistent session and log out after check is finished")
 
