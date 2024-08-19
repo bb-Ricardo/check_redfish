@@ -61,8 +61,8 @@ class RedfishConnection:
 
         self.init_connection()
 
-    @staticmethod
-    def exit_on_error(message, level="UNKNOWN"):
+    def exit_on_error(self, message, level="UNKNOWN"):
+        self.remove_session_lock()
         print("[%s]: %s" % (level, message))
         exit(plugin_status_types.get(level))
 
@@ -334,7 +334,8 @@ class RedfishConnection:
 
     def init_connection(self, reset=False):
         if self.is_session_locked():
-            self.exit_on_error("Session is connecting... Soon the status should be checked.", "UNKNOWN")
+            print("[UNKNOWN]: Session is connecting... Soon the status should be checked.")
+            exit(3)
         # reset connection
         if reset is True:
             self.connection = None
@@ -367,32 +368,25 @@ class RedfishConnection:
             self.connection = redfish.redfish_client(base_url=f"https://{self.cli_args.host}",
                                                      max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
-            self.remove_session_lock()
             self.exit_on_error(f"Host '{ self.cli_args.host}' down or unreachable.", "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
-            self.remove_session_lock()
             self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                "CRITICAL")
         except Exception as e:
-            self.remove_session_lock()
             self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if not self.connection:
-            self.remove_session_lock()
             raise Exception("Unable to establish connection.")
 
         if self.username is not None or self.password is not None:
             try:
                 self.connection.login(username=self.username, password=self.password, auth="session")
             except redfish.rest.v1.RetriesExhaustedError:
-                self.remove_session_lock()
                 self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                    "CRITICAL")
             except redfish.rest.v1.InvalidCredentialsError:
-                self.remove_session_lock()
                 self.exit_on_error("Username or password invalid.", "CRITICAL")
             except Exception as e:
-                self.remove_session_lock()
                 self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}': {e}", "CRITICAL")
 
         if self.connection is not None:
