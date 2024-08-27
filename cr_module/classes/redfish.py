@@ -13,6 +13,7 @@ import pickle
 import json
 import pprint
 import sys
+import time
 
 
 from cr_module.common import grab
@@ -31,6 +32,7 @@ default_conn_timeout = 7
 class RedfishConnection:
 
     session_file_path = None
+    session_file_lock = None
     session_was_restored = False
     connection = None
     username = None
@@ -54,13 +56,13 @@ class RedfishConnection:
 
         if self.cli_args.nosession is False:
             self.session_file_path = self.get_session_file_name()
+            self.session_file_lock = self.session_file_path + ".lock"
             self.restore_session_from_file()
 
         self.init_connection()
 
-    @staticmethod
-    def exit_on_error(message, level="UNKNOWN"):
-
+    def exit_on_error(self, message, level="UNKNOWN"):
+        self.remove_session_lock()
         print("[%s]: %s" % (level, message))
         exit(plugin_status_types.get(level))
 
@@ -226,7 +228,46 @@ class RedfishConnection:
         self.session_was_restored = True
 
         return
-
+    
+    def remove_session_lock(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return
+        try:
+            if os.path.exists(self.session_file_lock):
+                os.remove(self.session_file_lock)
+        except Exception as e:
+            self.exit_on_error(f"Unable to remove session lock '{self.session_file_lock}': {e}", "UNKNOWN")
+        return
+    
+    def is_session_locked(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return False
+        if os.path.exists(self.session_file_lock) is False:
+            return False
+        lock_time = None
+        try:
+            with open(self.session_file_lock, 'r') as lock_file:
+                lock_time = float(lock_file.read().strip())
+        except Exception as e:
+            self.exit_on_error(f"Unable to read session lock '{self.session_file_lock}': {e}", "UNKNOWN")
+        # Session lock should not much longer exist than the connection timeout wit retries.
+        if time.time() - lock_time >= self.cli_args.timeout*self.cli_args.retries+5:
+            self.remove_session_lock()
+            return False
+        else:
+            return True
+    
+    def write_session_lock(self):
+        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+            return
+        if os.path.exists(self.session_file_lock) is False:
+            try:
+                with open(self.session_file_lock, 'w') as file:
+                    file.write(str(time.time()))
+            except Exception as e:
+                self.exit_on_error(f"Unable to write session lock '{self.session_file_lock}': {e}", "UNKNOWN")
+        return
+        
     def save_session_to_file(self):
 
         if self.session_file_path is None:
@@ -292,7 +333,9 @@ class RedfishConnection:
         return
 
     def init_connection(self, reset=False):
-
+        if self.is_session_locked():
+            print("[UNKNOWN]: Session is connecting... Soon the status should be checked.")
+            exit(3)
         # reset connection
         if reset is True:
             self.connection = None
@@ -317,7 +360,7 @@ class RedfishConnection:
         # if we have a connection object then just return
         if self.connection is not None:
             return
-
+        self.write_session_lock()
         self.get_credentials()
 
         # initialize connection
@@ -350,7 +393,9 @@ class RedfishConnection:
             self.connection.system_properties = None
             if self.cli_args.nosession is False:
                 self.save_session_to_file()
-
+                
+        self.remove_session_lock()
+    
         return
 
     def terminate_session(self):
