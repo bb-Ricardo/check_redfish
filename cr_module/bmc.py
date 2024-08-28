@@ -44,7 +44,8 @@ def get_bmc_info_generic(redfish_url):
     plugin_object = PluginData()
     view_response = plugin_object.rf.get_view(f"{redfish_url}{plugin_object.rf.vendor_data.expand_string}")
 
-    if view_response.get("error"):
+    if (view_response.get("error") or
+            "InternalError" in (grab(view_response, "@Message.ExtendedInfo/0/MessageId", "/") or "")):
         plugin_object.add_data_retrieval_error(Manager, view_response, redfish_url)
         return
 
