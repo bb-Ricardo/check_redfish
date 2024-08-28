@@ -63,7 +63,7 @@ class RedfishConnection:
 
     def exit_on_error(self, message, level="UNKNOWN"):
         self.remove_session_lock()
-        print("[%s]: %s" % (level, message))
+        print(f"[{level}]: {message}")
         exit(plugin_status_types.get(level))
 
     def get_credentials(self):
@@ -230,43 +230,47 @@ class RedfishConnection:
         return
     
     def remove_session_lock(self):
-        if (self.cli_args.sessionlock is False or self.session_file_path is None):
-            return
-        try:
-            if os.path.exists(self.session_file_lock):
+        if self.cli_args.sessionlock is True and \
+                self.session_file_path is not None and \
+                os.path.exists(self.session_file_lock):
+
+            try:
                 os.remove(self.session_file_lock)
-        except Exception as e:
-            self.exit_on_error(f"Unable to remove session lock '{self.session_file_lock}': {e}", "UNKNOWN")
-        return
-    
+            except Exception as e:
+                self.cli_args.sessionlock = False
+                self.exit_on_error(f"Unable to remove session lock '{self.session_file_lock}': {e}")
+
     def is_session_locked(self):
-        if (self.cli_args.sessionlock is False or self.session_file_path is None):
+        if self.cli_args.sessionlock is False or \
+                self.session_file_path is None or \
+                os.path.exists(self.session_file_lock) is False:
             return False
-        if os.path.exists(self.session_file_lock) is False:
-            return False
+
         lock_time = None
         try:
             with open(self.session_file_lock, 'r') as lock_file:
                 lock_time = float(lock_file.read().strip())
         except Exception as e:
-            self.exit_on_error(f"Unable to read session lock '{self.session_file_lock}': {e}", "UNKNOWN")
-        # Session lock should not much longer exist than the connection timeout wit retries.
-        if time.time() - lock_time >= self.cli_args.timeout*self.cli_args.retries+5:
+            self.exit_on_error(f"Unable to read session lock '{self.session_file_lock}': {e}")
+
+        # session lock should not exist much longer than the connection timeout with retries.
+        if time.time() - lock_time >= self.cli_args.timeout * self.cli_args.retries + 5:
             self.remove_session_lock()
             return False
-        else:
-            return True
-    
+
+        return True
+
+    # TEST IT
     def write_session_lock(self):
-        if (self.cli_args.sessionlock is False or self.session_file_path is None):
-            return
-        if os.path.exists(self.session_file_lock) is False:
+        if self.cli_args.sessionlock is True and \
+                self.session_file_path is not None and \
+                os.path.exists(self.session_file_lock):
+
             try:
-                with open(self.session_file_lock, 'w') as file:
-                    file.write(str(time.time()))
+                with open(self.session_file_lock, 'w') as handle:
+                    handle.write(str(time.time()))
             except Exception as e:
-                self.exit_on_error(f"Unable to write session lock '{self.session_file_lock}': {e}", "UNKNOWN")
-        return
+                self.exit_on_error(f"Unable to write session lock '{self.session_file_lock}': {e}")
         
     def save_session_to_file(self):
 
