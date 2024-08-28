@@ -188,8 +188,12 @@ be added to close session on the BMC properly.
 Per default a session file will be crated in the *system/user default temp path*.
 These defaults can be changed with following options:
 
-Use ```--sessionfiledir```to define where the session files should be stored.
+Use ```--sessionfiledir``` to define where the session files should be stored.
 Use ```--sessionfile``` to specify the name of the session file for this particular system.
+
+#### Session lock file
+In order to prevent the race condition of one monitoring instance creating multiple sessions
+it is possible to use ```--sessionlock```.
 
 #### Example
 options like this:
@@ -208,6 +212,9 @@ define after how many days' event log entries which have a != OK severity should
 be alerted anymore. On most systems it is not possible to set management event log entries
 as cleared. So entries with a severity of warning would alarm forever. This way they change
 state while they age.
+
+These settings do **NOT** apply to HPE iLO "Integrated Management Logs" as these support a "repaired"
+option to be set.
 
 Example: ```--mel --critical 1 --warning 3```
 
