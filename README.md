@@ -37,13 +37,14 @@ There is also an InfluxDB dashboard for some metrics included.
 ```
 usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--sessionfile SESSIONFILE]
-                        [--sessionfiledir SESSIONFILEDIR] [--nosession] [-h]
-                        [-w WARNING] [-c CRITICAL] [-v] [-d] [-m MAX]
-                        [-r RETRIES] [-t TIMEOUT] [--log_exclude LOG_EXCLUDE]
-                        [--ignore_missing_ps] [--enable_bmc_security_warning]
-                        [--storage] [--proc] [--memory] [--power] [--temp]
-                        [--fan] [--nic] [--bmc] [--info] [--firmware] [--sel]
-                        [--mel] [--all] [-i] [--inventory_id INVENTORY_ID]
+                        [--sessionfiledir SESSIONFILEDIR] [--sessionlock]
+                        [--nosession] [-h] [-w WARNING] [-c CRITICAL] [-v]
+                        [-d] [-m MAX] [-r RETRIES] [-t TIMEOUT]
+                        [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps]
+                        [--enable_bmc_security_warning] [--storage] [--proc]
+                        [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
+                        [--info] [--firmware] [--sel] [--mel] [--all] [-i]
+                        [--inventory_id INVENTORY_ID]
                         [--inventory_name INVENTORY_NAME]
                         [--inventory_file INVENTORY_FILE]
 
@@ -70,6 +71,8 @@ authentication arguments:
                         define name of session file
   --sessionfiledir SESSIONFILEDIR
                         define directory where the plugin saves session files
+  --sessionlock         prevents multiple sessions and locks the session file
+                        when connecting
   --nosession           Don't establish a persistent session and log out after
                         check is finished
 
