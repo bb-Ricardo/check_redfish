@@ -260,7 +260,6 @@ class RedfishConnection:
 
         return True
 
-    # TEST IT
     def write_session_lock(self):
         if self.cli_args.sessionlock is True and \
                 self.session_file_path is not None and \
@@ -337,9 +336,11 @@ class RedfishConnection:
         return
 
     def init_connection(self, reset=False):
+
         if self.is_session_locked():
             print("[UNKNOWN]: Session is connecting... Soon the status should be checked.")
             exit(3)
+
         # reset connection
         if reset is True:
             self.connection = None
@@ -364,8 +365,9 @@ class RedfishConnection:
         # if we have a connection object then just return
         if self.connection is not None:
             return
-        self.write_session_lock()
+
         self.get_credentials()
+        self.write_session_lock()
 
         # initialize connection
         try:
@@ -397,9 +399,9 @@ class RedfishConnection:
             self.connection.system_properties = None
             if self.cli_args.nosession is False:
                 self.save_session_to_file()
-                
+
         self.remove_session_lock()
-    
+
         return
 
     def terminate_session(self):
