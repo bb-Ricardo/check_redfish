@@ -263,7 +263,7 @@ class RedfishConnection:
     def write_session_lock(self):
         if self.cli_args.sessionlock is True and \
                 self.session_file_path is not None and \
-                os.path.exists(self.session_file_lock):
+                os.path.exists(self.session_file_path):
 
             try:
                 with open(self.session_file_lock, 'w') as handle:
