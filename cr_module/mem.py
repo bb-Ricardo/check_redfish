@@ -178,9 +178,16 @@ def get_single_system_mem(redfish_url):
         issue_text = f"Returned data from API URL '{redfish_url}' contains no memory information"
         plugin_object.inventory.add_issue(Memory, issue_text)
     else:
-        plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                    size_sum / 1024), summary=True, location=f"System {system_id}")
-
+        if health == "OK":
+            plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
+                        size_sum / 1024), summary=True, location=f"System {system_id}")
+        else:
+            if health.upper() == "WARNING":
+                plugin_status = "WARNING"
+            else:
+                plugin_status = "CRITICAL"
+            plugin_object.add_output_data(plugin_status, f"Memory Summary is {health} but all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
+                        size_sum / 1024), summary=True, location=f"System {system_id}")
     return
 
 # EOF
