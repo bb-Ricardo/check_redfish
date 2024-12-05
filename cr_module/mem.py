@@ -29,6 +29,8 @@ def get_single_system_mem(redfish_url):
 
     system_power_state = get_system_power_state().upper()
 
+    health = "CRITICAL"
+
     if systems_response.get("MemorySummary"):
 
         memory_status = get_status_data(grab(systems_response, "MemorySummary.Status"))
@@ -177,17 +179,22 @@ def get_single_system_mem(redfish_url):
     if num_dimms == 0:
         issue_text = f"Returned data from API URL '{redfish_url}' contains no memory information"
         plugin_object.inventory.add_issue(Memory, issue_text)
+
+        return
+
+    if health in [ "OK", None ]:
+        plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
+                    size_sum / 1024), summary=True, location=f"System {system_id}")
     else:
-        if health == "OK":
-            plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                        size_sum / 1024), summary=True, location=f"System {system_id}")
+        if health.upper() == "WARNING":
+            plugin_status = "WARNING"
         else:
-            if health.upper() == "WARNING":
-                plugin_status = "WARNING"
-            else:
-                plugin_status = "CRITICAL"
-            plugin_object.add_output_data(plugin_status, f"Memory Summary is {health} but all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                        size_sum / 1024), summary=True, location=f"System {system_id}")
+            plugin_status = "CRITICAL"
+        plugin_object.add_output_data(plugin_status,
+                                      f"Memory Summary health is reported as '{health.upper()}' but "
+                                      f"all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
+                                      size_sum / 1024), summary=True, location=f"System {system_id}")
+
     return
 
 # EOF

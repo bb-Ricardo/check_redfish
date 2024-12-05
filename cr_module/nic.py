@@ -67,7 +67,7 @@ def get_interface_ip_addresses(interface_data, protocol_type):
         for ip_address in ip_addresses:
             format_and_add_ip_address(ip_address)
 
-    return list(set(list_of_addresses))
+    return sorted(list(set(list_of_addresses)))
 
 
 def format_interface_addresses(addresses):
