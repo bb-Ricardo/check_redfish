@@ -17,6 +17,52 @@ from cr_module import get_system_power_state
 
 global_battery_list = list()
 
+def get_physical_drive_details(drive_data: PhysicalDrive, issues: str=None) -> str:
+
+    if not isinstance(drive_data, PhysicalDrive):
+        return ""
+
+    pd_status_details = list()
+
+    if drive_data.location is not None and drive_data.name != drive_data.location:
+        pd_status_details.append(f"{drive_data.location}")
+    if drive_data.model is not None:
+        pd_status_details.append(f"{drive_data.model}")
+    if drive_data.type is not None:
+        pd_status_details.append(f"{drive_data.type}")
+    if drive_data.interface_type is not None:
+        pd_status_details.append(f"{drive_data.interface_type}")
+    if drive_data.predicted_media_life_left_percent is not None:
+        pd_status_details.append(f"Media life left: {drive_data.predicted_media_life_left_percent}%")
+    if drive_data.operation_status is not None:
+        pd_status_details.append(f"Status: {drive_data.operation_status}")
+    if drive_data.power_on_hours is not None:
+        pd_status_details.append(f"Hours on: {drive_data.power_on_hours}")
+
+    pd_size = None
+    if drive_data.size_in_byte is not None and drive_data.size_in_byte > 0:
+        pd_size = "%0.2f" % (drive_data.size_in_byte / (1000 ** 3))
+
+    pd_status = ["Physical Drive"]
+
+    if drive_data.name is not None and "smartstoragediskdrive" not in drive_data.name.lower():
+        pd_status.append(f"{drive_data.name}")
+
+    if drive_data.failure_predicted is True:
+        pd_status.append(f"Failure predicted: {drive_data.failure_predicted}")
+
+    if len(pd_status_details) > 0:
+        pd_status.append(f"({', '.join(pd_status_details)})")
+
+    if pd_size is not None:
+        pd_status.append(f"{pd_size}GiB")
+
+    pd_status.append(f"status: {drive_data.health_status}")
+
+    if isinstance(issues, str) and len(issues.strip()) > 0:
+        pd_status.append(issues.strip())
+
+    return " ".join(pd_status)
 
 def get_storage():
 
@@ -107,6 +153,13 @@ def get_storage_hpe(system):
                     drive_serial in [x.serial for x in plugin_object.inventory.get(PhysicalDrive)]:
                 continue
 
+            failure_predicted = None
+            if disk_response.get('FailurePredicted') is not None:
+                if "true" in f"{disk_response.get('FailurePredicted')}".lower():
+                    failure_predicted = True
+                else:
+                    failure_predicted = False
+
             pd_inventory = PhysicalDrive(
                 # drive id repeats per controller
                 # prefix drive id with controller id
@@ -121,7 +174,7 @@ def get_storage_hpe(system):
                 part_number=disk_response.get("PartNumber"),
                 type=disk_response.get("MediaType"),
                 speed_in_rpm=disk_response.get("RotationalSpeedRpm"),
-                failure_predicted=disk_response.get("FailurePredicted"),
+                failure_predicted=failure_predicted,
                 predicted_media_life_left_percent=predicted_media_life_left_percent,
                 size_in_byte=disk_size,
                 power_on_hours=disk_response.get("PowerOnHours"),
@@ -145,8 +198,6 @@ def get_storage_hpe(system):
             plugin_object.inventory.append(StorageController, controller_inventory.id, "physical_drive_ids",
                                            pd_inventory.id)
 
-            size = int(pd_inventory.size_in_byte / 1000 ** 3)
-
             drive_status_reasons = ""
             if pd_inventory.health_status != "OK":
                 drive_status_reasons_list = disk_response.get("DiskDriveStatusReasons")
@@ -168,12 +219,11 @@ def get_storage_hpe(system):
             if pd_inventory.failure_predicted is True:
                 pd_inventory.health_status = "CRITICAL"
 
-            status_text = f"Physical Drive ({pd_inventory.location}) {size}GB " \
-                          f"status: {pd_inventory.health_status}{drive_status_reasons}"
+            pd_status_text = get_physical_drive_details(pd_inventory, drive_status_reasons)
 
             plugin_object.add_output_data(
                 "CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status,
-                status_text, location=f"System {system_id}")
+                pd_status_text, location=f"System {system_id}")
 
     def get_logical_drives(link):
 
@@ -587,6 +637,13 @@ def get_storage_generic(system):
                 drive_serial in [x.serial for x in plugin_object.inventory.get(PhysicalDrive)]:
             return
 
+        failure_predicted = None
+        if drive_response.get('FailurePredicted') is not None:
+            if "true" in f"{drive_response.get('FailurePredicted')}".lower():
+                failure_predicted = True
+            else:
+                failure_predicted = False
+
         pd_inventory = PhysicalDrive(
             # drive id repeats per controller
             # prefix drive id with controller id
@@ -601,7 +658,7 @@ def get_storage_generic(system):
             location=location,
             type=drive_response.get("MediaType"),
             speed_in_rpm=drive_response.get("RotationalSpeedRpm") or drive_response.get("RotationSpeedRPM"),
-            failure_predicted=drive_response.get("FailurePredicted"),
+            failure_predicted=failure_predicted,
             predicted_media_life_left_percent=predicted_media_life_left_percent,
             part_number=drive_response.get("PartNumber"),
             size_in_byte=disk_size,
@@ -627,36 +684,25 @@ def get_storage_generic(system):
         if pd_inventory.type is None and "SSD" in pd_inventory.id:
             pd_inventory.type = "SSD"
 
-        if pd_inventory.location is None or pd_inventory.name == pd_inventory.location:
-            location_string = ""
-        else:
-            location_string = f"{pd_inventory.location} "
-
         drive_mapping[drive_link] = pd_inventory
-
-        size_string = "0GiB"
-        if pd_inventory.size_in_byte is not None and pd_inventory.size_in_byte > 0:
-            size_string = "%0.2fGiB" % (pd_inventory.size_in_byte / (1000 ** 3))
 
         fw_issues = ""
         if component_has_firmware_issues(PhysicalDrive, pd_inventory.model, pd_inventory.firmware) is True:
             pd_inventory.health_status = "CRITICAL"
-            fw_issues += f" FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
+            fw_issues = f"FW version '{pd_inventory.firmware}' for model '{pd_inventory.model}' " \
                          f"has known issues and needs to be upgraded"
 
         # set drive status to CRITICAL if a failure_predicted as been encountered
         if pd_inventory.failure_predicted is True:
             pd_inventory.health_status = "CRITICAL"
 
-        status_text = f"Physical Drive {pd_inventory.name} {location_string}({pd_inventory.model} / " \
-                      f"{pd_inventory.type} / " \
-                      f"{pd_inventory.interface_type}) {size_string} status: {pd_inventory.health_status}{fw_issues}"
+        pd_status_text = get_physical_drive_details(pd_inventory, fw_issues)
 
         pd_status = get_component_status(pd_inventory.health_status)
         if system_power_state != "ON":
             pd_status = "OK"
 
-        plugin_object.add_output_data(pd_status, status_text, location=f"System {system_id}")
+        plugin_object.add_output_data(pd_status, pd_status_text, location=f"System {system_id}")
 
     def get_volumes(volumes_link):
 
