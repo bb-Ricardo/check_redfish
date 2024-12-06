@@ -54,7 +54,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.8.1 (2024-10-22)
+Version: 1.9.0 (2024-12-06)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -454,6 +454,7 @@ Models:
 * PRIMERGY RX2530 M5 (iRMC Version 2.50P)
 * PRIMERGY RX2540 M4 (iRMC Version 2.50P)
 * PRIMERGY RX2540 M5 (iRMC Version 2.50P)
+* PRIMERGY RX2540 M6 (iRMC Version 3.54P)
 
 ### Cisco
 * Cisco C220M4SX (CIMC Version 4.1(2a))
