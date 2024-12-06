@@ -741,7 +741,10 @@ def get_storage_generic(system):
 
         # set drive status to CRITICAL if a failure_predicted as been encountered
         if pd_inventory.failure_predicted is True:
-            pd_inventory.health_status = "CRITICAL"
+
+            # ignore disabled drives on Cisco systems which report an issue
+            if not (plugin_object.rf.vendor == "Cisco" and pd_inventory.operation_status == "Disabled"):
+                pd_inventory.health_status = "CRITICAL"
 
         media_life_warning = force_cast(int, plugin_object.cli_args.warning, media_life_warning_default)
         media_life_critical = force_cast(int, plugin_object.cli_args.critical, media_life_critical_default)
