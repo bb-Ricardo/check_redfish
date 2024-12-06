@@ -179,4 +179,12 @@ def get_local_timezone():
     return local_timezone
 
 
+def force_cast(var_type, value, default):
+
+    # noinspection PyBroadException
+    try:
+        return var_type(value)
+    except Exception:
+        return default
+
 # EOF

@@ -207,6 +207,12 @@ results in following session file:
 ### WARNING and CRITICAL (health checks only)
 you can use warning and critical with following commands:
 
+**IMPORTANT**<br>
+WARNING and CRITICAL values can only be used properly if used with **ONE** query type.
+If for example **--all** or **--mel** and **--storage** are used in the same command then you will
+get inconsistent results/alarms.
+
+#### Event Logs
 **--mel** and **--sel** (values are passed as "days")<br>
 define after how many days' event log entries which have a != OK severity shouldn't
 be alerted anymore. On most systems it is not possible to set management event log entries
@@ -221,6 +227,14 @@ Example: ```--mel --critical 1 --warning 3```
 * Entries with a != OK severity which are not older than 24 hours are reported as CRITICAL
 * Entries with a != OK severity which are not older than 72 hours are reported as WARNING
 * Any entries with a != OK severity which are older than 72 hours will be reported as OK
+
+#### Storage
+**--storage** (values are passed as "percent")<br>
+define the percent of media lifetime left for SSD drives to report WARNING and/or CRITICAL.
+
+Defaults:
+* WARNING: 10%
+* CRITICAL: 5%
 
 ### Detailed (health checks only)
 Health status by default will be reported as a summary:

@@ -7,7 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.common import grab, quoted_split, get_local_timezone
+from cr_module.common import grab, quoted_split, get_local_timezone, force_cast
 from cr_module.classes import plugin_status_types
 from cr_module.classes.plugin import PluginData
 
@@ -199,10 +199,13 @@ def get_event_log_hpe(event_type, redfish_path):
 
     if event_type == "Manager":
 
-        if plugin_object.cli_args.warning:
-            date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
-        if plugin_object.cli_args.critical:
-            date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
+        days_warning = force_cast(int, plugin_object.cli_args.warning, 0)
+        days_critical = force_cast(int, plugin_object.cli_args.critical, 0)
+
+        if days_warning > 0:
+            date_warning = data_now - datetime.timedelta(days=days_warning)
+        if days_critical > 0:
+            date_critical = data_now - datetime.timedelta(days=days_critical)
 
     event_entries = plugin_object.rf.get(redfish_path).get("Members")
 

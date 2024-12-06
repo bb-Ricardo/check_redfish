@@ -11,20 +11,24 @@ import hashlib
 
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
 from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab
+from cr_module.common import get_status_data, grab, force_cast
 from cr_module.firmware_issues import component_has_firmware_issues
 from cr_module import get_system_power_state
 
 global_battery_list = list()
 
-def get_physical_drive_details(drive_data: PhysicalDrive, issues: str=None) -> str:
+media_life_warning_default = 10
+media_life_critical_default = 5
+
+
+def get_physical_drive_status(drive_data: PhysicalDrive, issues: str=None) -> str:
 
     if not isinstance(drive_data, PhysicalDrive):
         return ""
 
     pd_status_details = list()
 
-    if drive_data.location is not None and drive_data.name != drive_data.location:
+    if drive_data.location is not None and drive_data.name != f"{drive_data.location}":
         pd_status_details.append(f"{drive_data.location}")
     if drive_data.model is not None:
         pd_status_details.append(f"{drive_data.model}")
@@ -63,6 +67,38 @@ def get_physical_drive_details(drive_data: PhysicalDrive, issues: str=None) -> s
         pd_status.append(issues.strip())
 
     return " ".join(pd_status)
+
+
+def add_physical_drive_perf_data(drive_data: PhysicalDrive, warning: int=None, critical: int=None):
+
+    plugin_object = PluginData()
+
+    if not isinstance(drive_data, PhysicalDrive):
+        return
+
+    if drive_data.name is not None and "smartstoragediskdrive" not in drive_data.name.lower():
+        pd_name = f"drive_{drive_data.name}"
+        if drive_data.location is not None and f"{drive_data.location}" not in pd_name:
+            pd_name += f"_{drive_data.location}"
+    else:
+        pd_name = f"drive_{drive_data.location}"
+
+    if isinstance(drive_data.temperature, (int, float)):
+
+        plugin_object.add_perf_data(f"temp_{pd_name}", int(drive_data.temperature),
+                                    location=f"System {drive_data.system_ids}")
+
+    if isinstance(drive_data.predicted_media_life_left_percent, (int, float)):
+
+        plugin_object.add_perf_data(f"media_life_left_{pd_name}",
+                                    int(drive_data.predicted_media_life_left_percent), perf_uom="%",
+                                    warning=warning, critical=critical, location=f"System {drive_data.system_ids}")
+
+    if isinstance(drive_data.power_on_hours, int):
+
+        plugin_object.add_perf_data(f"power_on_hours_{pd_name}", drive_data.power_on_hours,
+                                    location=f"System {drive_data.system_ids}")
+
 
 def get_storage():
 
@@ -219,11 +255,22 @@ def get_storage_hpe(system):
             if pd_inventory.failure_predicted is True:
                 pd_inventory.health_status = "CRITICAL"
 
-            pd_status_text = get_physical_drive_details(pd_inventory, drive_status_reasons)
+            media_life_warning = force_cast(int, plugin_object.cli_args.warning, media_life_warning_default)
+            media_life_critical = force_cast(int, plugin_object.cli_args.critical, media_life_critical_default)
+
+            if pd_inventory.predicted_media_life_left_percent is not None:
+                if force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_critical:
+                    pd_inventory.health_status = "CRITICAL"
+                elif force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_warning:
+                    pd_inventory.health_status = "WARNING"
+
+            pd_status_text = get_physical_drive_status(pd_inventory, drive_status_reasons)
 
             plugin_object.add_output_data(
                 "CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status,
                 pd_status_text, location=f"System {system_id}")
+
+            add_physical_drive_perf_data(pd_inventory, media_life_warning, media_life_critical)
 
     def get_logical_drives(link):
 
@@ -696,13 +743,25 @@ def get_storage_generic(system):
         if pd_inventory.failure_predicted is True:
             pd_inventory.health_status = "CRITICAL"
 
-        pd_status_text = get_physical_drive_details(pd_inventory, fw_issues)
+        media_life_warning = force_cast(int, plugin_object.cli_args.warning, media_life_warning_default)
+        media_life_critical = force_cast(int, plugin_object.cli_args.critical, media_life_critical_default)
+
+        if pd_inventory.predicted_media_life_left_percent is not None:
+            if force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_critical:
+                pd_inventory.health_status = "CRITICAL"
+            elif force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_warning:
+                pd_inventory.health_status = "WARNING"
+
+        pd_status_text = get_physical_drive_status(pd_inventory, fw_issues)
 
         pd_status = get_component_status(pd_inventory.health_status)
+
         if system_power_state != "ON":
             pd_status = "OK"
 
         plugin_object.add_output_data(pd_status, pd_status_text, location=f"System {system_id}")
+
+        add_physical_drive_perf_data(pd_inventory, media_life_warning, media_life_critical)
 
     def get_volumes(volumes_link):
 
