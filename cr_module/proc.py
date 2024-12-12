@@ -188,6 +188,28 @@ def get_single_system_procs(redfish_url):
     else:
         plugin_object.inventory.add_issue(Processor, f"No processor data returned for API URL '{redfish_url}'")
 
+    # add Dell CPU usage
+    if plugin_object.rf.vendor == "Dell":
+        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+
+            cpu_usage_url = chassi.rstrip("/") + "/Sensors/SystemBoardCPUUsage"
+
+            chassi_id = chassi.rstrip("/").split("/")[-1]
+
+            cpu_usage_response = plugin_object.rf.get(cpu_usage_url)
+
+            if not cpu_usage_response.get("error"):
+                cpu_usage_value = grab(cpu_usage_response, "Reading")
+                cpu_usage_units = grab(cpu_usage_response, "ReadingUnits")
+                if cpu_usage_value is not None and cpu_usage_units is not None:
+                    perf_units = "%" if cpu_usage_units == "%" else None
+
+                    plugin_object.add_output_data("OK", f"Current CPU usage {cpu_usage_value}{cpu_usage_units}",
+                                                  location=f"System {system_id}")
+
+                    plugin_object.add_perf_data(f"CPU_usage", int(cpu_usage_value),
+                                                perf_uom=perf_units, location=f"Chassi {chassi_id}")
+
     return
 
 # EOF
