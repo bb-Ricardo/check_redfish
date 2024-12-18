@@ -6,7 +6,7 @@ It will also create an inventory of all components of a system.
 
 ### NetBox import support
 You are also able to import the inventory files into [NetBox](https://github.com/netbox-community/netbox)
-using [netbox-snyc](https://github.com/bb-Ricardo/netbox-sync).
+using [netbox-sync](https://github.com/bb-Ricardo/netbox-sync).
 
 ## Requirements
 * python >= 3.6
