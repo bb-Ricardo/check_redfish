@@ -202,13 +202,46 @@ def get_single_system_procs(redfish_url):
                 cpu_usage_value = grab(cpu_usage_response, "Reading")
                 cpu_usage_units = grab(cpu_usage_response, "ReadingUnits")
                 if cpu_usage_value is not None and cpu_usage_units is not None:
-                    perf_units = "%" if cpu_usage_units == "%" else None
 
-                    plugin_object.add_output_data("OK", f"Current CPU usage {cpu_usage_value}{cpu_usage_units}",
+                    # noinspection PyBroadException
+                    try:
+                        cpu_usage_int = int(cpu_usage_value)
+
+                        plugin_object.add_output_data("OK", f"Current CPU usage {cpu_usage_int}{cpu_usage_units}",
+                                                      location=f"System {system_id}")
+
+                        plugin_object.add_perf_data(f"cpu_usage", cpu_usage_int,
+                                                    perf_uom="%" if cpu_usage_units == "%" else None,
+                                                    location=f"Chassi {chassi_id}")
+
+                    except Exception:
+                        pass
+
+    # add HPE CPU usage
+    if plugin_object.rf.vendor == "HPE":
+
+        cpu_util_metric_endpoint = "/redfish/v1/TelemetryService/MetricReports/CPUUtilCustom1/"
+
+        cpu_usage_response = plugin_object.rf.get(cpu_util_metric_endpoint)
+
+        if not cpu_usage_response.get("error"):
+            cpu_usage_value = grab(cpu_usage_response, "MetricValues")
+            cpu_usage_units = "%"
+            if isinstance(cpu_usage_value, list) and len(cpu_usage_value) > 0:
+                cpu_usage = grab(cpu_usage_value[-1], "MetricValue")
+
+                # noinspection PyBroadException
+                try:
+                    cpu_usage_int = int(cpu_usage)
+
+                    plugin_object.add_output_data("OK", f"Current CPU usage {cpu_usage_int}{cpu_usage_units}",
                                                   location=f"System {system_id}")
 
-                    plugin_object.add_perf_data(f"CPU_usage", int(cpu_usage_value),
-                                                perf_uom=perf_units, location=f"Chassi {chassi_id}")
+                    plugin_object.add_perf_data(f"cpu_usage", cpu_usage_int, perf_uom=cpu_usage_units,
+                                                location=f"System {system_id}")
+
+                except Exception:
+                    pass
 
     return
 
