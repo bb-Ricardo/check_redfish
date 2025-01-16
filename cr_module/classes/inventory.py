@@ -17,7 +17,7 @@ from socket import gethostname
 
 
 # inventory definition
-inventory_layout_version_string = "1.7.1"
+inventory_layout_version_string = "1.10.0"
 
 
 # noinspection PyBroadException
@@ -33,13 +33,8 @@ class InventoryItem(object):
 
     def __init__(self, **kwargs):
 
-        for attribute in self.valid_attributes:
-            value = None
-            # references with ids are always lists
-            if attribute.endswith("_ids") or attribute in ["licenses", "ipv4_addresses", "ipv6_addresses", "addresses"]:
-                value = list()
-
-            super().__setattr__(attribute, value)
+        for attribute, attribute_type in self.valid_attributes.items():
+            super().__setattr__(attribute, list() if attribute_type == list else None)
 
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -49,19 +44,18 @@ class InventoryItem(object):
         if data_value is None:
             return
 
-        #
         current_data_value = getattr(self, data_key)
+        attribute_type = self.valid_attributes.get(data_key)
 
-        if isinstance(current_data_value, list) and append is True:
-            if isinstance(data_value, (str, int, float)):
-                if data_value not in current_data_value:
-                    current_data_value.append(data_value)
-            elif isinstance(data_value, list):
-                for this_data_value in data_value:
-                    if this_data_value not in current_data_value and this_data_value is not None:
+        if attribute_type == list and append is True:
+            if isinstance(data_value, list):
+                for this_data_value in [f"{x}".strip() for x in data_value if x is not None]:
+                    if this_data_value not in current_data_value:
                         current_data_value.append(this_data_value)
-            else:
-                current_data_value.extend(data_value)
+
+            elif f"{data_value}".strip() not in current_data_value:
+                    current_data_value.append(f"{data_value}".strip())
+
             data_value = current_data_value
 
         setattr(self, data_key, data_value)
@@ -115,11 +109,6 @@ class InventoryItem(object):
                     if relations_property_attribute is not None and hasattr(self, relations_property_attribute):
 
                         property_id = property_link.rstrip("/").split("/")[-1]
-                        # check if object id is an int
-                        try:
-                            property_id = int(property_id)
-                        except Exception:
-                            pass
 
                         # update attribute
                         self.update(relations_property_attribute, property_id, True)
@@ -131,376 +120,358 @@ class InventoryItem(object):
             super().__setattr__(key, value)
             return
 
-        if key not in self.valid_attributes:
+        if key not in self.valid_attributes.keys():
             raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, key))
 
-        current_value = getattr(self, key)
+        value_type = self.valid_attributes.get(key)
 
-        if value is None and current_value is None:
+        if value is None and getattr(self, key) is None:
             return
 
-        if isinstance(value, str):
-            value = value.strip()
+        def is_int(v):
+            return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
+
+        def is_float(v):
+            try:
+                _ = float(v)
+            except Exception:
+                return False
+            return True
+
+        if value_type == str:
+            value = f"{value}".strip()
+
+            if value.upper() in plugin_status_types.keys():
+                value = value.upper()
 
             if len(value) == 0:
                 value = None
 
-            def is_int(v):
-                return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
+        elif value_type == list:
+            if not isinstance(value, value_type):
+                value = [f"{value}".strip()]
 
-            def is_float(v):
-                try:
-                    _ = float(v)
-                except Exception:
-                    return False
-                return True
+        elif value_type in [int, float]:
+            if not isinstance(value, value_type):
+                if is_float(f"{value}".strip()):
+                    value = value_type(float(f"{value}".strip()))
+                if is_int(f"{value}".strip()):
+                    value = value_type(f"{value}".strip())
 
-            # skip formatting of certain attributes
-            if value is not None and key not in ["id", "name", "firmware", "serial", "version", "host_name"]:
-                if is_int(value):
-                    value = int(float(value))
+        elif value_type == bool:
+            if not isinstance(value, value_type):
+                if f"{value}".strip().lower() == "true":
+                    value = True
+                elif f"{value}".strip().lower() == "false":
+                    value = False
 
-                elif is_float(value):
-                    value = float(value)
-
-                elif value.upper() in plugin_status_types.keys():
-                    value = value.upper()
-
-        if isinstance(current_value, list):
-            if value is None:
-                value = list()
-            elif isinstance(value, (str, int, float)):
-                value = [value]
-            elif not isinstance(value, list):
-                value = [f"{value}"]
         else:
-            if isinstance(value, (list, dict, set, tuple)):
-                value = f"{value}"
+            value = f"{value}".strip()
 
         super().__setattr__(key, value)
 
 
 class PhysicalDrive(InventoryItem):
     inventory_item_name = "physical_drive"
-    valid_attributes = [
-        "bay",
-        "encrypted",
-        "failure_predicted",
-        "firmware",
-        "health_status",
-        "id",
-        "interface_speed",
-        "interface_type",
-        "location",
-        "logical_drive_ids",
-        "manufacturer",
-        "model",
-        "name",
-        "operation_status",
-        "part_number",
-        "power_on_hours",
-        "predicted_media_life_left_percent",
-        "serial",
-        "size_in_byte",
-        "speed_in_rpm",
-        "storage_controller_ids",
-        "storage_enclosure_ids",
-        "storage_port",
-        "system_ids",
-        "temperature",
-        "type"
-    ]
+    valid_attributes = {
+        "bay": str,
+        "encrypted": bool,
+        "failure_predicted": bool,
+        "firmware": str,
+        "health_status": str,
+        "id": str,
+        "interface_speed": int,
+        "interface_type": str,
+        "location": str,
+        "logical_drive_ids": list,
+        "manufacturer": str,
+        "model": str,
+        "name": str,
+        "operation_status": str,
+        "part_number": str,
+        "power_on_hours": int,
+        "predicted_media_life_left_percent": int,
+        "serial": str,
+        "size_in_byte": int,
+        "speed_in_rpm": int,
+        "storage_controller_ids": list,
+        "storage_enclosure_ids": list,
+        "storage_port": str,
+        "system_ids": list,
+        "temperature": int,
+        "type": str
+    }
 
 
 class LogicalDrive(InventoryItem):
     inventory_item_name = "logical_drive"
-    valid_attributes = [
-       "encrypted",
-       "health_status",
-       "id",
-       "name",
-       "operation_status",
-       "physical_drive_ids",
-       "raid_type",
-       "size_in_byte",
-       "storage_controller_ids",
-       "system_ids",
-       "type"
-    ]
+    valid_attributes = {
+       "encrypted": bool,
+       "health_status": str,
+       "id": str,
+       "name": str,
+       "operation_status": str,
+       "physical_drive_ids": list,
+       "raid_type": str,
+       "size_in_byte": int,
+       "storage_controller_ids": list,
+       "system_ids": list,
+       "type": str
+    }
 
 
 class StorageController(InventoryItem):
     inventory_item_name = "storage_controller"
-    valid_attributes = [
-       "backup_power_health",
-       "backup_power_present",
-       "cache_size_in_mb",
-       "firmware",
-       "health_status",
-       "id",
-       "location",
-       "logical_drive_ids",
-       "manufacturer",
-       "model",
-       "name",
-       "operation_status",
-       "physical_drive_ids",
-       "serial",
-       "storage_enclosure_ids",
-       "system_ids"
-    ]
+    valid_attributes = {
+       "backup_power_health": str,
+       "backup_power_present": bool,
+       "cache_size_in_mb": int,
+       "firmware": str,
+       "health_status": str,
+       "id": str,
+       "location": str,
+       "logical_drive_ids": list,
+       "manufacturer": str,
+       "model": str,
+       "name": str,
+       "operation_status": str,
+       "physical_drive_ids": list,
+       "serial": str,
+       "storage_enclosure_ids": list,
+       "system_ids": list
+    }
 
 
 class StorageEnclosure(InventoryItem):
     inventory_item_name = "storage_enclosure"
-    valid_attributes = [
-       "firmware",
-       "health_status",
-       "id",
-       "location",
-       "manufacturer",
-       "model",
-       "name",
-       "num_bays",
-       "operation_status",
-       "physical_drive_ids",
-       "serial",
-       "storage_controller_ids",
-       "storage_port",
-       "system_ids"
-    ]
+    valid_attributes = {
+       "firmware": str,
+       "health_status": str,
+       "id": str,
+       "location": str,
+       "manufacturer": str,
+       "model": str,
+       "name": str,
+       "num_bays": int,
+       "operation_status": str,
+       "physical_drive_ids": list,
+       "serial": str,
+       "storage_controller_ids": list,
+       "storage_port": str,
+       "system_ids": list
+    }
 
 
 class Processor(InventoryItem):
     inventory_item_name = "processor"
-    valid_attributes = [
-       "L1_cache_kib",
-       "L2_cache_kib",
-       "L3_cache_kib",
-       "architecture",
-       "cores",
-       "current_speed",
-       "health_status",
-       "id",
-       "instruction_set",
-       "manufacturer",
-       "max_speed",
-       "model",
-       "name",
-       "operation_status",
-       "serial",
-       "socket",
-       "system_ids",
-       "threads",
-       "type"
-    ]
+    valid_attributes = {
+       "L1_cache_kib": int,
+       "L2_cache_kib": int,
+       "L3_cache_kib": int,
+       "architecture": str,
+       "cores": int,
+       "current_speed": int,
+       "health_status": str,
+       "id": str,
+       "instruction_set": str,
+       "manufacturer": str,
+       "max_speed": int,
+       "model": str,
+       "name": int,
+       "operation_status": int,
+       "serial": str,
+       "socket": int,
+       "system_ids": list,
+       "threads": int,
+       "type": int
+    }
 
 
 class Memory(InventoryItem):
     inventory_item_name = "memory"
-    valid_attributes = [
-        "base_type",
-        "channel",
-        "health_status",
-        "id",
-        "manufacturer",
-        "name",
-        "operation_status",
-        "part_number",
-        "serial",
-        "size_in_mb",
-        "slot",
-        "socket",
-        "speed",
-        "system_ids",
-        "type"
-    ]
+    valid_attributes = {
+        "base_type": str,
+        "channel": int,
+        "health_status": str,
+        "id": str,
+        "manufacturer": str,
+        "name": str,
+        "operation_status": str,
+        "part_number": str,
+        "serial": str,
+        "size_in_mb": int,
+        "slot": int,
+        "socket": int,
+        "speed": int,
+        "system_ids": list,
+        "type": str
+    }
 
 
 class PowerSupply(InventoryItem):
     inventory_item_name = "power_supply"
-    valid_attributes = [
-        "bay",
-        "capacity_in_watt",
-        "chassi_ids",
-        "firmware",
-        "health_status",
-        "id",
-        "input_voltage",
-        "last_power_output",
-        "model",
-        "model",
-        "name",
-        "operation_status",
-        "part_number",
-        "serial",
-        "type",
-        "vendor"
-    ]
+    valid_attributes = {
+        "bay": str,
+        "capacity_in_watt": int,
+        "chassi_ids": list,
+        "firmware": str,
+        "health_status": str,
+        "id": str,
+        "input_voltage": int,
+        "last_power_output": int,
+        "model": str,
+        "name": str,
+        "operation_status": str,
+        "part_number": str,
+        "serial": str,
+        "type": str,
+        "vendor": str
+    }
 
 
 class Temperature(InventoryItem):
     inventory_item_name = "temperature"
-    valid_attributes = [
-        "chassi_ids",
-        "health_status",
-        "id",
-        "location",
-        "lower_threshold_critical",
-        "lower_threshold_fatal",
-        "lower_threshold_non_critical",
-        "max_reading",
-        "min_reading",
-        "name",
-        "operation_status",
-        "physical_context",
-        "reading",
-        "reading_unit",
-        "upper_threshold_critical",
-        "upper_threshold_fatal",
-        "upper_threshold_non_critical"
-    ]
-
+    valid_attributes = {
+        "chassi_ids": list,
+        "health_status": str,
+        "id": str,
+        "location": str,
+        "lower_threshold_critical": int,
+        "lower_threshold_fatal": int,
+        "lower_threshold_non_critical": int,
+        "max_reading": int,
+        "min_reading": int,
+        "name": str,
+        "operation_status": str,
+        "physical_context": str,
+        "reading": int,
+        "reading_unit": str,
+        "upper_threshold_critical": int,
+        "upper_threshold_fatal": int,
+        "upper_threshold_non_critical": int
+    }
 
 class Fan(InventoryItem):
     inventory_item_name = "fan"
-    valid_attributes = [
-        "chassi_ids",
-        "health_status",
-        "id",
-        "location",
-        "lower_threshold_critical",
-        "lower_threshold_fatal",
-        "lower_threshold_non_critical",
-        "max_reading",
-        "min_reading",
-        "name",
-        "operation_status",
-        "physical_context",
-        "reading",
-        "reading_unit",
-        "upper_threshold_critical",
-        "upper_threshold_fatal",
-        "upper_threshold_non_critical"
-    ]
+    valid_attributes = Temperature.valid_attributes
 
 
 class NetworkAdapter(InventoryItem):
     inventory_item_name = "network_adapter"
-    valid_attributes = [
-        "chassi_ids",
-        "firmware",
-        "health_status",
-        "id",
-        "manager_ids",
-        "manufacturer",
-        "model",
-        "name",
-        "num_ports",
-        "operation_status",
-        "part_number",
-        "port_ids",
-        "serial",
-        "system_ids"
-    ]
+    valid_attributes = {
+        "chassi_ids": list,
+        "firmware": str,
+        "health_status": str,
+        "id": str,
+        "manager_ids": list,
+        "manufacturer": str,
+        "model": str,
+        "name": str,
+        "num_ports": int,
+        "operation_status": str,
+        "part_number": str,
+        "port_ids": list,
+        "system_ids": list,
+        "serial": str
+    }
 
 
 class NetworkPort(InventoryItem):
     inventory_item_name = "network_port"
-    valid_attributes = [
-        "adapter_id",
-        "addresses",
-        "autoneg",
-        "capable_speed",
-        "chassi_ids",
-        "current_speed",
-        "full_duplex",
-        "health_status",
-        "hostname",
-        "id",
-        "ipv4_addresses",
-        "ipv6_addresses",
-        "link_status",
-        "link_type",
-        "manager_ids",
-        "name",
-        "operation_status",
-        "os_name",
-        "port_name",
-        "system_ids",
-        "vlan_enabled",
-        "vlan_id"
-    ]
+    valid_attributes = {
+        "adapter_id": str,
+        "addresses": list,
+        "autoneg": bool,
+        "capable_speed": int,
+        "chassi_ids": list,
+        "current_speed": int,
+        "full_duplex": bool,
+        "health_status": str,
+        "hostname": str,
+        "id": str,
+        "ipv4_addresses": list,
+        "ipv6_addresses": list,
+        "link_status": str,
+        "link_type": str,
+        "manager_ids": list,
+        "name": str,
+        "operation_status": str,
+        "os_name": str,
+        "port_name": str,
+        "system_ids": list,
+        "vlan_enabled": bool,
+        "vlan_id": int
+    }
 
 
 class System(InventoryItem):
     inventory_item_name = "system"
-    valid_attributes = [
-        "bios_version",
-        "chassi_ids",
-        "cpu_num",
-        "health_status",
-        "host_name",
-        "id",
-        "indicator_led",
-        "manager_ids",
-        "manufacturer",
-        "mem_size",
-        "model",
-        "name",
-        "operation_status",
-        "part_number",
-        "power_state",
-        "serial",
-        "type"
-    ]
+    valid_attributes = {
+        "bios_version": str,
+        "chassi_ids": list,
+        "cpu_num": int,
+        "health_status": str,
+        "host_name": str,
+        "id": str,
+        "indicator_led": bool,
+        "manager_ids": list,
+        "manufacturer": str,
+        "mem_size": int,
+        "model": str,
+        "name": str,
+        "operation_status": str,
+        "part_number": str,
+        "power_state": str,
+        "serial": str,
+        "type": str
+    }
 
 
 class Firmware(InventoryItem):
     inventory_item_name = "firmware"
-    valid_attributes = [
-        "health_status",
-        "id",
-        "location",
-        "name",
-        "operation_status",
-        "updateable",
-        "version"
-    ]
+    valid_attributes = {
+        "health_status": str,
+        "id": str,
+        "location": str,
+        "name": str,
+        "operation_status": str,
+        "updateable": bool,
+        "version": str
+    }
 
 
 class Manager(InventoryItem):
     inventory_item_name = "manager"
-    valid_attributes = [
-        "chassi_ids",
-        "firmware",
-        "health_status",
-        "id",
-        "licenses",
-        "model",
-        "name",
-        "operation_status",
-        "system_ids",
-        "type"
-    ]
+    valid_attributes = {
+        "chassi_ids": list,
+        "firmware": str,
+        "health_status": str,
+        "id": str,
+        "licenses": list,
+        "model": str,
+        "name": str,
+        "operation_status": str,
+        "system_ids": list,
+        "type": str
+    }
 
 
 class Chassi(InventoryItem):
     inventory_item_name = "chassi"
-    valid_attributes = [
-        "health_status",
-        "id",
-        "indicator_led",
-        "manager_ids",
-        "manufacturer",
-        "model",
-        "name",
-        "operation_status",
-        "serial",
-        "sku",
-        "system_ids",
-        "type"
-    ]
+    valid_attributes = {
+        "health_status": str,
+        "id": str,
+        "indicator_led": bool,
+        "manager_ids": list,
+        "manufacturer": str,
+        "model": str,
+        "name": str,
+        "operation_status": str,
+        "serial": str,
+        "sku": str,
+        "system_ids": list,
+        "type": str
+    }
 
 
 class Inventory(object):
