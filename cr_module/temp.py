@@ -100,27 +100,25 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
 
             temp_num += 1
 
-            if str(warning_temp) in ["0", "0.0", "N/A"]:
-                warning_temp = None
+            if isinstance(warning_temp, (int, float)):
+                warning_temp = int(warning_temp)
 
-            if warning_temp is not None and float(current_temp) >= float(warning_temp):
-                status = "WARNING"
+                if 0 > current_temp >= warning_temp:
+                    status = "WARNING"
 
-            if str(critical_temp) in ["0", "0.0", "N/A"]:
-                critical_temp = None
+            if isinstance(critical_temp, (int, float)):
+                critical_temp = int(critical_temp)
 
-            if critical_temp is not None and float(current_temp) >= float(critical_temp):
-                status = "CRITICAL"
+                if 0 > current_temp >= critical_temp:
+                    status = "CRITICAL"
 
-            critical_temp_text = "N/A"
-            if critical_temp is not None:
-                critical_temp_text = "%.1f" % float(critical_temp)
 
             if system_power_state != "ON":
                 status = "OK"
 
-            status_text = f"Temp sensor {temp_inventory.name} status is: " \
-                          f"{status} (%.1f °C) (max: {critical_temp_text} °C)" % current_temp
+            status_text = f"Temp sensor {temp_inventory.name} status is: {status} ({current_temp} °C)"
+            if critical_temp is not None:
+                status_text += f" (max: {critical_temp} °C)"
 
             plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
                                           location=f"Chassi {chassi_id}")
@@ -129,7 +127,7 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
             if num_chassis > 1:
                 temp_name = f"{chassi_id}.{temp_name}"
 
-            plugin_object.add_perf_data(f"temp_{temp_name}", float(current_temp), warning=warning_temp,
+            plugin_object.add_perf_data(f"temp_{temp_name}", current_temp, warning=warning_temp,
                                         critical=critical_temp, location=f"Chassi {chassi_id}")
 
         if len(thermal_data.get("Temperatures")) > 0:
