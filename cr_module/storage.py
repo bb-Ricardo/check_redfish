@@ -36,7 +36,7 @@ def get_physical_drive_status(drive_data: PhysicalDrive, issues: str=None) -> st
         pd_status_details.append(f"{drive_data.type}")
     if drive_data.interface_type is not None:
         pd_status_details.append(f"{drive_data.interface_type}")
-    if drive_data.predicted_media_life_left_percent is not None:
+    if drive_data.type == "SSD" and drive_data.predicted_media_life_left_percent is not None:
         pd_status_details.append(f"Media life left: {drive_data.predicted_media_life_left_percent}%")
     if drive_data.operation_status is not None:
         pd_status_details.append(f"Status: {drive_data.operation_status}")
@@ -88,7 +88,7 @@ def add_physical_drive_perf_data(drive_data: PhysicalDrive, warning: int=None, c
         plugin_object.add_perf_data(f"temp_{pd_name}", int(drive_data.temperature),
                                     location=f"System {drive_data.system_ids}")
 
-    if isinstance(drive_data.predicted_media_life_left_percent, (int, float)):
+    if drive_data.type == "SSD" and isinstance(drive_data.predicted_media_life_left_percent, (int, float)):
 
         plugin_object.add_perf_data(f"media_life_left_{pd_name}",
                                     int(drive_data.predicted_media_life_left_percent), perf_uom="%",
@@ -258,7 +258,7 @@ def get_storage_hpe(system):
             media_life_warning = force_cast(int, plugin_object.cli_args.warning, media_life_warning_default)
             media_life_critical = force_cast(int, plugin_object.cli_args.critical, media_life_critical_default)
 
-            if pd_inventory.predicted_media_life_left_percent is not None:
+            if pd_inventory.type == "SSD" and pd_inventory.predicted_media_life_left_percent is not None:
                 if force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_critical:
                     pd_inventory.health_status = "CRITICAL"
                 elif force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_warning:
