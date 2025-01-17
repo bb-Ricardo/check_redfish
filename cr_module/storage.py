@@ -749,7 +749,7 @@ def get_storage_generic(system):
         media_life_warning = force_cast(int, plugin_object.cli_args.warning, media_life_warning_default)
         media_life_critical = force_cast(int, plugin_object.cli_args.critical, media_life_critical_default)
 
-        if pd_inventory.predicted_media_life_left_percent is not None:
+        if drive_data.type == "SSD" and pd_inventory.predicted_media_life_left_percent is not None:
             if force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_critical:
                 pd_inventory.health_status = "CRITICAL"
             elif force_cast(int, pd_inventory.predicted_media_life_left_percent, 100) <= media_life_warning:
