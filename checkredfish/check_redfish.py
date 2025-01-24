@@ -148,6 +148,7 @@ def parse_command_line(caller: str):
     return result
 
 
+#def main():
 if __name__ == "checkredfish.check_redfish":
     # start here
     if os.path.basename(sys.argv[0]) != "__main__.py":
@@ -183,4 +184,6 @@ if __name__ == "checkredfish.check_redfish":
 
     plugin.do_exit()
 
+#if __name__ == "checkredfish.check_redfish":
+#    main()
 # EOF
