@@ -7,13 +7,13 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import (
+from checkredfish.cr_module.classes.inventory import (
     Firmware, PhysicalDrive, LogicalDrive, StorageController, StorageEnclosure, PowerSupply
 )
-from cr_module.classes.plugin import PluginData
-from cr_module.system_chassi import get_chassi_data
-from cr_module.common import grab, get_status_data
-from cr_module.storage import get_storage
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.system_chassi import get_chassi_data
+from checkredfish.cr_module.common import grab, get_status_data
+from checkredfish.cr_module.storage import get_storage
 
 
 def get_firmware_info():

@@ -11,7 +11,7 @@ import datetime
 import json
 import sys
 
-from cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes import plugin_status_types
 
 from socket import gethostname
 

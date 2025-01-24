@@ -7,7 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import PhysicalDrive
+from checkredfish.cr_module.classes.inventory import PhysicalDrive
 
 known_firmware_issues = {
 

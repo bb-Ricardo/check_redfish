@@ -10,7 +10,7 @@
 import re
 import logging
 import datetime
-from cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes import plugin_status_types
 
 local_timezone = None
 

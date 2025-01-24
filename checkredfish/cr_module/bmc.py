@@ -9,11 +9,11 @@
 
 import hashlib
 
-from cr_module.classes.inventory import Manager, NetworkPort
-from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab
-from cr_module.firmware import get_firmware_info_fujitsu
-from cr_module.nic import get_interface_ip_addresses, format_interface_addresses
+from checkredfish.cr_module.classes.inventory import Manager, NetworkPort
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import get_status_data, grab
+from checkredfish.cr_module.firmware import get_firmware_info_fujitsu
+from checkredfish.cr_module.nic import get_interface_ip_addresses, format_interface_addresses
 
 
 def get_bmc_info():

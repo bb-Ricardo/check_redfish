@@ -7,9 +7,9 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import NetworkAdapter, NetworkPort
-from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab
+from checkredfish.cr_module.classes.inventory import NetworkAdapter, NetworkPort
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import get_status_data, grab
 
 
 def get_network_interfaces():

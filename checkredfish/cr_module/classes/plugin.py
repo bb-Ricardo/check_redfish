@@ -9,10 +9,10 @@
 import datetime
 import os
 
-from cr_module.classes import plugin_status_types
-from cr_module.classes.redfish import RedfishConnection
-from cr_module.classes.inventory import Inventory
-from cr_module.common import get_local_timezone
+from checkredfish.cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes.redfish import RedfishConnection
+from checkredfish.cr_module.classes.inventory import Inventory
+from checkredfish.cr_module.common import get_local_timezone
 
 
 class PluginOutputDataEntry:
