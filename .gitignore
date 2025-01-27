@@ -1,6 +1,11 @@
 __pycache__
+*.pyc
 .idea
 .DS_Store
 venv
+.venv
 bin
 dist
+/.tox
+/.coverage
+
