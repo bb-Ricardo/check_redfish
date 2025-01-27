@@ -48,7 +48,7 @@ pip3 uninstall check-redfish
 ## build a package from current project
 ```bash
 poetry build
-pip install ./dist/check_redfish-<version>.tar.gz
+pip3 install ./dist/check_redfish-<version>.tar.gz
 ```
 
 ## Publish to [pypi](https://pypi.org)
