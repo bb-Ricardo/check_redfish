@@ -31,3 +31,4 @@ redfish = "^3.2.7"
 
 [tool.poetry.scripts]
 check_redfish = "checkredfish.check_redfish:__main__"
+
