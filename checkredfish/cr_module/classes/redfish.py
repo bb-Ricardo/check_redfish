@@ -16,9 +16,9 @@ import sys
 import time
 
 
-from cr_module.common import grab
-from cr_module.classes import plugin_status_types
-from cr_module.classes.vendor import *
+from checkredfish.cr_module.common import grab
+from checkredfish.cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes.vendor import *
 
 # import 3rd party modules
 import redfish

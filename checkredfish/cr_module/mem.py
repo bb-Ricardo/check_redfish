@@ -7,10 +7,10 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import Memory
-from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab
-from cr_module import get_system_power_state
+from checkredfish.cr_module.classes.inventory import Memory
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import get_status_data, grab
+from checkredfish.cr_module import get_system_power_state
 
 
 def get_single_system_mem(redfish_url):

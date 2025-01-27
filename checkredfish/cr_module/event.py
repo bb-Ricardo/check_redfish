@@ -7,9 +7,9 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.common import grab, quoted_split, get_local_timezone, force_cast
-from cr_module.classes import plugin_status_types
-from cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import grab, quoted_split, get_local_timezone, force_cast
+from checkredfish.cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes.plugin import PluginData
 
 import datetime
 import re

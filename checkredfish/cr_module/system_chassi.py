@@ -7,15 +7,15 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes import plugin_status_types
-from cr_module.classes.inventory import System, Chassi, Fan, PowerSupply, Temperature, Memory, Processor
-from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab
-from cr_module.power import get_single_chassi_power
-from cr_module.temp import get_single_chassi_temp
-from cr_module.fan import get_single_chassi_fan
-from cr_module.proc import get_single_system_procs
-from cr_module.mem import get_single_system_mem
+from checkredfish.cr_module.classes import plugin_status_types
+from checkredfish.cr_module.classes.inventory import System, Chassi, Fan, PowerSupply, Temperature, Memory, Processor
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import get_status_data, grab
+from checkredfish.cr_module.power import get_single_chassi_power
+from checkredfish.cr_module.temp import get_single_chassi_temp
+from checkredfish.cr_module.fan import get_single_chassi_fan
+from checkredfish.cr_module.proc import get_single_system_procs
+from checkredfish.cr_module.mem import get_single_system_mem
 
 
 def get_chassi_data(data_type):

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "checkredfish"
+version = "1.10.1"
+description = "Check Systems using redfish API"
+authors = [
+    "Ricardo <bb-Ricardo>"
+]
+readme = "README.md"
+exclude = [
+    "bin",
+    "__pycache__",
+]
+
+[tool.poetry.urls]
+homepage = "https://exchange.icinga.com/ricardo/check_redfish/"
+repository = "https://github.com/bb-Ricardo/check_redfish"
+documentation = "https://github.com/bb-Ricardo/check_redfish/blob/main/README.md"
+"Bug Tracker" = "https://github.com/bb-Ricardo/check_redfish/issues"
+
+[tool.poetry.dependencies]
+python = "^3.6"
+redfish = "^3.2.7"
+
+#[tool.poetry.group.dev.dependencies]
+#black = "^24.10.0"
+#pre-commit = "^3.4.0"
+
+[tool.poetry.scripts]
+check_redfish = "checkredfish.check_redfish:__main__"
+

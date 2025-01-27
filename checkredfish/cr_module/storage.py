@@ -9,11 +9,11 @@
 
 import hashlib
 
-from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
-from cr_module.classes.plugin import PluginData
-from cr_module.common import get_status_data, grab, force_cast
-from cr_module.firmware_issues import component_has_firmware_issues
-from cr_module import get_system_power_state
+from checkredfish.cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
+from checkredfish.cr_module.classes.plugin import PluginData
+from checkredfish.cr_module.common import get_status_data, grab, force_cast
+from checkredfish.cr_module.firmware_issues import component_has_firmware_issues
+from checkredfish.cr_module import get_system_power_state
 
 global_battery_list = list()
 
