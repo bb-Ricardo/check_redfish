@@ -277,13 +277,13 @@ class Processor(InventoryItem):
        "manufacturer": str,
        "max_speed": int,
        "model": str,
-       "name": int,
-       "operation_status": int,
+       "name": str,
+       "operation_status": str,
        "serial": str,
        "socket": int,
        "system_ids": list,
        "threads": int,
-       "type": int
+       "type": str
     }
 
 
