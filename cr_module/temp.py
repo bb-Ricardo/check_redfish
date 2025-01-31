@@ -88,7 +88,7 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
 
             plugin_object.inventory.add(temp_inventory)
 
-            if not state or state.lower() in ["absent", "disabled", "disable", "unavailableoffline"]:
+            if not state or state.lower() in ["absent", "disabled", "disable", "unavailableoffline", "standbyoffline"]:
                 continue
 
             if status is None:

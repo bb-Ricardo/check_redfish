@@ -66,6 +66,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                 if last_power_output is None and grab(oem_data, "PowerOutputWatts") is not None:
                     last_power_output = grab(oem_data, "PowerOutputWatts")
 
+            if plugin_object.rf.vendor == "Ami" and health is None and operational_status == "Present":
+                health = "OK"
+
             if bay is None:
                 bay = ps_num
 
@@ -114,6 +117,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                 printed_status = operational_status
                 health = "OK"
                 ps_absent += 1
+
+            if plugin_object.rf.vendor == "Ami" and health is None and operational_status == "Present":
+                printed_status = operational_status
 
             if health is None and operational_status == "Enabled":
                 printed_status = operational_status
