@@ -111,7 +111,10 @@ class VendorLenovoData(VendorGeneric):
 class VendorDellData(VendorGeneric):
 
     name = "Dell"
-    expand_string = "?$expand=*($levels=1)"
+    # Disabled as it causes issues with certain iDRAC versions
+    # https://github.com/bb-Ricardo/check_redfish/issues/69
+    # https://github.com/bb-Ricardo/check_redfish/issues/151
+    # expand_string = "?$expand=*($levels=1)"
 
     manager_event_log_location = "managers"
     system_event_log_location = "managers"
