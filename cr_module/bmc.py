@@ -118,6 +118,8 @@ def get_bmc_info_generic(redfish_url):
             if manager_nic_response.get("error"):
                 plugin_object.add_data_retrieval_error(NetworkPort, manager_nic_response, redfish_url)
 
+    nic_issue_detected = False
+    manager_nics_detected = False
     if manager_nic_response is not None:
 
         if manager_nic_response.get("Members") is None or len(manager_nic_response.get("Members")) == 0:
@@ -126,9 +128,6 @@ def get_bmc_info_generic(redfish_url):
 
             plugin_object.inventory.add_issue(NetworkPort, "No information about the BMC network interfaces found")
         else:
-
-            # if args.detailed is False:
-            status_text = f"{status_text} and all nics are in 'OK' state."
 
             for manager_nic_member in manager_nic_response.get("Members"):
 
@@ -234,6 +233,10 @@ def get_bmc_info_generic(redfish_url):
                 nic_status_text = f"NIC {nic_name} '{host_name}' (IPs: {ip_addresses_string}) "
                 nic_status_text += f"(speed: {network_inventory.current_speed}, " \
                                    f"autoneg: {autoneg}, duplex: {duplex}) status: {nic_status}"
+
+                manager_nics_detected = True
+                if nic_status != "OK":
+                    nic_issue_detected = True
 
                 plugin_object.add_output_data("CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status,
                                               nic_status_text, location=f"Manager {manager_inventory.id}")
@@ -442,6 +445,9 @@ def get_bmc_info_generic(redfish_url):
                                               location=f"Manager {manager_inventory.id}")
             else:
                 status_text += f" {location_string}"
+
+    if manager_nics_detected is True and nic_issue_detected is False:
+        status_text = f"{status_text}, all nics are in 'OK' state."
 
     plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text,
                                   summary=True, location=f"Manager {manager_inventory.id}")

@@ -781,7 +781,12 @@ def get_system_nics(redfish_url):
     if num_adapters == 0:
         plugin_object.inventory.add_issue(NetworkAdapter, f"No network adapter or interface data "
                                                           f"returned for API URL '{network_adapter_path}'")
-    if num_adapters + num_ports > 0:
+    if num_adapters == 0 and num_ports > 0:
+        plugin_object.add_output_data("OK", f"All network ports ({num_ports}) are in good condition "
+                                          "(no network adapters detected)",
+                                      summary=True, location=f"System {system_id}")
+
+    if num_adapters > 0 and num_ports > 0:
         plugin_object.add_output_data("OK", f"All network adapter ({num_adapters}) and "
                                             f"ports ({num_ports}) are in good condition",
                                       summary=True, location=f"System {system_id}")

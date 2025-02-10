@@ -172,7 +172,11 @@ def get_event_log(event_type):
                         get_event_log_generic(event_type, log_service_data_entries)
 
     if plugin_object.rf.vendor != "Huawei" and log_services_parsed is False:
-        plugin_object.add_output_data("UNKNOWN", f"No log services discovered where name matches '{event_type}'")
+        state = "UNKNOWN"
+        if plugin_object.cli_args.ignore_unavailable_resources is True:
+            state = "OK"
+        plugin_object.add_output_data(state, f"No log services discovered where name matches '{event_type}'",
+                                      summary=not plugin_object.cli_args.detailed)
 
     return
 

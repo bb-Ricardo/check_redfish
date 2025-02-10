@@ -77,11 +77,15 @@ def get_firmware_info():
             "firmware": f"{name}{firmware_id}{location}: {firmware_inventory.version}"
         })
 
-    summary_text = f"Found %d firmware entries." % len(plugin_object.inventory.get(Firmware))
-    if plugin_object.cli_args.detailed is False:
-        summary_text += f" Use '--detailed' option to display them."
+    if len(plugin_object.inventory.get(Firmware)) > 0:
+        summary_text = f"Found %d firmware entries." % len(plugin_object.inventory.get(Firmware))
+        if plugin_object.cli_args.detailed is False:
+            summary_text += f" Use '--detailed' option to display them."
+    else:
+        summary_text = "No firmware entries have been found"
 
-    plugin_object.add_output_data(firmware_health_summary, summary_text, summary=True)
+    if len(plugin_object.inventory.get_issues(Firmware)) == 0:
+        plugin_object.add_output_data(firmware_health_summary, summary_text, summary=True)
 
     firmware_status_entries = sorted(firmware_status_entries, key=lambda k: k["firmware"])
     for entry in firmware_status_entries:
@@ -544,9 +548,10 @@ def get_firmware_info_generic():
 
         if get_power is True:
             # suppress Power supply data_retrieval_issues
-            for i in list(plugin_object.inventory.data_retrieval_issues.keys()):
-                if i == "power_supply":
-                    del plugin_object.inventory.data_retrieval_issues[i]
+            if any(x in plugin_object.cli_args.requested_query for x in ['power', 'all']) is False:
+                for i in list(plugin_object.inventory.data_retrieval_issues.keys()):
+                    if i == "power_supply":
+                        del plugin_object.inventory.data_retrieval_issues[i]
 
             for power_supply in plugin_object.inventory.get(PowerSupply):
                 fw_id += 1

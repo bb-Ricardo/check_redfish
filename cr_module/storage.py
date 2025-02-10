@@ -561,7 +561,6 @@ def get_storage_hpe(system):
         if plugin_object.is_in_firmware_collection_mode() is False:
             plugin_object.inventory.add_issue(StorageController,
                                               f"No array controller data returned for API URL '{redfish_url}'")
-        return
 
     return
 
@@ -1449,8 +1448,8 @@ def get_storage_generic(system):
 
     if num_storage_controller == 0 and num_system_drives == 0:
         if plugin_object.is_in_firmware_collection_mode() is False:
-            plugin_object.add_output_data("UNKNOWN", "No storage controller and disk drive data found in system",
-                                          location=f"System {system_id}")
+            plugin_object.inventory.add_issue(StorageController,
+                                              "No storage controller and disk drive data found in system")
 
     elif num_storage_controller == 0 and num_system_drives != 0:
 

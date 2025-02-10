@@ -24,9 +24,10 @@ class PluginOutputDataEntry:
     is_summary = False
     log_entry = False
     log_entry_date = None
+    print_always = False
 
     def __init__(self, state="OK", command=None, text=None, location=None, is_summary=False, is_log_entry=False,
-                 log_entry_date=None):
+                 log_entry_date=None, print_always=False):
 
         if state not in list(plugin_status_types.keys()):
             raise Exception(f"Status '{state}' is invalid, needs to be one of these: %s" %
@@ -37,13 +38,14 @@ class PluginOutputDataEntry:
         self.text = text
         self.location = location
         self.is_summary = is_summary
+        self.print_always = print_always
         self.log_entry = is_log_entry
         self.log_entry_date = log_entry_date or datetime.datetime.fromtimestamp(0).replace(tzinfo=get_local_timezone())
 
     def output_text(self, add_location=False):
 
         return_text = self.text
-        if add_location is True:
+        if add_location is True and self.location is not None and self.location not in return_text:
             return_text = f"{self.location} : {return_text}"
 
         return f"[{self.state}]: {return_text}"
@@ -229,7 +231,8 @@ class PluginData:
 
         return return_status
 
-    def add_output_data(self, state, text, summary=False, location=None, is_log_entry=False, log_entry_date=None):
+    def add_output_data(self, state, text, summary=False, location=None, is_log_entry=False, log_entry_date=None,
+                        print_always=False):
 
         if self.__in_firmware_collection_mode is True:
             return
@@ -238,8 +241,8 @@ class PluginData:
 
         self.__output_data.append(PluginOutputDataEntry(state=state, command=self.__current_command,
                                                         text=text, location=location, is_summary=summary,
-                                                        is_log_entry=is_log_entry, log_entry_date=log_entry_date
-                                                        ))
+                                                        is_log_entry=is_log_entry, log_entry_date=log_entry_date,
+                                                        print_always=print_always))
 
     def add_perf_data(self, name, value, perf_uom=None, warning=None, critical=None, location=None):
 
@@ -283,7 +286,7 @@ class PluginData:
         return_text = list()
         command_locations = dict()
         command_summary_locations = dict()
-        problem_command = list()
+        printed_entries = list()
 
         output_order = [
             'System Info',
@@ -299,6 +302,16 @@ class PluginData:
             'Manager Event Log',
             'Firmware Info'
         ]
+
+        # add all retrieval issues to output
+        for item_name, issues in self.inventory.get_issues().items():
+            if len(self.inventory.get(item_name)) == 0 or self.cli_args.ignore_unavailable_resources is True:
+                request_error_state = "UNKNOWN"
+                if self.cli_args.ignore_unavailable_resources is True:
+                    request_error_state = "OK"
+
+                self.add_output_data(request_error_state, "Request issue: %s" % ", ".join(issues),
+                                     print_always=True)
 
         for command in sorted(self.__output_data.get_commands(), key=lambda x: output_order.index(x)):
 
@@ -357,21 +370,28 @@ class PluginData:
                     continue
 
                 for entry in ordered_output_data.get(status_type_name, list()):
-                    # add command to problem commands to avoid printing summary for this command
-                    problem_command.append(entry.command)
                     add_location = True if len(command_locations.get(entry.command, list())) > 1 else False
-                    return_text.append(entry.output_text(add_location))
+                    if entry not in printed_entries:
+                        return_text.append(entry.output_text(add_location))
+                        printed_entries.append(entry)
 
         for entry in ordered_output_data.get("OK", list()):
-            if entry.is_summary is True and entry.command not in problem_command:
-                add_location = True if len(command_summary_locations.get(entry.command, list())) > 1 else False
-                return_text.append(entry.output_text(add_location))
+            if entry.print_always is True or entry.is_summary is True:
+                if entry.print_always is True:
+                    add_location = True if len(command_locations.get(entry.command, list())) > 1 else False
+                else:
+                    add_location = True if len(command_summary_locations.get(entry.command, list())) > 1 else False
+                if entry not in printed_entries:
+                    return_text.append(entry.output_text(add_location))
+                    printed_entries.append(entry)
 
         if self.cli_args.detailed is True:
             for entry in ordered_output_data.get("OK", list()):
                 if entry.is_summary is False:
                     add_location = True if len(command_locations.get(entry.command, list())) > 1 else False
-                    return_text.append(entry.output_text(add_location))
+                    if entry not in printed_entries:
+                        return_text.append(entry.output_text(add_location))
+                        printed_entries.append(entry)
 
         return_string = "\n".join(return_text)
 
@@ -394,7 +414,7 @@ class PluginData:
             self.rf.terminate_session()
 
         # return inventory and exit with 0
-        if self.cli_args.inventory is True and self.inventory is not None:
+        if self.cli_args.inventory is True:
             inventory_json = self.inventory.to_json()
             if self.inventory_file is not None:
 
@@ -417,12 +437,6 @@ class PluginData:
             else:
                 print(inventory_json)
                 exit(0)
-
-        # add all retrieval issues to output
-        if self.inventory is not None:
-            for item_name, issues in self.inventory.get_issues().items():
-                if len(self.inventory.get(item_name)) == 0:
-                    self.add_output_data("UNKNOWN", "Request error: %s" % ", ".join(issues))
 
         print(self.return_output_data())
 

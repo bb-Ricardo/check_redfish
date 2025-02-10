@@ -33,6 +33,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
     if plugin_object.rf.vendor == "Fujitsu":
         fujitsu_power_sensors = grab(power_data, f"Oem.{plugin_object.rf.vendor_dict_key}.ChassisPowerSensors")
 
+    issue_detected = False
     ps_num = 0
     ps_absent = 0
     if len(power_supplies) > 0:
@@ -138,6 +139,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             if system_power_state != "ON" and health is None:
                 health = "OK"
 
+            if health != "OK":
+                issue_detected = True
+
             plugin_object.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health,
                                           status_text, location=f"Chassi {chassi_id}")
 
@@ -151,7 +155,8 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     else:
         default_text = "No power supplies detected"
-        if plugin_object.cli_args.ignore_missing_ps is False:
+        if plugin_object.cli_args.ignore_missing_ps is False or plugin_object.in_firmware_collection_mode() is False:
+            issue_detected = True
             plugin_object.inventory.add_issue(PowerSupply, f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
@@ -248,6 +253,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         else:
             status_text = f"{name} status: {status}/{state}"
 
+        if status != "OK":
+            issue_detected = True
+
         plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
                                       status_text, location=f"Chassi {chassi_id}")
 
@@ -269,10 +277,15 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
             status_text = f"{name} status: {status}/{state}"
 
+            if status != "OK":
+                print("ISSUE Power control")
+                issue_detected = True
+
             plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
                                           status_text, location=f"Chassi {chassi_id}")
 
-    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+    if issue_detected is False:
+        plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
 
     return
 

@@ -71,13 +71,13 @@ def get_chassi_data(data_type):
             if discovered_url is None:
                 if data_type == PowerSupply:
                     plugin_object.set_current_command("Power")
-                    default_text = f"Chassi has no power supplies installed/reported"
+                    default_text = f"Chassi {chassi_id} has no power supplies installed/reported"
                 elif data_type == Temperature:
                     plugin_object.set_current_command("Temp")
-                    default_text = f"Chassi has no temp sensors installed/reported"
+                    default_text = f"Chassi {chassi_id} has no temp sensors installed/reported"
                 else:
                     plugin_object.set_current_command("Fan")
-                    default_text = f"Chassi has no fans installed/reported"
+                    default_text = f"Chassi {chassi_id} has no fans installed/reported"
 
                 plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
                 continue
