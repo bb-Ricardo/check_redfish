@@ -596,6 +596,12 @@ def get_storage_generic(system):
         # get status data
         status_data = get_status_data(drive_response.get("Status"))
 
+        # ignore "Absent" drives on Cisco servers
+        if (plugin_object.rf.vendor == "Cisco" and
+                status_data.get("Health") == "OK" and
+                status_data.get("State") == "Absent"):
+            return
+
         # get disk size
         disk_size = None
         if drive_response.get("CapacityLogicalBlocks") is not None and \
