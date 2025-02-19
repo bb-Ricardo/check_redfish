@@ -289,6 +289,7 @@ class PluginData:
         printed_entries = list()
 
         output_order = [
+            'global',
             'System Info',
             'BMC Info',
             'Procs',
