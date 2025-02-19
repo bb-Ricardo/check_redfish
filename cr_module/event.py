@@ -50,7 +50,7 @@ def get_log_entry_time(entry_date=None):
     # to:
     #   2019-11-01T15:03:32-0500
 
-    time_regex = "^(\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d).*([+-]\d\d):*(\d\d)$"
+    time_regex = r"^(\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d).*([+-]\d\d):*(\d\d)$"
 
     entry_date_object = None
     # noinspection PyBroadException
