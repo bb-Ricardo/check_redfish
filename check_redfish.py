@@ -16,8 +16,8 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
-__version__ = "1.10.0"
-__version_date__ = "2025-01-17"
+__version__ = "1.11.0"
+__version_date__ = "2025-02-21"
 __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"

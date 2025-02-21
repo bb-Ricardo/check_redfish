@@ -41,6 +41,7 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [--nosession] [-h] [-w WARNING] [-c CRITICAL] [-v]
                         [-d] [-m MAX] [-r RETRIES] [-t TIMEOUT]
                         [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps]
+                        [--ignore_unavailable_resources]
                         [--enable_bmc_security_warning] [--storage] [--proc]
                         [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
                         [--info] [--firmware] [--sel] [--mel] [--all] [-i]
@@ -54,18 +55,18 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.10.0 (2025-01-17)
+Version: 1.11.0 (2025-02-21)
 
 mandatory arguments:
-  -H HOST, --host HOST  define the host to request. To change the port just
+  -H, --host HOST       define the host to request. To change the port just
                         add ':portnumber' to this parameter
 
 authentication arguments:
-  -u USERNAME, --username USERNAME
+  -u, --username USERNAME
                         the login user name
-  -p PASSWORD, --password PASSWORD
+  -p, --password PASSWORD
                         the login password
-  -f AUTHFILE, --authfile AUTHFILE
+  -f, --authfile AUTHFILE
                         authentication file with user name and password
   --sessionfile SESSIONFILE
                         define name of session file
@@ -78,18 +79,18 @@ authentication arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -w WARNING, --warning WARNING
+  -w, --warning WARNING
                         set warning value
-  -c CRITICAL, --critical CRITICAL
+  -c, --critical CRITICAL
                         set critical value
   -v, --verbose         this will add all https requests and responses to
                         output, also adds inventory source data to all
                         inventory objects
   -d, --detailed        always print detailed result
-  -m MAX, --max MAX     set maximum of returned items for --sel or --mel
-  -r RETRIES, --retries RETRIES
+  -m, --max MAX         set maximum of returned items for --sel or --mel
+  -r, --retries RETRIES
                         set number of maximum retries (default: 3)
-  -t TIMEOUT, --timeout TIMEOUT
+  -t, --timeout TIMEOUT
                         set number of request timeout per try/retry (default:
                         7)
   --log_exclude LOG_EXCLUDE
@@ -97,6 +98,9 @@ optional arguments:
                         from log status checks (--sel, --mel)
   --ignore_missing_ps   ignore the fact that no power supplies are present and
                         report the status of the power subsystem
+  --ignore_unavailable_resources
+                        ignore all 'UNKNOWN' errors which indicate missing
+                        resources and report as OK
   --enable_bmc_security_warning
                         return status WARNING if BMC security issues are
                         detected (HPE iLO only)
