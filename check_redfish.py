@@ -48,11 +48,11 @@ if __name__ == "__main__":
     # initialize plugin object
     plugin = PluginData(args, plugin_version=__version__)
 
-    # try to get systems, managers and chassis IDs
-    plugin.rf.discover_system_properties()
-
     # get basic information
     plugin.rf.determine_vendor()
+
+    # try to get systems, managers and chassis IDs
+    plugin.rf.discover_system_properties()
 
     if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
     if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
