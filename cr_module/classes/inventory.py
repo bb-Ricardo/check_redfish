@@ -351,6 +351,7 @@ class Temperature(InventoryItem):
         "upper_threshold_non_critical": int
     }
 
+
 class Fan(InventoryItem):
     inventory_item_name = "fan"
     valid_attributes = Temperature.valid_attributes

@@ -161,6 +161,9 @@ def get_single_system_procs(redfish_url):
                 if proc_inventory.operation_status == "Absent":
                     continue
 
+                if proc_response.get("ProcessorType") == "GPU" and proc_response.get("Status") is None:
+                    continue
+
                 num_procs += 1
 
                 plugin_status = proc_inventory.health_status
