@@ -683,6 +683,10 @@ class RedfishConnection:
 
                 system_properties[root_object.lower()].append(entity_url)
 
+        # disable views for HPE systems with more than one Chassi and/or System
+        if len(system_properties["chassis"]) > 1 or len(system_properties["systems"]) > 1:
+            self.vendor_data.view_supported = False
+
         self.connection.system_properties = system_properties
         if self.cli_args.nosession is False:
             self.save_session_to_file()
