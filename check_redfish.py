@@ -35,10 +35,11 @@ from cr_module.args import parse_command_line
 
 from cr_module.classes.inventory import Fan, PowerSupply, Temperature, Memory, Processor
 
-class Check_redfish:
+
+class CheckRedfish:
+
     def __init__(self):
-        # start here
-        self.args = self.get_cli_args()
+        self.args = parse_command_line(description, __version__, __version_date__)
 
     def main(self):
         if self.args.verbose:
@@ -48,11 +49,11 @@ class Check_redfish:
         # initialize plugin object
         plugin = PluginData(self.args, plugin_version=__version__)
 
-        # try to get systems, managers and chassis IDs
-        plugin.rf.discover_system_properties()
-
         # get basic information
         plugin.rf.determine_vendor()
+
+        # try to get systems, managers and chassis IDs
+        plugin.rf.discover_system_properties()
 
         if any(x in self.args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
         if any(x in self.args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
@@ -69,13 +70,9 @@ class Check_redfish:
 
         plugin.do_exit()
 
-    def get_cli_args(self):
-        args = parse_command_line(description, __version__, __version_date__)
-        return args
 
 def main():
-    check_redfish = Check_redfish()
-    check_redfish.main()
+    CheckRedfish().main()
 
 if __name__ == "__main__":
     main()

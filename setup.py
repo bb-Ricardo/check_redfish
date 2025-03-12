@@ -4,7 +4,7 @@ setup(
     name='check_redfish',
     version='1.11.0',
     author='bb-Ricardo',
-    author_email='ricardo.bartels@telekom.de',
+    author_email='ricardo@bitchbrothers.com',
     description='A monitoring/inventory plugin to check components and health status of systems which support Redfish.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
