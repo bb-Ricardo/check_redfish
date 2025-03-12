@@ -29,6 +29,21 @@ cd check_redfish
 pip3 install -r requirements.txt || pip install -r requirements.txt
 ```
 
+### Install on any OS with python3.6+ pip
+Install with pip from git
+```
+pip install git+https://github.com/bb-Ricardo/check_redfish
+
+```
+
+Install with pip from git into virtual environment
+```
+python3 -m venv /opt/check_redfish
+/opt/check_redfish/bin/pip install git+https://github.com/bb-Ricardo/check_redfish
+mkdir -p /usr/lib64/nagios/plugins/check_redfish/
+ln -s /opt/check_redfish/bin/check_redfish /usr/lib64/nagios/plugins/check_redfish/check_redfish.py
+```
+
 ### Icinga2 and Grafana
 Command definitions and a service config example for Icinga2 can be found in [contrib](contrib).
 There is also an InfluxDB dashboard for some metrics included.

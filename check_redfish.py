@@ -22,7 +22,6 @@ __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
 
-
 import logging
 
 from cr_module.classes.plugin import PluginData
@@ -36,37 +35,49 @@ from cr_module.args import parse_command_line
 
 from cr_module.classes.inventory import Fan, PowerSupply, Temperature, Memory, Processor
 
+class Check_redfish:
+    def __init__(self):
+        # start here
+        self.args = self.get_cli_args()
+
+    def main(self):
+        if self.args.verbose:
+            # initialize logger
+            logging.basicConfig(level="DEBUG", format='%(asctime)s - %(levelname)s: %(message)s')
+
+        # initialize plugin object
+        plugin = PluginData(self.args, plugin_version=__version__)
+
+        # try to get systems, managers and chassis IDs
+        plugin.rf.discover_system_properties()
+
+        # get basic information
+        plugin.rf.determine_vendor()
+
+        if any(x in self.args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
+        if any(x in self.args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
+        if any(x in self.args.requested_query for x in ['fan', 'all']):      get_chassi_data(Fan)
+        if any(x in self.args.requested_query for x in ['proc', 'all']):     get_system_data(Processor)
+        if any(x in self.args.requested_query for x in ['memory', 'all']):   get_system_data(Memory)
+        if any(x in self.args.requested_query for x in ['nic', 'all']):      get_network_interfaces()
+        if any(x in self.args.requested_query for x in ['storage', 'all']):  get_storage()
+        if any(x in self.args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
+        if any(x in self.args.requested_query for x in ['info', 'all']):     get_system_info()
+        if any(x in self.args.requested_query for x in ['firmware', 'all']): get_firmware_info()
+        if any(x in self.args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
+        if any(x in self.args.requested_query for x in ['sel', 'all']):      get_event_log("System")
+
+        plugin.do_exit()
+
+    def get_cli_args(self):
+        args = parse_command_line(description, __version__, __version_date__)
+        return args
+
+def main():
+    check_redfish = Check_redfish()
+    check_redfish.main()
 
 if __name__ == "__main__":
-    # start here
-    args = parse_command_line(description, __version__, __version_date__)
-
-    if args.verbose:
-        # initialize logger
-        logging.basicConfig(level="DEBUG", format='%(asctime)s - %(levelname)s: %(message)s')
-
-    # initialize plugin object
-    plugin = PluginData(args, plugin_version=__version__)
-
-    # get basic information
-    plugin.rf.determine_vendor()
-
-    # try to get systems, managers and chassis IDs
-    plugin.rf.discover_system_properties()
-
-    if any(x in args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
-    if any(x in args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
-    if any(x in args.requested_query for x in ['fan', 'all']):      get_chassi_data(Fan)
-    if any(x in args.requested_query for x in ['proc', 'all']):     get_system_data(Processor)
-    if any(x in args.requested_query for x in ['memory', 'all']):   get_system_data(Memory)
-    if any(x in args.requested_query for x in ['nic', 'all']):      get_network_interfaces()
-    if any(x in args.requested_query for x in ['storage', 'all']):  get_storage()
-    if any(x in args.requested_query for x in ['bmc', 'all']):      get_bmc_info()
-    if any(x in args.requested_query for x in ['info', 'all']):     get_system_info()
-    if any(x in args.requested_query for x in ['firmware', 'all']): get_firmware_info()
-    if any(x in args.requested_query for x in ['mel', 'all']):      get_event_log("Manager")
-    if any(x in args.requested_query for x in ['sel', 'all']):      get_event_log("System")
-
-    plugin.do_exit()
+    main()
 
 # EOF
