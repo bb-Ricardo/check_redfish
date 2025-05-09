@@ -168,6 +168,9 @@ def get_storage_hpe(system):
             elif disk_response.get("CapacityGB"):
                 disk_size = disk_response.get("CapacityGB") * 1000 ** 3
 
+            # get power on hours to account for iLO4 firmware bug
+            power_on_hours = disk_response.get("PowerOnHours")
+
             # get location
             drive_location = None
             if disk_response.get("LocationFormat") is not None and disk_response.get("Location") is not None:
@@ -182,6 +185,12 @@ def get_storage_hpe(system):
                         disk_response.get("SSDEnduranceUtilizationPercentage"))
                 except Exception:
                     pass
+
+            # mitigate iLO 4 firmware bug: https://github.com/bb-Ricardo/check_redfish/issues/161
+            if predicted_media_life_left_percent is not None and predicted_media_life_left_percent < 0:
+                predicted_media_life_left_percent = None
+                if isinstance(power_on_hours, int):
+                    power_on_hours+=65536
 
             drive_serial = disk_response.get("SerialNumber")
 
@@ -213,7 +222,7 @@ def get_storage_hpe(system):
                 failure_predicted=failure_predicted,
                 predicted_media_life_left_percent=predicted_media_life_left_percent,
                 size_in_byte=disk_size,
-                power_on_hours=disk_response.get("PowerOnHours"),
+                power_on_hours=power_on_hours,
                 interface_type=disk_response.get("InterfaceType"),
                 interface_speed=disk_response.get("InterfaceSpeedMbps"),
                 encrypted=disk_response.get("EncryptedDrive"),
