@@ -70,18 +70,18 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.11.0 (2025-02-21)
+Version: 1.11.1 (2025-05-24)
 
 mandatory arguments:
-  -H, --host HOST       define the host to request. To change the port just
+  -H HOST, --host HOST  define the host to request. To change the port just
                         add ':portnumber' to this parameter
 
 authentication arguments:
-  -u, --username USERNAME
+  -u USERNAME, --username USERNAME
                         the login user name
-  -p, --password PASSWORD
+  -p PASSWORD, --password PASSWORD
                         the login password
-  -f, --authfile AUTHFILE
+  -f AUTHFILE, --authfile AUTHFILE
                         authentication file with user name and password
   --sessionfile SESSIONFILE
                         define name of session file
@@ -94,18 +94,18 @@ authentication arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -w, --warning WARNING
+  -w WARNING, --warning WARNING
                         set warning value
-  -c, --critical CRITICAL
+  -c CRITICAL, --critical CRITICAL
                         set critical value
   -v, --verbose         this will add all https requests and responses to
                         output, also adds inventory source data to all
                         inventory objects
   -d, --detailed        always print detailed result
-  -m, --max MAX         set maximum of returned items for --sel or --mel
-  -r, --retries RETRIES
+  -m MAX, --max MAX     set maximum of returned items for --sel or --mel
+  -r RETRIES, --retries RETRIES
                         set number of maximum retries (default: 3)
-  -t, --timeout TIMEOUT
+  -t TIMEOUT, --timeout TIMEOUT
                         set number of request timeout per try/retry (default:
                         7)
   --log_exclude LOG_EXCLUDE
