@@ -201,15 +201,10 @@ def get_event_log_hpe(event_type, redfish_path):
             forced_limit = True
             limit_of_returned_items = ilo4_limit
 
-    if event_type == "Manager":
-
-        days_warning = force_cast(int, plugin_object.cli_args.warning, 0)
-        days_critical = force_cast(int, plugin_object.cli_args.critical, 0)
-
-        if days_warning > 0:
-            date_warning = data_now - datetime.timedelta(days=days_warning)
-        if days_critical > 0:
-            date_critical = data_now - datetime.timedelta(days=days_critical)
+    if plugin_object.cli_args.warning:
+        date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
+    if plugin_object.cli_args.critical:
+        date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
     event_entries = plugin_object.rf.get(redfish_path).get("Members")
 
@@ -241,21 +236,12 @@ def get_event_log_hpe(event_type, redfish_path):
         repaired = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Repaired") or False
 
         status = "OK"
-
-        if event_type == "System":
-            if severity == "WARNING" and repaired is False:
-                status = "WARNING"
-            elif severity != "OK" and repaired is False:
-                status = "CRITICAL"
-        else:
-
-            if plugin_object.cli_args.critical and date_critical is not None:
-                if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
-                    status = "CRITICAL"
-            if plugin_object.cli_args.warning and date_warning is not None:
-                if entry_date > date_warning.astimezone(entry_date.tzinfo) \
-                        and status != "CRITICAL" and severity != "OK":
-                    status = "WARNING"
+        if severity == 'WARNING' and repaired is False:
+            if (not date_critical) or (date_critical and entry_date > date_critical.astimezone(entry_date.tzinfo)):
+                status = 'CRITICAL'
+        elif severity != 'OK' and repaired is False:
+            if (not date_warning) or (date_warning and entry_date > date_warning.astimezone(entry_date.tzinfo)):
+                status = 'WARNING'
 
         plugin_object.add_output_data(status, "%s: %s" % (date, message), is_log_entry=True, log_entry_date=entry_date)
 
@@ -285,11 +271,8 @@ def get_event_log_hpe(event_type, redfish_path):
 
 
 def get_event_log_generic(event_type, redfish_path):
-
     plugin_object = PluginData()
 
-    # if a log entry has been auto cleared this amount of times within the alert level time range
-    # then issue an additional WARNING message
     flapping_threshold_critical = 2
     flapping_threshold_warning = 5
 
@@ -305,149 +288,147 @@ def get_event_log_generic(event_type, redfish_path):
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
-    # on dell systems max entries need to be limited during request
     if plugin_object.rf.vendor == "Dell":
         max_entries = plugin_object.cli_args.max
 
     event_entries = plugin_object.rf.get(redfish_path, max_members=max_entries).get("Members")
 
     if not event_entries or len(event_entries) == 0:
-        plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",
-                                      summary=True)
+        plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.", summary=True)
         return
 
-    assoc_id_status = dict()
-    processed_ids = list()
-    cleared_events = dict()
-
-    # reverse list from newest to oldest entry
     if plugin_object.rf.vendor in ["Lenovo", "Supermicro"]:
         event_entries.reverse()
 
-    for event_entry_item in event_entries:
+    # Suffix-based alert-clear map
+    # "ISSUE_EVENT_ID": "REPAIR_EVENT_ID"
+    clear_by_map = {
+        "RDU0012": "RDU0011",
+        "SEC0033": "SEC0034"
+    }
+    cleared_message_suffixes = set()
+    tracked_alerts = {}
 
-        if event_entry_item.get("Id") is not None:
-            event_entry = event_entry_item
-        else:
-            event_entry = plugin_object.rf.get(event_entry_item.get("@odata.id"))
+    processed_ids = set()
+    cleared_events = {}
+    assoc_id_status = {}
 
-        if event_entry_item.get("Id") in processed_ids:
+    # Pass 1: Find clears
+    for entry in event_entries:
+        event_entry = entry if entry.get("Id") else plugin_object.rf.get(entry.get("@odata.id"))
+        message_id = event_entry.get("MessageId")
+        if message_id:
+            for alert_suffix, clear_suffix in clear_by_map.items():
+                if message_id.endswith(clear_suffix):
+                    cleared_message_suffixes.add(alert_suffix)
+
+    # Pass 2: Evaluate log entries
+    for entry in event_entries:
+        event_entry = entry if entry.get("Id") else plugin_object.rf.get(entry.get("@odata.id"))
+
+        entry_id = event_entry.get("Id")
+        if entry_id in processed_ids:
             continue
+        processed_ids.add(entry_id)
 
-        message = event_entry.get("Message")
-
-        if message is not None:
-            message = message.strip().strip("\n").strip()
-
-        if log_line_is_excluded(message) is True:
-            num_entry_discarded += 1
-            continue
-
-        num_entry += 1
-
-        severity = event_entry.get("Severity")
-        if severity is not None:
-            severity = severity.upper()
-
-        # CISCO WHY?
+        message = event_entry.get("Message", "").strip()
+        message_id = event_entry.get("MessageId")
+        severity = event_entry.get("Severity", "OK").upper()
         if severity in ["NORMAL", "INFORMATIONAL"]:
             severity = "OK"
 
         date = event_entry.get("Created", "1970-01-01T00:00:00-00:00")
         entry_date = get_log_entry_time(date)
 
-        status = "OK"
-
-        # keep track of message IDs
-        # newer message can clear a status for older messages
-        if event_type == "System":
-
-            event_cleared = False
-
-            # get log entry id to associate older log entries
-            assoc_id = event_entry.get("SensorNumber")
-
-            # found an old message that has been cleared
-            if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
-                message += " (severity '%s' cleared)" % severity
-                severity = "OK"
-                event_cleared = True
-            # Fujitsu uncleared messages
-            elif plugin_object.rf.vendor == "Fujitsu" and event_entry.get("MessageId") == "0x180055":
-                message += " (severity '%s' (will be) cleared due to lack of clear event)" % severity
-            elif severity is not None:
-                if severity == "WARNING" and date_warning is None:
-                    status = severity
-                elif severity != "OK" and date_critical is None:
-                    status = "CRITICAL"
-
-            # keep track of messages that clear an older message
-            if event_entry.get("SensorNumber") is not None and severity == "OK":
-                assoc_id_status[assoc_id] = "cleared"
-
-            # add cleared event to list
-            if event_cleared is True:
-                if cleared_events.get(message) is None:
-                    cleared_events[message] = list()
-
-                cleared_events[message].append(entry_date)
-
-        if (date_critical is not None or date_warning is not None) and severity is not None:
-
-            if entry_date is not None and date_critical is not None:
-                if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
-                    status = "CRITICAL"
-            if entry_date is not None and date_warning is not None:
-                if entry_date > date_warning.astimezone(
-                        entry_date.tzinfo) and status != "CRITICAL" and severity != "OK":
-                    status = "WARNING"
-
-        plugin_object.add_output_data(status, "%s: %s" % (date, message), is_log_entry=True, log_entry_date=entry_date)
-
-        processed_ids.append(event_entry_item.get("Id"))
-
-        # obey max results returned
-        if plugin_object.cli_args.max is not None and num_entry >= plugin_object.cli_args.max:
-            return
-
-    def check_flapping(event_message, list_of_dates, threshold_date, flapping_threshold):
-        if threshold_date is not None:
-            dates_in_flapping_range = [x for x in list_of_dates if x >= threshold_date.astimezone(x.tzinfo)]
-            if len(dates_in_flapping_range) >= flapping_threshold:
-                last_event_occurred = sorted(dates_in_flapping_range)[-1]
-                flap_msg = "Flapping event occurred '{}' time{} since".format(
-                    len(dates_in_flapping_range),
-                    "s" if len(dates_in_flapping_range) != 1 else ""
-                )
-                flap_msg = "{}: {} {}: {}".format(
-                    last_event_occurred,
-                    flap_msg,
-                    threshold_date.strftime("%F %T"),
-                    event_message
-                )
-                plugin_object.add_output_data("WARNING", flap_msg, is_log_entry=True,
-                                              log_entry_date=last_event_occurred)
-
-                return True
-
-        return False
-
-    # check flapping events
-    for event, date_list in cleared_events.items():
-        if check_flapping(event, date_list, date_critical, flapping_threshold_critical):
+        if log_line_is_excluded(message):
+            num_entry_discarded += 1
             continue
 
-        check_flapping(event, date_list, date_warning, flapping_threshold_warning)
+        # Skip if alert is cleared
+        cleared = any(
+            message_id and message_id.endswith(alert_suffix) and alert_suffix in cleared_message_suffixes
+            for alert_suffix in clear_by_map
+        )
+        if cleared:
+            continue
 
-    # in case all log entries matched the filter
+        # Track for summary
+        for alert_suffix in clear_by_map:
+            if message_id and message_id.endswith(alert_suffix) and alert_suffix not in tracked_alerts:
+                tracked_alerts[alert_suffix] = {
+                    "message": message,
+                    "severity": severity,
+                    "date": entry_date
+                }
+
+        assoc_id = event_entry.get("SensorNumber")
+        event_cleared = False
+        status = "OK"
+
+        if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
+            message += f" (severity '{severity}' cleared)"
+            severity = "OK"
+            event_cleared = True
+        elif plugin_object.rf.vendor == "Fujitsu" and message_id == "0x180055":
+            message += f" (severity '{severity}' (will be) cleared due to lack of clear event)"
+        elif severity == "WARNING" and not date_critical:
+            status = "WARNING"
+        elif severity != "OK" and not date_warning:
+            status = "CRITICAL"
+
+        if assoc_id is not None and severity == "OK":
+            assoc_id_status[assoc_id] = "cleared"
+
+        if event_cleared:
+            if cleared_events.get(message) is None:
+                cleared_events[message] = []
+            cleared_events[message].append(entry_date)
+
+        if date_critical and severity != "OK" and entry_date > date_critical.astimezone(entry_date.tzinfo):
+            status = "CRITICAL"
+        elif date_warning and severity != "OK" and status != "CRITICAL" and entry_date > date_warning.astimezone(entry_date.tzinfo):
+            status = "WARNING"
+
+        plugin_object.add_output_data(status, f"{date}: {message}", is_log_entry=True, log_entry_date=entry_date)
+        num_entry += 1
+
+        if plugin_object.cli_args.max and num_entry >= plugin_object.cli_args.max:
+            return
+
+    # Summary for uncleared alerts
+    for alert_suffix, data in tracked_alerts.items():
+        if alert_suffix in cleared_message_suffixes or data["severity"] == "OK":
+            continue
+        status = "CRITICAL" if data["severity"] != "WARNING" else "WARNING"
+        plugin_object.add_output_data(
+            status,
+            f"{data['date']}: {alert_suffix}: {data['message']} (not cleared)",
+            is_log_entry=True,
+            log_entry_date=data["date"]
+        )
+
+    # Flapping detection
+    def check_flapping(event_message, date_list, threshold_date, flap_threshold):
+        if threshold_date is None:
+            return False
+        dates_in_range = [d for d in date_list if d >= threshold_date.astimezone(d.tzinfo)]
+        if len(dates_in_range) >= flap_threshold:
+            last_date = sorted(dates_in_range)[-1]
+            flap_msg = f"{last_date}: Flapping event occurred '{len(dates_in_range)}' times since {threshold_date.strftime('%F %T')}: {event_message}"
+            plugin_object.add_output_data("WARNING", flap_msg, is_log_entry=True, log_entry_date=last_date)
+            return True
+        return False
+
+    for event, dates in cleared_events.items():
+        if check_flapping(event, dates, date_critical, flapping_threshold_critical):
+            continue
+        check_flapping(event, dates, date_warning, flapping_threshold_warning)
+
     if num_entry == 0:
-        status_message = f"No {event_type} log entries found."
-        if len(plugin_object.cli_args.log_exclude_list) > 0:
-            status_message += f" {num_entry_discarded} discarded log entries by log_exclude option."
-
-        plugin_object.add_output_data("OK", status_message, summary=True)
-
-    return
+        msg = f"No {event_type} log entries found."
+        if plugin_object.cli_args.log_exclude_list:
+            msg += f" {num_entry_discarded} discarded log entries by log_exclude option."
+        plugin_object.add_output_data("OK", msg, summary=True)
 
 
 def get_event_log_huawei(event_type, system_manager_id):
