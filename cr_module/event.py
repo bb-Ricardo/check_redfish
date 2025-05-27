@@ -413,13 +413,22 @@ def get_event_log_generic(event_type, redfish_path):
     for alert_suffix, data in tracked_alerts.items():
         if alert_suffix in cleared_message_suffixes or data["severity"] == "OK":
             continue
-        status = "CRITICAL" if data["severity"] != "WARNING" else "WARNING"
-        plugin_object.add_output_data(
-            status,
-            f"{data['date']}: {alert_suffix}: {data['message']} (not cleared)",
-            is_log_entry=True,
-            log_entry_date=data["date"]
-        )
+
+        event_date = data["date"]
+        status = "OK"
+
+        if date_critical and event_date > date_critical.astimezone(event_date.tzinfo):
+            status = "CRITICAL"
+        elif date_warning and event_date > date_warning.astimezone(event_date.tzinfo):
+            status = "WARNING"
+
+        if status != "OK":
+            plugin_object.add_output_data(
+                status,
+                f"{event_date}: {alert_suffix}: {data['message']} (not cleared)",
+                is_log_entry=True,
+                log_entry_date=event_date
+            )
 
     # Flapping detection
     def check_flapping(event_message, date_list, threshold_date, flap_threshold):
