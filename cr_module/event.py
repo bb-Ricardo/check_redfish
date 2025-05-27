@@ -201,10 +201,15 @@ def get_event_log_hpe(event_type, redfish_path):
             forced_limit = True
             limit_of_returned_items = ilo4_limit
 
-    if plugin_object.cli_args.warning:
-        date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
-    if plugin_object.cli_args.critical:
-        date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
+    if event_type == "Manager":
+
+        days_warning = force_cast(int, plugin_object.cli_args.warning, 0)
+        days_critical = force_cast(int, plugin_object.cli_args.critical, 0)
+
+        if days_warning > 0:
+            date_warning = data_now - datetime.timedelta(days=days_warning)
+        if days_critical > 0:
+            date_critical = data_now - datetime.timedelta(days=days_critical)
 
     event_entries = plugin_object.rf.get(redfish_path).get("Members")
 
@@ -236,12 +241,21 @@ def get_event_log_hpe(event_type, redfish_path):
         repaired = grab(event_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.Repaired") or False
 
         status = "OK"
-        if severity == 'WARNING' and repaired is False:
-            if (not date_critical) or (date_critical and entry_date > date_critical.astimezone(entry_date.tzinfo)):
-                status = 'CRITICAL'
-        elif severity != 'OK' and repaired is False:
-            if (not date_warning) or (date_warning and entry_date > date_warning.astimezone(entry_date.tzinfo)):
-                status = 'WARNING'
+
+        if event_type == "System":
+            if severity == "WARNING" and repaired is False:
+                status = "WARNING"
+            elif severity != "OK" and repaired is False:
+                status = "CRITICAL"
+        else:
+
+            if plugin_object.cli_args.critical and date_critical is not None:
+                if entry_date > date_critical.astimezone(entry_date.tzinfo) and severity != "OK":
+                    status = "CRITICAL"
+            if plugin_object.cli_args.warning and date_warning is not None:
+                if entry_date > date_warning.astimezone(entry_date.tzinfo) \
+                        and status != "CRITICAL" and severity != "OK":
+                    status = "WARNING"
 
         plugin_object.add_output_data(status, "%s: %s" % (date, message), is_log_entry=True, log_entry_date=entry_date)
 
