@@ -381,14 +381,20 @@ def get_event_log_generic(event_type, redfish_path):
                     "date": entry_date
                 }
 
+        # get log entry id to associate older log entries
         assoc_id = event_entry.get("SensorNumber")
+
+        # keep track of message IDs
+        # newer message can clear a status for older messages
         event_cleared = False
         status = "OK"
 
+        # found an old message that has been cleared
         if assoc_id is not None and assoc_id_status.get(assoc_id) == "cleared" and severity != "OK":
             message += f" (severity '{severity}' cleared)"
             severity = "OK"
             event_cleared = True
+        # Fujitsu uncleared messages
         elif plugin_object.rf.vendor == "Fujitsu" and message_id == "0x180055":
             message += f" (severity '{severity}' (will be) cleared due to lack of clear event)"
         elif severity == "WARNING" and not date_critical:
@@ -396,9 +402,11 @@ def get_event_log_generic(event_type, redfish_path):
         elif severity != "OK" and not date_warning:
             status = "CRITICAL"
 
+        # keep track of messages that clear an older message
         if assoc_id is not None and severity == "OK":
             assoc_id_status[assoc_id] = "cleared"
 
+        # add cleared event to list
         if event_cleared:
             if cleared_events.get(message) is None:
                 cleared_events[message] = []
