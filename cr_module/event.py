@@ -287,6 +287,8 @@ def get_event_log_hpe(event_type, redfish_path):
 def get_event_log_generic(event_type, redfish_path):
     plugin_object = PluginData()
 
+    # if a log entry has been auto cleared this amount of times within the alert level time range
+    # then issue an additional WARNING message
     flapping_threshold_critical = 2
     flapping_threshold_warning = 5
 
@@ -302,6 +304,7 @@ def get_event_log_generic(event_type, redfish_path):
     if plugin_object.cli_args.critical:
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
+    # on dell systems max entries need to be limited during request
     if plugin_object.rf.vendor == "Dell":
         max_entries = plugin_object.cli_args.max
 
@@ -311,6 +314,7 @@ def get_event_log_generic(event_type, redfish_path):
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.", summary=True)
         return
 
+    # reverse list from newest to oldest entry
     if plugin_object.rf.vendor in ["Lenovo", "Supermicro"]:
         event_entries.reverse()
 
@@ -348,6 +352,8 @@ def get_event_log_generic(event_type, redfish_path):
         message = event_entry.get("Message", "").strip()
         message_id = event_entry.get("MessageId")
         severity = event_entry.get("Severity", "OK").upper()
+
+        # CISCO WHY?
         if severity in ["NORMAL", "INFORMATIONAL"]:
             severity = "OK"
 
@@ -406,6 +412,7 @@ def get_event_log_generic(event_type, redfish_path):
         plugin_object.add_output_data(status, f"{date}: {message}", is_log_entry=True, log_entry_date=entry_date)
         num_entry += 1
 
+        # obey max results returned
         if plugin_object.cli_args.max and num_entry >= plugin_object.cli_args.max:
             return
 
@@ -442,11 +449,13 @@ def get_event_log_generic(event_type, redfish_path):
             return True
         return False
 
+    # check flapping events
     for event, dates in cleared_events.items():
         if check_flapping(event, dates, date_critical, flapping_threshold_critical):
             continue
         check_flapping(event, dates, date_warning, flapping_threshold_warning)
 
+    # in case all log entries matched the filter
     if num_entry == 0:
         msg = f"No {event_type} log entries found."
         if plugin_object.cli_args.log_exclude_list:
