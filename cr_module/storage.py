@@ -651,12 +651,16 @@ def get_storage_generic(system):
             if plugin_object.rf.vendor == "HPE" and drive_oem_data.get("DriveStatus") is not None:
                 status_data = get_status_data(drive_oem_data.get("DriveStatus"))
 
-        # Dell
-        dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
-        if dell_disk_data is not None:
-            if bay is None:
-                bay = dell_disk_data.get("Slot")
-            storage_port = dell_disk_data.get("Connector")
+            # Dell
+            dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
+            if dell_disk_data is not None:
+                if bay is None:
+                    bay = dell_disk_data.get("Slot")
+                storage_port = dell_disk_data.get("Connector")
+                # mitigate issue with unsupported Disks for Dell server
+                # https://github.com/bb-Ricardo/check_redfish/issues/165
+                if predicted_media_life_left_percent == 0 and dell_disk_data.get("AvailableSparePercent") is None:
+                    predicted_media_life_left_percent = None
 
         physical_location = grab(drive_response, "PhysicalLocation.PartLocation")
         if bay is None and physical_location is not None:
