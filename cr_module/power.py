@@ -228,33 +228,35 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     for power_control in power_control_data:
 
-        if power_control.get("Status") is None:
-            continue
-
         power_control_status = get_status_data(grab(power_control, "Status"))
         status = power_control_status.get("Health")
         state = power_control_status.get("State")
-        name = power_control.get("Name")
+        name = power_control.get("Name", "Power Control")
         reading = power_control.get("PowerConsumedWatts")
-
-        if status is None:
-            continue
 
         if str(reading) == "0":
             reading = None
+
+        if reading is None and status is None:
+            continue
 
         power_control_num += 1
 
         if plugin_object.rf.vendor == "Ami" and state == "Disabled":
             status = "OK"
 
+        status_text = f"{name}"
+        if status is not None and state is not None:
+            status_text += f" (status: {status}/{state})"
         if reading is not None:
-            status_text = f"{name} (status: {status}/{state}) current consumption: {reading}W"
-        else:
-            status_text = f"{name} status: {status}/{state}"
+            status_text += f" - current power consumption: {reading}W"
 
-        if status != "OK":
+        if status is not None and status != "OK":
             issue_detected = True
+
+        # mock status for power control without status attribute
+        if status is None:
+            status = "OK"
 
         plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
                                       status_text, location=f"Chassi {chassi_id}")
