@@ -659,7 +659,9 @@ def get_storage_generic(system):
                 storage_port = dell_disk_data.get("Connector")
                 # mitigate issue with unsupported Disks for Dell server
                 # https://github.com/bb-Ricardo/check_redfish/issues/165
-                if predicted_media_life_left_percent == 0 and dell_disk_data.get("AvailableSparePercent") is None:
+                if predicted_media_life_left_percent == 0 and (
+                        dell_disk_data.get("AvailableSparePercent") is None or
+                        dell_disk_data.get("Certified") == "No"):
                     predicted_media_life_left_percent = None
 
         physical_location = grab(drive_response, "PhysicalLocation.PartLocation")
