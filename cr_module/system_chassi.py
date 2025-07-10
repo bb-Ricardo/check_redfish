@@ -58,11 +58,15 @@ def get_chassi_data(data_type):
                 chassi_power_thermal_data = discovered_url_data
 
         # try to query fallback url
+        """
+        # remove fallback and trying to guess the path. If chassi does not report any Power or Thermal
+        # then there is none: https://github.com/bb-Ricardo/check_redfish/issues/156
         if chassi_power_thermal_data is None:
             fallback_url_data = plugin_object.rf.get_view(fallback_url)
 
             if fallback_url_data.get("error") is None and str(fallback_url_data) != "{'Members': []}":
                 chassi_power_thermal_data = fallback_url_data
+        """
 
         # fallback also failed
         if chassi_power_thermal_data is None:
