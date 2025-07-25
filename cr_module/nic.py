@@ -224,7 +224,7 @@ def get_system_nics(redfish_url):
 
         capable_speed = max(grab(port_response, "SupportedLinkCapabilities.0.CapableLinkSpeedMbps") or [0])
 
-        if capable_speed is None and isinstance(port_response.get("MaxSpeedGbps"), (int, float)) is True:
+        if capable_speed in [0, None] and isinstance(port_response.get("MaxSpeedGbps"), (int, float)) is True:
             capable_speed = int(port_response.get("MaxSpeedGbps") * 1000)
 
         if isinstance(current_speed, str):

@@ -1014,8 +1014,16 @@ def get_storage_generic(system):
                 controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
 
                 if controller_response.get("error"):
-                    plugin_object.add_data_retrieval_error(StorageController, controller_response,
-                                                           storage_member.get("@odata.id"))
+                    if system_is_booting() is True:
+                        summary_status = (f'Storage component at \'{storage_member.get("@odata.id")}\' is not ready '
+                                          f"(system starting up)")
+
+                        plugin_object.add_output_data("OK", summary_status,
+                                                      summary=True, location=f"System {system_id}")
+
+                    else:
+                        plugin_object.add_data_retrieval_error(StorageController, controller_response,
+                                                               storage_member.get("@odata.id"))
                     continue
 
             if controller_response.get("StorageControllers"):
@@ -1484,9 +1492,12 @@ def get_storage_generic(system):
         # iLO 6
         if (plugin_object.rf.vendor == "HPE" and
                 plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6" and
-                system_power_state == "OFF"):
+                (system_power_state == "OFF" or system_is_booting())):
 
-            summary_status = f"System is powered {system_power_state} and has not reported any Storage components"
+            if system_is_booting():
+                summary_status = f"System is starting up and has not reported any Storage components"
+            else:
+                summary_status = f"System is powered {system_power_state} and has not reported any Storage components"
 
             plugin_object.add_output_data("OK", summary_status,
                                           summary=True, location=f"System {system_id}")

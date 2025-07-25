@@ -53,6 +53,9 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
             if physical_context is None:
                 physical_context = grab(oem_data, "Location") or grab(oem_data, "Position")
 
+            location = (grab(fan, f"Oem.{plugin_object.rf.vendor_dict_key}.Location.Info") or
+                        grab(fan, f"Oem.{plugin_object.rf.vendor_dict_key}.Location"))
+
             fan_inventory = Fan(
                 id=member_id,
                 name=name,
@@ -67,7 +70,7 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
                 upper_threshold_non_critical=fan.get("UpperThresholdNonCritical"),
                 upper_threshold_critical=fan.get("UpperThresholdCritical"),
                 upper_threshold_fatal=fan.get("UpperThresholdFatal"),
-                location=grab(fan, f"Oem.{plugin_object.rf.vendor_dict_key}.Location.Info"),
+                location=location,
                 chassi_ids=chassi_id
             )
 
