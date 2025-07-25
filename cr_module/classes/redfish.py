@@ -683,8 +683,8 @@ class RedfishConnection:
 
                 system_properties[root_object.lower()].append(entity_url)
 
-        # disable views for HPE systems with more than one Chassi and/or System
-        if self.vendor == "HPE" and len(system_properties["chassis"]) > 1 or len(system_properties["systems"]) > 1:
+        # disable views for HPE systems with more than one Chassis and/or System
+        if self.vendor == "HPE" and (len(system_properties["chassis"]) > 1 or len(system_properties["systems"]) > 1):
             self.vendor_data.view_supported = False
 
         self.connection.system_properties = system_properties
