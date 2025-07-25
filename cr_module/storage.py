@@ -126,6 +126,9 @@ def get_storage_hpe(system):
     if plugin_object.rf.vendor != "HPE":
         return
 
+    if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6":
+        return
+
     def get_disks(link, disk_type="DiskDrives"):
 
         disks_response = plugin_object.rf.get(f"{link}/{disk_type}/?$expand=.")
@@ -1468,7 +1471,18 @@ def get_storage_generic(system):
     num_system_drives = len(plugin_object.inventory.get(PhysicalDrive))
 
     if num_storage_controller == 0 and num_system_drives == 0:
-        if plugin_object.is_in_firmware_collection_mode() is False:
+
+        # iLO 6
+        if (plugin_object.rf.vendor == "HPE" and
+                plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6" and
+                system_power_state == "OFF"):
+
+            summary_status = f"System is powered {system_power_state} and has not reported any Storage components"
+
+            plugin_object.add_output_data("OK", summary_status,
+                                          summary=True, location=f"System {system_id}")
+
+        elif plugin_object.is_in_firmware_collection_mode() is False:
             plugin_object.inventory.add_issue(StorageController,
                                               "No storage controller and disk drive data found in system")
 
