@@ -11,7 +11,10 @@ from cr_module.common import grab
 from cr_module.classes.plugin import PluginData
 
 system_power_state = None
+system_power_on_time = None
+system_power_on_time_discovered = False
 
+system_boot_max_seconds = 300
 
 # function has been placed here to avoid circular dependencies
 def get_system_power_state():
@@ -33,5 +36,35 @@ def get_system_power_state():
         system_power_state = "On"
 
     return system_power_state
+
+def get_system_power_on_time():
+
+    global system_power_on_time, system_power_on_time_discovered
+
+    if system_power_on_time_discovered is True:
+        return system_power_on_time
+
+    plugin_object = PluginData()
+
+    for system in plugin_object.rf.get_system_properties("systems") or list():
+
+        system_power_on_time = grab(
+            plugin_object.rf.get(system),
+            f"Oem.{plugin_object.rf.vendor_dict_key}.CurrentPowerOnTimeSeconds")
+
+        if system_power_on_time is not None:
+            break
+
+    system_power_on_time_discovered = True
+
+    return system_power_on_time
+
+def system_is_booting():
+
+    power_on_time = get_system_power_on_time()
+    if power_on_time is not None and power_on_time <= system_boot_max_seconds:
+        return True
+
+    return False
 
 # EOF

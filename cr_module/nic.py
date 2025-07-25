@@ -10,6 +10,7 @@
 from cr_module.classes.inventory import NetworkAdapter, NetworkPort
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
+from cr_module import system_is_booting
 
 
 def get_network_interfaces():
@@ -779,8 +780,12 @@ def get_system_nics(redfish_url):
             add_port_status(network_port)
 
     if num_adapters == 0:
-        plugin_object.inventory.add_issue(NetworkAdapter, f"No network adapter or interface data "
-                                                          f"returned for API URL '{network_adapter_path}'")
+        if system_is_booting() is True:
+            plugin_object.add_output_data("OK", f"No network adapter detected (system starting up)",
+                                          summary=True, location=f"System {system_id}")
+        else:
+            plugin_object.inventory.add_issue(NetworkAdapter, f"No network adapter or interface data "
+                                                              f"returned for API URL '{network_adapter_path}'")
     if num_adapters == 0 and num_ports > 0:
         plugin_object.add_output_data("OK", f"All network ports ({num_ports}) are in good condition "
                                           "(no network adapters detected)",

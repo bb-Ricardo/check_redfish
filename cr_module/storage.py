@@ -13,7 +13,7 @@ from cr_module.classes.inventory import StorageController, StorageEnclosure, Phy
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab, force_cast
 from cr_module.firmware_issues import component_has_firmware_issues
-from cr_module import get_system_power_state
+from cr_module import get_system_power_state, system_is_booting
 
 global_battery_list = list()
 
@@ -988,7 +988,16 @@ def get_storage_generic(system):
         storage_response = plugin_object.rf.get(f"{storage_link}{plugin_object.rf.vendor_data.expand_string}")
 
         if storage_response.get("error"):
-            plugin_object.add_data_retrieval_error(StorageController, storage_response, storage_link)
+
+            if system_is_booting() is True:
+                summary_status = f"Storage components are not ready (system starting up)"
+
+                plugin_object.add_output_data("OK", summary_status,
+                                              summary=True, location=f"System {system_id}")
+
+            else:
+                plugin_object.add_data_retrieval_error(StorageController, storage_response, storage_link)
+
             return
 
     system_drives_list = list()
@@ -1425,7 +1434,7 @@ def get_storage_generic(system):
                 global_battery_list.append(status_text)
 
     # check controller batteries/Capacitors on iLO5 systems
-    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 5":
+    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() in ["ilo 5", "ilo 6"]:
         for chassi in plugin_object.rf.get_system_properties("chassis") or list():
 
             battery_status = grab(

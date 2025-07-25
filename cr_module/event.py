@@ -191,7 +191,7 @@ def get_event_log_hpe(event_type, redfish_path):
     date_warning = None
     date_critical = None
 
-    if plugin_object.rf.vendor_data.ilo_version.lower() != "ilo 5":
+    if plugin_object.rf.vendor_data.ilo_version.lower() not in ["ilo 5", "ilo 6"]:
         ilo4_limit = 30
         if plugin_object.cli_args.max:
             limit_of_returned_items = min(plugin_object.cli_args.max, ilo4_limit)
