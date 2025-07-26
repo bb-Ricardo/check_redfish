@@ -329,6 +329,22 @@ class PowerSupply(InventoryItem):
     }
 
 
+class PowerControl(InventoryItem):
+    inventory_item_name = "power_control"
+    valid_attributes = {
+        "id": str,
+        "name": str,
+        "status": str,
+        "state": str,
+        "reading": int,
+        "power_capacity_watts": int,
+        "power_allocated_watts": int,
+        "power_available_watts": int,
+        "power_consumed_watts": int,
+        "power_requested_watts": int
+    }
+
+
 class Temperature(InventoryItem):
     inventory_item_name = "temperature"
     valid_attributes = {
