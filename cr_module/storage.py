@@ -1004,7 +1004,11 @@ def get_storage_generic(system):
     storage_controller_id_list = list()
     drive_mapping = dict()
 
-    if storage_response is not None:
+    if system_is_booting() is True:
+        plugin_object.add_output_data("OK", f'Storage components are not ready (system starting up)',
+                                      summary=True, location=f"System {system_id}")
+
+    elif storage_response is not None:
 
         for storage_member in storage_response.get("Members") or list():
 
@@ -1014,16 +1018,8 @@ def get_storage_generic(system):
                 controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
 
                 if controller_response.get("error"):
-                    if system_is_booting() is True:
-                        summary_status = (f'Storage component at \'{storage_member.get("@odata.id")}\' is not ready '
-                                          f"(system starting up)")
-
-                        plugin_object.add_output_data("OK", summary_status,
-                                                      summary=True, location=f"System {system_id}")
-
-                    else:
-                        plugin_object.add_data_retrieval_error(StorageController, controller_response,
-                                                               storage_member.get("@odata.id"))
+                    plugin_object.add_data_retrieval_error(StorageController, controller_response,
+                                                           storage_member.get("@odata.id"))
                     continue
 
             if controller_response.get("StorageControllers"):
@@ -1221,7 +1217,7 @@ def get_storage_generic(system):
                     operation_status=status_data.get("State"),
                 )
 
-                storage_controller_id_list.append(controller_response.get("@odata.id").rstrip("/"))
+                storage_controller_id_list.append(controller_response.get("@odata.id", "").rstrip("/"))
 
                 if plugin_object.cli_args.verbose:
                     controller_inventory.source_data = controller_response
