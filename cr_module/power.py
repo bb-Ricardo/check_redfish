@@ -7,7 +7,8 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-from cr_module.classes.inventory import PowerSupply
+import json
+from cr_module.classes.inventory import PowerSupply, PowerControl
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
@@ -227,12 +228,14 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         power_control_data = [power_control_data]
 
     for power_control in power_control_data:
-
         power_control_status = get_status_data(grab(power_control, "Status"))
         status = power_control_status.get("Health")
         state = power_control_status.get("State")
         name = power_control.get("Name", "Power Control")
         reading = power_control.get("PowerConsumedWatts")
+        power_capacity_watts = power_control.get("PowerCapacityWatts", None)
+        power_available_watts = power_control.get("PowerAvailableWatts", None)
+        power_requested_watts = power_control.get("PowerRequestedWatts", None)
 
         if str(reading) == "0":
             reading = None
@@ -241,6 +244,33 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             continue
 
         power_control_num += 1
+
+        pc_id = grab(power_control, "MemberId")
+
+        if not pc_id:
+            pc_id = power_control_num
+        else:
+            pc_id = f"{pc_id}.{power_control_num}"
+
+        # prefix with chassi id if system has more then one
+        if num_chassis > 1:
+            pc_id = f"{chassi_id}.{pc_id}"
+
+        pc_inventory = PowerControl(
+            id=pc_id,
+            name=name,
+            status=status,
+            state=state,
+            power_capacity_watts=power_capacity_watts,
+            power_available_watts=power_available_watts,
+            power_consumed_watts=reading,
+            power_requested_watts=power_requested_watts
+        )
+
+        if plugin_object.cli_args.verbose:
+            pc_inventory.source_data = power_control
+
+        plugin_object.inventory.add(pc_inventory)
 
         if plugin_object.rf.vendor == "Ami" and state == "Disabled":
             status = "OK"
