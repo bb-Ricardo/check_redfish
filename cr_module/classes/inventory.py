@@ -313,6 +313,7 @@ class PowerSupply(InventoryItem):
     valid_attributes = {
         "bay": str,
         "capacity_in_watt": int,
+        "efficiency_percent": int,
         "chassi_ids": list,
         "firmware": str,
         "health_status": str,

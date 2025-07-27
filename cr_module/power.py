@@ -8,6 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import json
+
 from cr_module.classes.inventory import PowerSupply, PowerControl
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
@@ -50,6 +51,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             model = ps.get("Model") or part_number
             last_power_output = ps.get("LastPowerOutputWatts") or ps.get("PowerOutputWatts")
             capacity_in_watt = ps.get("PowerCapacityWatts")
+            efficiency_percent = ps.get("EfficiencyPercent", None)
             bay = None
 
             oem_data = grab(ps, f"Oem.{plugin_object.rf.vendor_dict_key}")
@@ -100,6 +102,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                 serial=ps.get("SerialNumber"),
                 type=ps.get("PowerSupplyType"),
                 capacity_in_watt=capacity_in_watt,
+                efficiency_percent=efficiency_percent,
                 firmware=ps.get("FirmwareVersion"),
                 vendor=ps.get("Manufacturer"),
                 input_voltage=ps.get("LineInputVoltage"),
