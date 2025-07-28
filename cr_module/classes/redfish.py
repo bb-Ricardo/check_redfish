@@ -228,7 +228,7 @@ class RedfishConnection:
         self.session_was_restored = True
 
         return
-    
+
     def remove_session_lock(self):
         if self.cli_args.sessionlock is True and \
                 self.session_file_path is not None and \
@@ -270,7 +270,7 @@ class RedfishConnection:
                     handle.write(str(time.time()))
             except Exception as e:
                 self.exit_on_error(f"Unable to write session lock '{self.session_file_lock}': {e}")
-        
+
     def save_session_to_file(self):
 
         if self.session_file_path is None:
@@ -580,6 +580,16 @@ class RedfishConnection:
             vendor_string = self.connection.root.get("Vendor")
 
             self.vendor_dict_key = vendor_string
+
+        if vendor_string == "" and self.connection.root.get("Chassis") is not None:
+            chassis = self.get_system_properties("chassis")
+            if len(chassis) > 0:
+                # try to get vendor from first chassis
+                chassis_data = self.get(chassis[0])
+                if chassis_data is not None:
+                    vendor_string = chassis_data.get("Manufacturer", None)
+                    if vendor_string:
+                        self.vendor_dict_key = vendor_string
 
         if vendor_string in ["Hpe", "Hp"]:
 

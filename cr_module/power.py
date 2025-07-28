@@ -15,6 +15,17 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
+_supermicro_power_supply_specs = {
+    "PWS-2K22A-1R": {"capacity_in_watt": 2200, "efficiency_percent": 96},
+    "PWS-1K21P-1R": {"capacity_in_watt": 1200, "efficiency_percent": 92},
+    "PWS-2K02P-1R": {"capacity_in_watt": 2000, "efficiency_percent": 91},
+    "PWS-2K02F-1R": {"capacity_in_watt": 2000, "efficiency_percent": 94},
+    "PWS-1K03B-1R": {"capacity_in_watt": 1000, "efficiency_percent": None},
+    "PWS-407P-1R":  {"capacity_in_watt":  400, "efficiency_percent": None},
+    # Add more as needed...
+}
+
+
 def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     plugin_object = PluginData()
@@ -85,6 +96,13 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                     if fujitsu_power_sensor.get("Designation") is not None and \
                             fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
+
+            # special Supermicro case
+            if plugin_object.rf.vendor == "Supermicro":
+                info = _supermicro_power_supply_specs.get(model, None)
+                if info:
+                    capacity_in_watt = info["capacity_in_watt"]
+                    efficiency_percent = info["efficiency_percent"]
 
             ps_id = grab(ps, "MemberId") or ps_num
             # prefix with chassi id if system has more then one
