@@ -393,7 +393,7 @@ def get_system_nics(redfish_url):
 
     system_id = redfish_url.rstrip("/").split("/")[-1]
 
-    if plugin_object.rf.vendor == "HPE":
+    if plugin_object.rf.vendor == "HPE" and not system_is_booting():
         system_response = plugin_object.rf.get(redfish_url)
 
         if system_response.get("error"):
@@ -437,8 +437,8 @@ def get_system_nics(redfish_url):
     network_adapter_response = \
         plugin_object.rf.get_view(f"{network_adapter_path}{plugin_object.rf.vendor_data.expand_string}")
 
-    if network_adapter_response.get("error"):
-        plugin_object.add_data_retrieval_error(NetworkAdapter, network_adapter_response, network_adapter_path)
+    if network_adapter_response.get("error") and not system_is_booting():
+        plugin_object.add_data_retrieval_error(NetworkAdapter, network_adapter_response, network_adapter_path+"123")
         return
 
     # HPE specific

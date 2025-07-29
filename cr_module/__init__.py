@@ -81,6 +81,11 @@ def system_is_booting():
             system_booting = False
             return system_booting
 
+        if grab(plugin_object.rf.get(system), "Status.State") == "Starting":
+            system_booting_discovered = True
+            system_booting = True
+            return system_booting
+
     power_on_time = get_system_power_on_time()
     if power_on_time is not None and power_on_time <= system_boot_max_seconds:
         system_booting = True
