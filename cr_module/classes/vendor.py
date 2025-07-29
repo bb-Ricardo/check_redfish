@@ -189,4 +189,14 @@ class VendorSupermicro(VendorGeneric):
     manager_event_log_entries_path = ["{system_manager_id}/LogServices/Log1"]
     system_event_log_entries_path = ["{system_manager_id}/LogServices/Log1"]
 
+    power_supply_specs = {
+        "PWS-2K22A-1R": {"capacity_in_watt": 2200, "efficiency_percent": 96},
+        "PWS-1K21P-1R": {"capacity_in_watt": 1200, "efficiency_percent": 92},
+        "PWS-2K02P-1R": {"capacity_in_watt": 2000, "efficiency_percent": 91},
+        "PWS-2K02F-1R": {"capacity_in_watt": 2000, "efficiency_percent": 94},
+        "PWS-1K03B-1R": {"capacity_in_watt": 1000, "efficiency_percent": None},
+        "PWS-407P-1R":  {"capacity_in_watt":  400, "efficiency_percent": None},
+        # Add more as needed...
+    }
+
 # EOF

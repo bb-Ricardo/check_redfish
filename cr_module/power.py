@@ -15,17 +15,6 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
-_supermicro_power_supply_specs = {
-    "PWS-2K22A-1R": {"capacity_in_watt": 2200, "efficiency_percent": 96},
-    "PWS-1K21P-1R": {"capacity_in_watt": 1200, "efficiency_percent": 92},
-    "PWS-2K02P-1R": {"capacity_in_watt": 2000, "efficiency_percent": 91},
-    "PWS-2K02F-1R": {"capacity_in_watt": 2000, "efficiency_percent": 94},
-    "PWS-1K03B-1R": {"capacity_in_watt": 1000, "efficiency_percent": None},
-    "PWS-407P-1R":  {"capacity_in_watt":  400, "efficiency_percent": None},
-    # Add more as needed...
-}
-
-
 def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     plugin_object = PluginData()
@@ -62,7 +51,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             model = ps.get("Model") or part_number
             last_power_output = ps.get("LastPowerOutputWatts") or ps.get("PowerOutputWatts")
             capacity_in_watt = ps.get("PowerCapacityWatts")
-            efficiency_percent = ps.get("EfficiencyPercent", None)
+            efficiency_percent = ps.get("EfficiencyPercent")
             bay = None
 
             oem_data = grab(ps, f"Oem.{plugin_object.rf.vendor_dict_key}")
@@ -99,7 +88,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
             # special Supermicro case
             if plugin_object.rf.vendor == "Supermicro":
-                info = _supermicro_power_supply_specs.get(model, None)
+                info = plugin_object.rf.vendor_data.power_supply_specs.get(model)
                 if info:
                     capacity_in_watt = info["capacity_in_watt"]
                     efficiency_percent = info["efficiency_percent"]
