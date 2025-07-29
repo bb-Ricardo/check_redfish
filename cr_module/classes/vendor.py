@@ -25,6 +25,8 @@ class VendorGeneric:
 
     expand_string = ""
 
+    power_supply_specs = dict()
+
 
 class VendorHPEData(VendorGeneric):
 

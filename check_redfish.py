@@ -49,11 +49,11 @@ class CheckRedfish:
         # initialize plugin object
         plugin = PluginData(self.args, plugin_version=__version__)
 
-        # get basic information
-        plugin.rf.determine_vendor()
-
         # try to get systems, managers and chassis IDs
         plugin.rf.discover_system_properties()
+
+        # get basic information
+        plugin.rf.determine_vendor()
 
         if any(x in self.args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
         if any(x in self.args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)

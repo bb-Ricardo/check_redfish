@@ -337,7 +337,6 @@ class PowerControl(InventoryItem):
         "name": str,
         "status": str,
         "state": str,
-        "reading": int,
         "power_capacity_watts": int,
         "power_allocated_watts": int,
         "power_available_watts": int,

@@ -86,12 +86,14 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                             fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
 
-            # special Supermicro case
-            if plugin_object.rf.vendor == "Supermicro":
-                info = plugin_object.rf.vendor_data.power_supply_specs.get(model)
-                if info:
-                    capacity_in_watt = info["capacity_in_watt"]
-                    efficiency_percent = info["efficiency_percent"]
+            ps_specs = plugin_object.rf.vendor_data.power_supply_specs.get(model)
+            if ps_specs is not None:
+                capacity_in_watt = ps_specs.get("capacity_in_watt")
+                efficiency_percent = ps_specs.get("efficiency_percent")
+
+            # Dell special case
+            if isinstance(efficiency_percent, float) and 0 < efficiency_percent < 1:
+                efficiency_percent *= 100
 
             ps_id = grab(ps, "MemberId") or ps_num
             # prefix with chassi id if system has more then one
@@ -109,7 +111,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                 serial=ps.get("SerialNumber"),
                 type=ps.get("PowerSupplyType"),
                 capacity_in_watt=capacity_in_watt,
-                efficiency_percent=efficiency_percent,
+                efficiency_percent=None if efficiency_percent == 0 else efficiency_percent,
                 firmware=ps.get("FirmwareVersion"),
                 vendor=ps.get("Manufacturer"),
                 input_voltage=ps.get("LineInputVoltage"),
@@ -239,13 +241,14 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     for power_control in power_control_data:
         power_control_status = get_status_data(grab(power_control, "Status"))
-        status = power_control_status.get("Health")
+        status = power_control_status.get("Health") or grab(power_control, "Status.HealthRollup")
         state = power_control_status.get("State")
         name = power_control.get("Name", "Power Control")
         reading = power_control.get("PowerConsumedWatts")
-        power_capacity_watts = power_control.get("PowerCapacityWatts", None)
-        power_available_watts = power_control.get("PowerAvailableWatts", None)
-        power_requested_watts = power_control.get("PowerRequestedWatts", None)
+        power_allocated_watts = power_control.get("PowerAllocatedWatts")
+        power_capacity_watts = power_control.get("PowerCapacityWatts")
+        power_available_watts = power_control.get("PowerAvailableWatts")
+        power_requested_watts = power_control.get("PowerRequestedWatts")
 
         if str(reading) == "0":
             reading = None
@@ -271,6 +274,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             name=name,
             status=status,
             state=state,
+            power_allocated_watts=power_allocated_watts,
             power_capacity_watts=power_capacity_watts,
             power_available_watts=power_available_watts,
             power_consumed_watts=reading,

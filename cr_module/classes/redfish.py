@@ -585,8 +585,7 @@ class RedfishConnection:
             chassis = self.get_system_properties("chassis")
             if len(chassis) > 0:
                 # try to get vendor from first chassis
-                chassis_data = self.get(chassis[0])
-                vendor_string = grab(chassis_data, "Manufacturer")
+                vendor_string = grab(self.get(chassis[0]), "Manufacturer")
                 self.vendor_dict_key = vendor_string
 
         if vendor_string in ["Hpe", "Hp"]:
