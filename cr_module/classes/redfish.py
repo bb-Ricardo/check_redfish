@@ -586,10 +586,8 @@ class RedfishConnection:
             if len(chassis) > 0:
                 # try to get vendor from first chassis
                 chassis_data = self.get(chassis[0])
-                if chassis_data is not None:
-                    vendor_string = chassis_data.get("Manufacturer", None)
-                    if vendor_string:
-                        self.vendor_dict_key = vendor_string
+                vendor_string = grab(chassis_data, "Manufacturer")
+                self.vendor_dict_key = vendor_string
 
         if vendor_string in ["Hpe", "Hp"]:
 
