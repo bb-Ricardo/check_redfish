@@ -602,7 +602,9 @@ class RedfishConnection:
                 if self.vendor_data.ilo_version is None:
                     self.exit_on_error("Cannot determine HPE iLO version information.")
 
-                if self.vendor_data.ilo_version.lower() == "ilo 5":
+                if (self.vendor_data.ilo_version.lower() == "ilo 5" and
+                        len(self.get_system_properties("chassis") or []) == 1 and
+                        len(self.get_system_properties("systems") or []) == 1):
                     self.vendor_data.view_supported = True
 
         if vendor_string in ["Lenovo"]:
@@ -682,10 +684,6 @@ class RedfishConnection:
                     continue
 
                 system_properties[root_object.lower()].append(entity_url)
-
-        # disable views for HPE systems with more than one Chassis and/or System
-        if self.vendor == "HPE" and (len(system_properties["chassis"]) > 1 or len(system_properties["systems"]) > 1):
-            self.vendor_data.view_supported = False
 
         self.connection.system_properties = system_properties
         if self.cli_args.nosession is False:
