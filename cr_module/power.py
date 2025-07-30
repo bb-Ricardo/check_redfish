@@ -7,8 +7,6 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-import json
-
 from cr_module.classes.inventory import PowerSupply, PowerControl
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
@@ -31,9 +29,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
     system_power_state = get_system_power_state().upper()
 
-    fujitsu_power_sensors = None
+    fujitsu_power_data = None
     if plugin_object.rf.vendor == "Fujitsu":
-        fujitsu_power_sensors = grab(power_data, f"Oem.{plugin_object.rf.vendor_dict_key}.ChassisPowerSensors")
+        fujitsu_power_data = grab(power_data, f"Oem.{plugin_object.rf.vendor_dict_key}")
 
     issue_detected = False
     ps_num = 0
@@ -80,11 +78,12 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                 capacity_in_watt = grab(ps, "InputRanges.0.OutputWattage")
 
             # special Fujitsu case
-            if fujitsu_power_sensors is not None and last_power_output is None:
-                for fujitsu_power_sensor in fujitsu_power_sensors:
+            if fujitsu_power_data is not None and last_power_output is None:
+                for fujitsu_power_sensor in fujitsu_power_data.get("ChassisPowerSensors") or list():
                     if fujitsu_power_sensor.get("Designation") is not None and \
                             fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
+                        break
 
             ps_specs = plugin_object.rf.vendor_data.power_supply_specs.get(model)
             if ps_specs is not None:
@@ -249,6 +248,16 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         power_capacity_watts = power_control.get("PowerCapacityWatts")
         power_available_watts = power_control.get("PowerAvailableWatts")
         power_requested_watts = power_control.get("PowerRequestedWatts")
+
+        # special Fujitsu case
+        if fujitsu_power_data is not None and reading is None:
+            for fujitsu_power_sensor in fujitsu_power_data.get("ChassisPowerSensors") or list():
+                if fujitsu_power_sensor.get("Designation") in ["Total", "Total Power"]:
+                    reading = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
+                    break
+
+            if power_available_watts is None:
+                power_available_watts = grab(fujitsu_power_data, "ChassisPowerConsumption.CurrentMaximumPowerW")
 
         if str(reading) == "0":
             reading = None
