@@ -70,7 +70,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.11.3 (2025-07-23)
+Version: 1.12.0 (2025-07-30)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -337,6 +337,22 @@ suggestions for changes/improvements then please create a GitHub issue.
         "network_adapter": [],
         "network_port": [],
         "physical_drive": [],
+        "power_control": [
+            {
+                "chassi_ids": [
+                    "1"
+                ],
+                "health_state": null,
+                "health_status": null,
+                "id": "1.0.1",
+                "name": "Power Control",
+                "power_allocated_watts": null,
+                "power_available_watts": null,
+                "power_capacity_watts": 1000,
+                "power_consumed_watts": 209,
+                "power_requested_watts": null
+            }
+        ],
         "power_supply": [
             {
                 "bay": 1,
@@ -344,6 +360,7 @@ suggestions for changes/improvements then please create a GitHub issue.
                 "chassi_ids": [
                     1
                 ],
+                "efficiency_percent": null,
                 "firmware": "1.03",
                 "health_status": "OK",
                 "id": "0",
@@ -389,8 +406,8 @@ suggestions for changes/improvements then please create a GitHub issue.
         "host_that_collected_inventory": "inventory-collector.example.com",
         "inventory_id": null,
         "inventory_name": null,
-        "inventory_layout_version": "1.7.0",
-        "script_version": "1.7.1",
+        "inventory_layout_version": "1.12.0",
+        "script_version": "1.12.0",
         "start_of_data_collection": "2024-02-13T19:09:07+02:00"
     }
 }
