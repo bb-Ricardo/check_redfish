@@ -281,8 +281,8 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         pc_inventory = PowerControl(
             id=pc_id,
             name=name,
-            status=status,
-            state=state,
+            health_status=status,
+            health_state=state,
             power_allocated_watts=power_allocated_watts,
             power_capacity_watts=power_capacity_watts,
             power_available_watts=power_available_watts,

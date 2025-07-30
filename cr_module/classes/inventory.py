@@ -335,8 +335,8 @@ class PowerControl(InventoryItem):
     valid_attributes = {
         "id": str,
         "name": str,
-        "status": str,
-        "state": str,
+        "health_status": str,
+        "health_state": str,
         "chassi_ids": list,
         "power_capacity_watts": int,
         "power_allocated_watts": int,
