@@ -1025,7 +1025,7 @@ def get_storage_generic(system):
                         plugin_object.add_output_data("OK", summary_status,
                                                       summary=True, location=f"System {system_id}")
 
-                        continue
+                        return
 
                     plugin_object.add_data_retrieval_error(StorageController, controller_response,
                                                            storage_member.get("@odata.id"))
