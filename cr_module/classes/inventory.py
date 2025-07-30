@@ -17,7 +17,7 @@ from socket import gethostname
 
 
 # inventory definition
-inventory_layout_version_string = "1.10.0"
+inventory_layout_version_string = "1.12.0"
 
 
 # noinspection PyBroadException
@@ -474,7 +474,7 @@ class Manager(InventoryItem):
 
 
 class Chassi(InventoryItem):
-    inventory_item_name = "chassi"
+    inventory_item_name = "chassis"
     valid_attributes = {
         "health_status": str,
         "id": str,
@@ -613,6 +613,9 @@ class Inventory(object):
             "inventory_id": self.inventory_id,
             "inventory_name": self.inventory_name,
         }
+
+        # add legacy compatibility layer to not break implementations
+        inventory_content["chassi"] = inventory_content.get("chassis")
 
         output = {"inventory": inventory_content, "meta": meta_data}
 
