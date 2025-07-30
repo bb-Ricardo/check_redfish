@@ -989,7 +989,7 @@ def get_storage_generic(system):
 
         if storage_response.get("error"):
 
-            if system_is_booting() is True:
+            if system_is_booting() is True or "ResourceNotReady" in f'{storage_response.get("error")}':
                 summary_status = f"Storage components are not ready (system starting up)"
 
                 plugin_object.add_output_data("OK", summary_status,
@@ -1018,6 +1018,15 @@ def get_storage_generic(system):
                 controller_response = plugin_object.rf.get(storage_member.get("@odata.id"))
 
                 if controller_response.get("error"):
+
+                    if system_is_booting() is True or "ResourceNotReady" in f'{controller_response.get("error")}':
+                        summary_status = f"Storage components are not ready (system starting up)"
+
+                        plugin_object.add_output_data("OK", summary_status,
+                                                      summary=True, location=f"System {system_id}")
+
+                        continue
+
                     plugin_object.add_data_retrieval_error(StorageController, controller_response,
                                                            storage_member.get("@odata.id"))
                     continue

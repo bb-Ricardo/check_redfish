@@ -429,6 +429,7 @@ Models:
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
 * ProLiant DL325 Gen10
+* ProLiant DL325 Gen11
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10
