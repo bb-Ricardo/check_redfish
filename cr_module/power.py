@@ -287,7 +287,8 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
             power_capacity_watts=power_capacity_watts,
             power_available_watts=power_available_watts,
             power_consumed_watts=reading,
-            power_requested_watts=power_requested_watts
+            power_requested_watts=power_requested_watts,
+            chassi_ids=chassi_id
         )
 
         if plugin_object.cli_args.verbose:
