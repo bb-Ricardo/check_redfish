@@ -17,7 +17,7 @@ from socket import gethostname
 
 
 # inventory definition
-inventory_layout_version_string = "1.10.0"
+inventory_layout_version_string = "1.12.0"
 
 
 # noinspection PyBroadException
