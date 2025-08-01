@@ -43,7 +43,7 @@ def get_chassi_data(data_type):
 
         chassi_id = chassi_url.rstrip("/").split("/")[-1]
 
-        chassi_data = plugin_object.rf.get_view(chassi_url)
+        chassi_data = plugin_object.rf.get(chassi_url)
         discovered_url = grab(chassi_data, f"{data_point}/@odata.id", separator="/")
         fallback_url = f"{chassi_url}/{data_point}"
 
