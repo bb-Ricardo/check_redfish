@@ -17,12 +17,12 @@ using [netbox-sync](https://github.com/bb-Ricardo/netbox-sync).
 ### RedHat based OS
 * on RedHat/CentOS you need to install python3.6 and pip from EPEL first
 * on RedHat/CentOS 8 systems the package name changed to `python3-pip`
-```
+```bash
 yum install python36-pip
 ```
 
 * download and install plugin
-```
+```bash
 cd /usr/lib64/nagios/plugins/
 git clone https://github.com/bb-Ricardo/check_redfish.git
 cd check_redfish
@@ -31,13 +31,13 @@ pip3 install -r requirements.txt || pip install -r requirements.txt
 
 ### Install on any OS with python3.6+ pip
 Install with pip from git
-```
+```bash
 pip install git+https://github.com/bb-Ricardo/check_redfish
 
 ```
 
 Install with pip from git into virtual environment
-```
+```bash
 python3 -m venv /opt/check_redfish
 /opt/check_redfish/bin/pip install git+https://github.com/bb-Ricardo/check_redfish
 mkdir -p /usr/lib64/nagios/plugins/check_redfish/
@@ -70,7 +70,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.12.0 (2025-07-30)
+Version: 1.12.1 (2025-08-07)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -182,7 +182,7 @@ password=readonlysecret
 these two environment vars will be checked
 * CHECK_REDFISH_USERNAME
 * CHECK_REDFISH_PASSWORD
-```
+```bash
 export CHECK_REDFISH_USERNAME=icinga
 export CHECK_REDFISH_PASSWORD=readonlysecret
 ```
@@ -325,7 +325,7 @@ suggestions for changes/improvements then please create a GitHub issue.
 
 
 ### Example of power supply inventory (```--power --inventory```)
-```
+```json
 {
     "inventory": {
         "chassi": [],
