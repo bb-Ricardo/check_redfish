@@ -13,7 +13,7 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
-def get_single_chassi_power(redfish_url, chassi_id, power_data):
+def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
 
     plugin_object = PluginData()
 
@@ -25,8 +25,6 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
         plugin_object.add_data_retrieval_error(PowerSupply, power_data, redfish_url)
         return
 
-    power_supplies = power_data.get("PowerSupplies", list())
-
     system_power_state = get_system_power_state().upper()
 
     fujitsu_power_data = None
@@ -36,8 +34,31 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
     issue_detected = False
     ps_num = 0
     ps_absent = 0
-    if len(power_supplies) > 0:
-        for ps in power_supplies:
+
+    if "PowerSupplies" in power_data:
+
+        power_supply_data = list()
+        if (isinstance(power_data.get("PowerSupplies"), dict) and
+                grab(power_data, "PowerSupplies/@odata.id", separator="/") is not None):
+            chassi_ps_response = plugin_object.rf.get(grab(power_data, "PowerSupplies/@odata.id", separator="/"))
+
+            for ps_member in chassi_ps_response.get("Members") or list():
+
+                if ps_member.get("@odata.context") or "Name" in list(ps_member.keys()):
+                    power_supply_data.append(ps_member)
+                else:
+                    ps_response = plugin_object.rf.get(ps_member.get("@odata.id"))
+
+                    if ps_response.get("error"):
+                        plugin_object.add_data_retrieval_error(PowerSupply, ps_response, ps_member.get("@odata.id"))
+                        continue
+
+                    power_supply_data.append(ps_response)
+
+        elif isinstance(power_data.get("PowerSupplies"), list):
+            power_supply_data = power_data.get("PowerSupplies")
+
+        for ps in power_supply_data:
 
             ps_num += 1
 
@@ -84,6 +105,11 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
                             fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
                         break
+
+            # try to get power metrics if last_power_output is undefined
+            if last_power_output is None and grab(ps, "Metrics/@odata.id", separator="/") is not None:
+                ps_metrics_response = plugin_object.rf.get(grab(ps, "Metrics/@odata.id", separator="/"))
+                last_power_output = grab(ps_metrics_response, "OutputPowerWatts.Reading")
 
             ps_specs = plugin_object.rf.vendor_data.power_supply_specs.get(model)
             if ps_specs is not None:
@@ -165,14 +191,16 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data):
 
         default_text = "All power supplies (%d) are in good condition" % (ps_num - ps_absent)
 
-    else:
+    if ps_num == 0:
         default_text = "No power supplies detected"
         if plugin_object.cli_args.ignore_missing_ps is False or plugin_object.in_firmware_collection_mode() is False:
             issue_detected = True
             plugin_object.inventory.add_issue(PowerSupply, f"No power supply data returned for API URL '{redfish_url}'")
 
     # get PowerRedundancy status
-    power_redundancies = power_data.get("PowerRedundancy") or power_data.get("Redundancy")
+    power_redundancies = (power_data.get("PowerRedundancy") or
+                          power_data.get("Redundancy") or
+                          power_data.get("PowerSupplyRedundancy"))
 
     if power_redundancies:
         pr_status_summary_text = ""

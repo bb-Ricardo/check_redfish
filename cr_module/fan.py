@@ -13,7 +13,7 @@ from cr_module.classes.inventory import Fan
 from cr_module.classes.plugin import PluginData
 
 
-def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
+def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
 
     plugin_object = PluginData()
 
@@ -29,7 +29,28 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
 
     fan_num = 0
     if "Fans" in thermal_data:
-        for fan in thermal_data.get("Fans") or list():
+        fan_data = list()
+        if (isinstance(thermal_data.get("Fans"), dict) and
+                grab(thermal_data, "Fans/@odata.id", separator="/") is not None):
+            chassi_fan_response =  plugin_object.rf.get(grab(thermal_data, "Fans/@odata.id", separator="/"))
+
+            for fan_member in chassi_fan_response.get("Members") or list():
+
+                if fan_member.get("@odata.context") or "Name" in list(fan_member.keys()):
+                    fan_data.append(fan_member)
+                else:
+                    fan_response = plugin_object.rf.get(fan_member.get("@odata.id"))
+
+                    if fan_response.get("error"):
+                        plugin_object.add_data_retrieval_error(Fan, fan_response, fan_member.get("@odata.id"))
+                        continue
+
+                    fan_data.append(fan_response)
+
+        elif isinstance(thermal_data.get("Fans"), list):
+            fan_data = thermal_data.get("Fans")
+
+        for fan in fan_data:
 
             status_data = get_status_data(grab(fan, "Status"))
 
@@ -84,24 +105,33 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data):
             fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("Links"))
             fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("RelatedItem"))
 
-            perf_units = ""
-            text_speed = ""
-
             # DELL, Fujitsu, Huawei
             if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
                 fan_inventory.reading = fan.get("ReadingRPM") or fan.get("Reading")
                 fan_inventory.reading_unit = "RPM"
-
-                text_units = " RPM"
 
             # HP, Lenovo
             else:
                 fan_inventory.reading = fan.get("Reading")
                 fan_inventory.reading_unit = fan.get("ReadingUnits")
 
-                if fan_inventory.reading_unit == "Percent":
-                    text_units = "%"
-                    perf_units = "%"
+            # try to get data from sensors data
+            if fan_inventory.reading is None:
+                fan_odata_id = fan.get("@odata.id")
+                if fan_odata_id is not None:
+                    for sensor in sensors_data:
+                        if grab(sensor, "RelatedItem/0/@odata.id", separator="/") == fan_odata_id:
+                            fan_inventory.reading = sensor.get("Reading")
+                            fan_inventory.reading_unit = sensor.get("ReadingUnits")
+
+            perf_units = ""
+            text_speed = ""
+
+            if fan_inventory.reading_unit == "RPM":
+                text_units = " RPM"
+            elif fan_inventory.reading_unit == "Percent":
+                text_units = "%"
+                perf_units = "%"
 
             if fan_inventory.reading is not None:
                 text_speed = f" ({fan_inventory.reading}{text_units})"

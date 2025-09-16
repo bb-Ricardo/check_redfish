@@ -45,6 +45,27 @@ def get_chassi_data(data_type):
 
         chassi_data = plugin_object.rf.get(chassi_url)
         discovered_url = grab(chassi_data, f"{data_point}/@odata.id", separator="/")
+
+        # add compatibility layer for HPE Compute Scale-up Server 3200
+        query_sensors = False
+        if discovered_url is None:
+            discovered_url = grab(chassi_data, f"{data_point}Subsystem/@odata.id", separator="/")
+            query_sensors = True
+
+        sensors_url = grab(chassi_data, f"Sensors/@odata.id", separator="/")
+        sensors_data = list()
+
+        if sensors_url is not None and query_sensors and data_type in [Fan]:
+            sensors_url_data = plugin_object.rf.get_view(sensors_url)
+            for sensor in sensors_url_data.get("Members", list()):
+
+                if sensor.get("@odata.context") or "Name" in list(sensor.keys()):
+                    sensors_data.append(sensor)
+                else:
+                    sensor_response = plugin_object.rf.get(sensor.get("@odata.id"))
+                    if sensor_response.get("error") is None:
+                        sensors_data.append(sensor_response)
+
         fallback_url = f"{chassi_url}/{data_point}"
 
         chassi_power_thermal_data = None
@@ -56,17 +77,6 @@ def get_chassi_data(data_type):
 
             if discovered_url_data.get("error") is None and str(discovered_url_data) != "{'Members': []}":
                 chassi_power_thermal_data = discovered_url_data
-
-        # try to query fallback url
-        """
-        # remove fallback and trying to guess the path. If chassi does not report any Power or Thermal
-        # then there is none: https://github.com/bb-Ricardo/check_redfish/issues/156
-        if chassi_power_thermal_data is None:
-            fallback_url_data = plugin_object.rf.get_view(fallback_url)
-
-            if fallback_url_data.get("error") is None and str(fallback_url_data) != "{'Members': []}":
-                chassi_power_thermal_data = fallback_url_data
-        """
 
         # fallback also failed
         if chassi_power_thermal_data is None:
@@ -89,11 +99,11 @@ def get_chassi_data(data_type):
             # there seems to be an error retrieving data
             if discovered_url is not None and discovered_url_data is not None:
                 # hand over to handle returned data
-                handler.get(data_type)(discovered_url, chassi_id, discovered_url_data)
+                handler.get(data_type)(discovered_url, chassi_id, discovered_url_data, sensors_data)
 
         else:
             data_url = discovered_url if discovered_url is not None else fallback_url
-            handler.get(data_type)(data_url, chassi_id, chassi_power_thermal_data)
+            handler.get(data_type)(data_url, chassi_id, chassi_power_thermal_data, sensors_data)
 
     return
 
@@ -177,10 +187,15 @@ def get_single_system_info(redfish_url):
 
     status_data = get_status_data(system_response.get("Status"))
 
+    manufacturer = system_response.get("Manufacturer")
+    if manufacturer is None:
+        manufacturer = plugin_object.rf.vendor
+
+
     system_inventory = System(
         id=system_response.get("Id"),
         name=system_response.get("Name"),
-        manufacturer=system_response.get("Manufacturer"),
+        manufacturer=manufacturer,
         serial=system_response.get("SerialNumber"),
         health_status=status_data.get("Health"),
         operation_status=status_data.get("State"),
@@ -309,8 +324,8 @@ def get_single_system_info(redfish_url):
     # add ILO data
     if plugin_object.rf.vendor == "HPE":
         plugin_object.add_output_data("OK", "%s - FW: %s" %
-                                      (plugin_object.rf.vendor_data.ilo_version,
-                                       plugin_object.rf.vendor_data.ilo_firmware_version),
+                                      (plugin_object.rf.vendor_data.get_bmc_model(),
+                                       plugin_object.rf.vendor_data.bmc_firmware_version),
                                       location=f"System {system_id}")
 
         power_regulator_mode = grab(system_response, f"Oem.{plugin_object.rf.vendor_dict_key}.PowerRegulatorMode")

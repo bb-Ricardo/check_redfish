@@ -569,7 +569,7 @@ def get_system_nics(redfish_url):
             if plugin_object.rf.vendor == "HPE" and len(network_ports) > 0:
 
                 # network_ports contains the links to the data in chassi, we need to grep the system ethernet data
-                if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6":
+                if plugin_object.rf.vendor_data.bmc_version == "6":
 
                     for network_port in get_ethernet_interfaces_data(ethernet_interfaces_path):
 

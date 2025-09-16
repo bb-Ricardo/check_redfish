@@ -126,7 +126,7 @@ def get_storage_hpe(system):
     if plugin_object.rf.vendor != "HPE":
         return
 
-    if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6":
+    if plugin_object.rf.vendor_data.bmc_version == "6":
         return
 
     def get_disks(link, disk_type="DiskDrives"):
@@ -1423,7 +1423,7 @@ def get_storage_generic(system):
                 get_drive(drive_path)
 
     # check controller batteries/Capacitors on iLO4 systems
-    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 4":
+    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version == "4":
         for system in plugin_object.rf.get_system_properties("systems") or list():
 
             battery_status = grab(
@@ -1447,7 +1447,7 @@ def get_storage_generic(system):
                 global_battery_list.append(status_text)
 
     # check controller batteries/Capacitors on iLO5 systems
-    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() in ["ilo 5", "ilo 6"]:
+    if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version != "4":
         for chassi in plugin_object.rf.get_system_properties("chassis") or list():
 
             battery_status = grab(
@@ -1496,7 +1496,7 @@ def get_storage_generic(system):
 
         # iLO 6
         if (plugin_object.rf.vendor == "HPE" and
-                plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6" and
+                plugin_object.rf.vendor_data.bmc_version == "6" and
                 (system_power_state == "OFF" or system_is_booting())):
 
             if system_is_booting():

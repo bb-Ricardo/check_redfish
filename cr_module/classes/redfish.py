@@ -567,11 +567,15 @@ class RedfishConnection:
     def determine_vendor(self):
 
         vendor_string = ""
+        manager_zero_data = None
+        bmc_model = None
 
         if self.connection.root.get("Oem"):
 
             if len(self.connection.root.get("Oem")) > 0:
-                vendor_string = list(self.connection.root.get("Oem"))[0]
+                possible_vendor_string = list(self.connection.root.get("Oem"))[0]
+                if isinstance(self.connection.root.get("Oem").get(possible_vendor_string), dict):
+                    vendor_string = possible_vendor_string
 
             self.vendor_dict_key = vendor_string
 
@@ -588,6 +592,12 @@ class RedfishConnection:
                 vendor_string = grab(self.get(chassis[0]), "Manufacturer")
                 self.vendor_dict_key = vendor_string
 
+        managers = self.get_system_properties("managers")
+        if len(managers) > 0:
+            manager_zero_data = self.get(managers[0])
+
+            bmc_model = manager_zero_data.get("Model")
+
         if vendor_string in ["Hpe", "Hp"]:
 
             self.vendor_data = VendorHPEData()
@@ -595,21 +605,24 @@ class RedfishConnection:
             manager_data = grab(self.connection.root, f"Oem.{vendor_string}.Manager.0")
 
             if manager_data is not None:
-                self.vendor_data.ilo_version = manager_data.get("ManagerType")
-                if self.vendor_data.ilo_version is None:
-                    # Fix for iLO 5 version >2.3.0
-                    self.vendor_data.ilo_version = \
-                        grab(self.connection.root, f"Oem.{vendor_string}.Moniker.PRODGEN")
 
-                self.vendor_data.ilo_firmware_version = manager_data.get("ManagerFirmwareVersion")
-                if self.vendor_data.ilo_firmware_version is None:
-                    # Fix for iLO 5 version >2.3.0
-                    self.vendor_data.ilo_firmware_version = grab(manager_data, "Languages.0.Version")
+                bmc_version = (
+                    manager_data.get("ManagerType") or
+                    grab(self.connection.root, f"Oem.{vendor_string}.Moniker.PRODGEN")) # Fix for iLO 5 version >2.3.0
 
-                if self.vendor_data.ilo_version is None:
+                self.vendor_data.set_bmc_name((bmc_version or "").split(" ")[0])
+
+                if len((bmc_version or "").split(" ")) > 1:
+                    self.vendor_data.set_bmc_version(bmc_version.split(" ")[1])
+
+                self.vendor_data.set_bmc_firmware_version(
+                        manager_data.get("ManagerFirmwareVersion") or
+                        grab(manager_data, "Languages.0.Version")) # Fix for iLO 5 version >2.3.0
+
+                if bmc_version is None:
                     self.exit_on_error("Cannot determine HPE iLO version information.")
 
-                if (self.vendor_data.ilo_version.lower() == "ilo 5" and
+                if (self.vendor_data.bmc_version.lower() == "5" and
                         len(self.get_system_properties("chassis") or []) == 1 and
                         len(self.get_system_properties("systems") or []) == 1):
                     self.vendor_data.view_supported = True
@@ -617,18 +630,28 @@ class RedfishConnection:
         if vendor_string in ["Lenovo"]:
 
             self.vendor_data = VendorLenovoData()
+            self.vendor_data.set_bmc_name(bmc_model)
 
         if vendor_string in ["Dell"]:
 
             self.vendor_data = VendorDellData()
+            self.vendor_data.set_bmc_name("iDRAC")
+            if bmc_model == "13G Monolithic":
+                self.vendor_data.set_bmc_version("8")
+            if bmc_model in ["14G Monolithic", "15G Monolithic"]:
+                self.vendor_data.set_bmc_version("9")
 
         if vendor_string in ["Huawei"]:
 
             self.vendor_data = VendorHuaweiData()
+            self.vendor_data.set_bmc_name(bmc_model)
 
         if vendor_string in ["ts_fujitsu"]:
 
             self.vendor_data = VendorFujitsuData()
+            self.vendor_data.set_bmc_name((bmc_model or "").split(" ")[0])
+            if len((bmc_model or "").split(" ")) > 1:
+                self.vendor_data.set_bmc_version(bmc_model.split(" ")[1])
 
         if vendor_string in ["Ami"]:
 
@@ -642,7 +665,14 @@ class RedfishConnection:
         if "CIMC" in str(self.get_system_properties("managers")):
 
             self.vendor_data = VendorCiscoData()
+            self.vendor_data.set_bmc_name("CIMC")
             self.vendor_dict_key = self.vendor_data.name
+
+        # Eviden / BULL do not follow spec in root object
+        if grab(self.connection.root, f"Oem.Manufacturer") == "BULL":
+
+            self.vendor_data = VendorBullData()
+            self.vendor_dict_key = grab(self.connection.root, f"Oem.redfishOEMId")
 
         if self.vendor_data is None:
 
@@ -652,6 +682,12 @@ class RedfishConnection:
                 self.vendor_data.name = vendor_string
 
         self.vendor = self.vendor_data.name
+
+        if manager_zero_data is not None:
+            if self.vendor_data.bmc_name is None:
+                self.vendor_data.set_bmc_name(bmc_model)
+            if self.vendor_data.bmc_firmware_version is None:
+                self.vendor_data.set_bmc_firmware_version(manager_zero_data.get("FirmwareVersion"))
 
         return
 

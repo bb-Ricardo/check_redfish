@@ -13,7 +13,7 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
-def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
+def get_single_chassi_temp(redfish_url, chassi_id, thermal_data, _):
 
     plugin_object = PluginData()
 
@@ -132,6 +132,45 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
 
         if len(thermal_data.get("Temperatures")) > 0:
             default_text = f"All temp sensors ({temp_num}) are in good condition"
+        else:
+            default_text = f"Chassi has no temp sensors installed/reported"
+
+    elif grab(thermal_data, "ThermalMetrics/@odata.id", separator="/") is not None:
+
+        thermal_metrics = plugin_object.rf.get(grab(thermal_data, "ThermalMetrics/@odata.id", separator="/"))
+
+        for thermal_metric in thermal_metrics.get("TemperatureReadingsCelsius") or list():
+
+            name = thermal_metric.get("DeviceName")
+            member_id = name
+
+            # prefix with chassi id if system has more then one
+            if num_chassis > 1:
+                member_id = f"{chassi_id}.{member_id}"
+
+            temp_inventory = Temperature(
+                name=name,
+                id=member_id,
+                physical_context=thermal_metric.get("PhysicalContext"),
+                reading_unit="Celsius",
+                reading=thermal_metric.get("Reading"),
+                chassi_ids=chassi_id
+            )
+
+            if plugin_object.cli_args.verbose:
+                temp_inventory.source_data = thermal_metric
+
+            plugin_object.inventory.add(temp_inventory)
+
+            status_text = f"Temp sensor '{temp_inventory.name}' reading: {temp_inventory.reading} °C"
+
+            plugin_object.add_output_data("OK", status_text, location=f"Chassi {chassi_id}")
+
+            plugin_object.add_perf_data(f"temp_{temp_inventory.id}", temp_inventory.reading,
+                                        location=f"Chassi {chassi_id}")
+
+        if len(thermal_metrics.get("TemperatureReadingsCelsius", [])) > 0:
+            default_text = f"Reported {len(thermal_metrics.get('TemperatureReadingsCelsius'))} temperature metrics"
         else:
             default_text = f"Chassi has no temp sensors installed/reported"
     else:

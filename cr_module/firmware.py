@@ -23,7 +23,7 @@ def get_firmware_info():
     plugin_object.set_current_command("Firmware Info")
 
     # call dedicated firmware functions for HPE iLO4 and Fujitsu
-    if (plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 4") \
+    if (plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version == "4") \
             or plugin_object.rf.vendor == "Fujitsu":
 
         system_ids = plugin_object.rf.get_system_properties("systems")
