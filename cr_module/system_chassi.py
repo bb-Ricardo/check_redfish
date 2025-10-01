@@ -177,6 +177,9 @@ def get_single_system_info(redfish_url):
         if huawei_model is not None:
             model = huawei_model
 
+    if model is None:
+        model = plugin_object.rf.connection.root.get("Product")
+
     # get memory size
     mem_size = grab(system_response, "MemorySummary.TotalSystemMemoryGiB")
 
