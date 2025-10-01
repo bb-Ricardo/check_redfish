@@ -393,6 +393,9 @@ def get_system_nics(redfish_url):
 
     system_id = redfish_url.rstrip("/").split("/")[-1]
 
+    ethernet_interfaces_path = None
+    network_adapter_path = None
+
     if plugin_object.rf.vendor == "HPE" and not system_is_booting():
         system_response = plugin_object.rf.get(redfish_url)
 
@@ -429,9 +432,11 @@ def get_system_nics(redfish_url):
                                 chassi_network_adapter_ports.append(
                                     get_network_port(port, return_data=True, add_to_inventory=False))
 
-    else:
-        # assume default urls
+    # assume default urls
+    if ethernet_interfaces_path is None:
         ethernet_interfaces_path = f"{redfish_url}/EthernetInterfaces"
+
+    if network_adapter_path is None:
         network_adapter_path = f"{redfish_url}/NetworkInterfaces"
 
     network_adapter_response = \
