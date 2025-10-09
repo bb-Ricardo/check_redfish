@@ -460,6 +460,9 @@ Models:
 * ProLiant RL300 Gen11
 * ProLiant XL450 Gen10
 
+* Compute Scale-up Server 3200
+* Superdome Flex
+
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
 * ThinkSystem SR650 V2 (BMC Version 12I-1.15)
@@ -509,6 +512,9 @@ Models:
 
 ### GIGABYTE (limited support)
 * H262-Z61
+
+### Bull
+* BullSequana SH120
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
