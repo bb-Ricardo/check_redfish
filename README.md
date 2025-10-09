@@ -57,6 +57,7 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [-d] [-m MAX] [-r RETRIES] [-t TIMEOUT]
                         [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps]
                         [--ignore_unavailable_resources]
+                        [--ignore_unknown_on_critical_or_warning]
                         [--enable_bmc_security_warning] [--storage] [--proc]
                         [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
                         [--info] [--firmware] [--sel] [--mel] [--all] [-i]
@@ -116,6 +117,9 @@ optional arguments:
   --ignore_unavailable_resources
                         ignore all 'UNKNOWN' errors which indicate missing
                         resources and report as OK
+  --ignore_unknown_on_critical_or_warning
+                        suppress all 'UNKNOWN' errors if other checks returned
+                        CRITICAL or WARNING
   --enable_bmc_security_warning
                         return status WARNING if BMC security issues are
                         detected (HPE iLO only)

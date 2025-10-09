@@ -110,7 +110,7 @@ class PluginData:
 
     __perf_data = list()
     __output_data = PluginOutputData()
-    __return_status = "OK"
+    __return_status_set = {"OK"}
     __current_command = "global"
     __in_firmware_collection_mode = False
 
@@ -195,15 +195,14 @@ class PluginData:
         if self.__in_firmware_collection_mode is True:
             return
 
-        if self.__return_status == state:
+        if state in self.__return_status_set:
             return
 
         if state not in list(plugin_status_types.keys()):
             raise Exception(f"Status '{state}' is invalid, needs to be one of these: %s" %
                             list(plugin_status_types.keys()))
 
-        if plugin_status_types[state] > plugin_status_types[self.__return_status]:
-            self.__return_status = state
+        self.__return_status_set.add(state)
 
     @staticmethod
     def return_highest_status(status_list):
@@ -258,10 +257,10 @@ class PluginData:
             warning = ""
 
         if warning is not None:
-            perf_string += ";%s" % str(warning)
+            perf_string += f";{warning}"
 
         if critical is not None:
-            perf_string += ";%s" % str(critical)
+            perf_string += f";{critical}"
 
         self.__perf_data.append(perf_string)
 
@@ -363,7 +362,7 @@ class PluginData:
                     PluginOutputDataEntry(state=log_most_recent.state, is_summary=True, text=log_text)
                 )
 
-        if self.__return_status != "OK":
+        if len(self.__return_status_set) > 1:
 
             for status_type_name, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
 
@@ -402,12 +401,22 @@ class PluginData:
 
         return return_string
 
-    def get_return_status(self, level=False):
+    def get_return_status(self, numeric=False):
 
-        if level is True:
-            return plugin_status_types[self.__return_status]
+        return_status = "OK"
+        for status, _ in sorted(plugin_status_types.items(), key=lambda item: item[1], reverse=True):
+            if status in self.__return_status_set:
+                return_status = status
+                break
 
-        return self.__return_status
+        # reset weight of UNKNOWN
+        if self.cli_args.ignore_unknown_on_critical_or_warning:
+            plugin_status_types["UNKNOWN"] = 3
+
+        if numeric is True:
+            return plugin_status_types[return_status]
+
+        return return_status
 
     def do_exit(self):
 
@@ -417,27 +426,31 @@ class PluginData:
         # return inventory and exit with 0
         if self.cli_args.inventory is True:
             inventory_json = self.inventory.to_json()
-            if self.inventory_file is not None:
 
-                try:
-                    with open(self.inventory_file, 'w') as writer:
-                        writer.write(inventory_json)
-                except Exception as e:
-                    self.set_status("UNKNOWN")
-                    return_text = f"[UNKNOWN]: Unable to write to inventory file: {e}"
-                    return_state = self.get_return_status(True)
-                else:
-                    return_state = 0
-                    return_text = "[OK]: Successfully written inventory file"
-
-                    if self.get_return_status() == "UNKNOWN":
-                        return_text += " but inventory data might be incomplete"
-
-                print(return_text)
-                exit(return_state)
-            else:
+            if self.inventory_file is None:
                 print(inventory_json)
-                exit(0)
+                exit(plugin_status_types["OK"])
+
+            try:
+                with open(self.inventory_file, 'w') as writer:
+                    writer.write(inventory_json)
+            except Exception as e:
+                self.set_status("UNKNOWN")
+                return_text = f"[UNKNOWN]: Unable to write to inventory file: {e}"
+                return_state = self.get_return_status(True)
+            else:
+                return_state = plugin_status_types["OK"]
+                return_text = "[OK]: Successfully written inventory file"
+
+                if self.get_return_status() == "UNKNOWN":
+                    return_text += " but inventory data might be incomplete"
+
+            print(return_text)
+            exit(return_state)
+
+        # temporarily change weight of UNKNOWN
+        if self.cli_args.ignore_unknown_on_critical_or_warning:
+            plugin_status_types["UNKNOWN"] = 0.5
 
         print(self.return_output_data())
 
