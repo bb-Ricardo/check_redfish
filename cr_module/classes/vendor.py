@@ -65,7 +65,7 @@ class VendorHPEData(VendorGeneric):
         Select and store view (supported from ILO 5)
 
         ATTENTION: This will only work as long as we are querying servers
-        with "1" System, "1" Chassi and "1" Manager
+        with "1" System, "1" Chassis and "1" Manager
 
         OK for now but will be changed once we have to query blade centers
     """

@@ -228,11 +228,11 @@ def get_single_system_procs(redfish_url):
 
     # add Dell CPU usage
     if plugin_object.rf.vendor == "Dell":
-        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+        for chassis in plugin_object.rf.get_system_properties("chassis") or list():
 
-            cpu_usage_url = chassi.rstrip("/") + "/Sensors/SystemBoardCPUUsage"
+            cpu_usage_url = chassis.rstrip("/") + "/Sensors/SystemBoardCPUUsage"
 
-            chassi_id = chassi.rstrip("/").split("/")[-1]
+            chassis_id = chassis.rstrip("/").split("/")[-1]
 
             cpu_usage_response = plugin_object.rf.get(cpu_usage_url)
 
@@ -250,7 +250,7 @@ def get_single_system_procs(redfish_url):
 
                         plugin_object.add_perf_data(f"cpu_usage", cpu_usage_int,
                                                     perf_uom="%" if cpu_usage_units == "%" else None,
-                                                    location=f"Chassi {chassi_id}")
+                                                    location=f"Chassis {chassis_id}")
 
                     except Exception:
                         pass

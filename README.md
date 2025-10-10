@@ -332,7 +332,7 @@ suggestions for changes/improvements then please create a GitHub issue.
 ```json
 {
     "inventory": {
-        "chassi": [],
+        "chassis": [],
         "fan": [],
         "firmware": [],
         "logical_drive": [],
@@ -343,7 +343,7 @@ suggestions for changes/improvements then please create a GitHub issue.
         "physical_drive": [],
         "power_control": [
             {
-                "chassi_ids": [
+                "chassis_ids": [
                     "1"
                 ],
                 "health_state": null,
@@ -361,7 +361,7 @@ suggestions for changes/improvements then please create a GitHub issue.
             {
                 "bay": 1,
                 "capacity_in_watt": 500,
-                "chassi_ids": [
+                "chassis_ids": [
                     1
                 ],
                 "efficiency_percent": null,
@@ -381,7 +381,7 @@ suggestions for changes/improvements then please create a GitHub issue.
             {
                 "bay": 2,
                 "capacity_in_watt": 500,
-                "chassi_ids": [
+                "chassis_ids": [
                     1
                 ],
                 "firmware": "1.03",

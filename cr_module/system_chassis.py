@@ -8,17 +8,17 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 from cr_module.classes import plugin_status_types
-from cr_module.classes.inventory import System, Chassi, Fan, PowerSupply, Temperature, Memory, Processor
+from cr_module.classes.inventory import System, Chassis, Fan, PowerSupply, Temperature, Memory, Processor
 from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
-from cr_module.power import get_single_chassi_power
-from cr_module.temp import get_single_chassi_temp
-from cr_module.fan import get_single_chassi_fan
+from cr_module.power import get_single_chassis_power
+from cr_module.temp import get_single_chassis_temp
+from cr_module.fan import get_single_chassis_fan
 from cr_module.proc import get_single_system_procs
 from cr_module.mem import get_single_system_mem
 
 
-def get_chassi_data(data_type):
+def get_chassis_data(data_type):
 
     plugin_object = PluginData()
 
@@ -29,30 +29,30 @@ def get_chassi_data(data_type):
         return
 
     handler = {
-        PowerSupply: get_single_chassi_power,
-        Temperature: get_single_chassi_temp,
-        Fan: get_single_chassi_fan
+        PowerSupply: get_single_chassis_power,
+        Temperature: get_single_chassis_temp,
+        Fan: get_single_chassis_fan
     }
 
     if data_type not in handler.keys():
-        raise AttributeError(f"Unknown data_type used for get_chassi_data(): {type(data_type)}")
+        raise AttributeError(f"Unknown data_type used for get_chassis_data(): {type(data_type)}")
 
     data_point = "Power" if data_type == PowerSupply else "Thermal"
 
-    for chassi_url in chassis:
+    for chassis_url in chassis:
 
-        chassi_id = chassi_url.rstrip("/").split("/")[-1]
+        chassis_id = chassis_url.rstrip("/").split("/")[-1]
 
-        chassi_data = plugin_object.rf.get(chassi_url)
-        discovered_url = grab(chassi_data, f"{data_point}/@odata.id", separator="/")
+        chassis_data = plugin_object.rf.get(chassis_url)
+        discovered_url = grab(chassis_data, f"{data_point}/@odata.id", separator="/")
 
         # add compatibility layer for HPE Compute Scale-up Server 3200
         query_sensors = False
         if discovered_url is None:
-            discovered_url = grab(chassi_data, f"{data_point}Subsystem/@odata.id", separator="/")
+            discovered_url = grab(chassis_data, f"{data_point}Subsystem/@odata.id", separator="/")
             query_sensors = True
 
-        sensors_url = grab(chassi_data, f"Sensors/@odata.id", separator="/")
+        sensors_url = grab(chassis_data, f"Sensors/@odata.id", separator="/")
         sensors_data = list()
 
         if sensors_url is not None and query_sensors and data_type in [Fan]:
@@ -66,9 +66,9 @@ def get_chassi_data(data_type):
                     if sensor_response.get("error") is None:
                         sensors_data.append(sensor_response)
 
-        fallback_url = f"{chassi_url}/{data_point}"
+        fallback_url = f"{chassis_url}/{data_point}"
 
-        chassi_power_thermal_data = None
+        chassis_power_thermal_data = None
         discovered_url_data = None
 
         # power/thermal data present
@@ -76,34 +76,34 @@ def get_chassi_data(data_type):
             discovered_url_data = plugin_object.rf.get_view(discovered_url)
 
             if discovered_url_data.get("error") is None and str(discovered_url_data) != "{'Members': []}":
-                chassi_power_thermal_data = discovered_url_data
+                chassis_power_thermal_data = discovered_url_data
 
         # fallback also failed
-        if chassi_power_thermal_data is None:
+        if chassis_power_thermal_data is None:
 
             # there is just no data endpoint
             if discovered_url is None:
                 if data_type == PowerSupply:
                     plugin_object.set_current_command("Power")
-                    default_text = f"Chassi {chassi_id} has no power supplies installed/reported"
+                    default_text = f"Chassis {chassis_id} has no power supplies installed/reported"
                 elif data_type == Temperature:
                     plugin_object.set_current_command("Temp")
-                    default_text = f"Chassi {chassi_id} has no temp sensors installed/reported"
+                    default_text = f"Chassis {chassis_id} has no temp sensors installed/reported"
                 else:
                     plugin_object.set_current_command("Fan")
-                    default_text = f"Chassi {chassi_id} has no fans installed/reported"
+                    default_text = f"Chassis {chassis_id} has no fans installed/reported"
 
-                plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+                plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassis {chassis_id}")
                 continue
 
             # there seems to be an error retrieving data
             if discovered_url is not None and discovered_url_data is not None:
                 # hand over to handle returned data
-                handler.get(data_type)(discovered_url, chassi_id, discovered_url_data, sensors_data)
+                handler.get(data_type)(discovered_url, chassis_id, discovered_url_data, sensors_data)
 
         else:
             data_url = discovered_url if discovered_url is not None else fallback_url
-            handler.get(data_type)(data_url, chassi_id, chassi_power_thermal_data, sensors_data)
+            handler.get(data_type)(data_url, chassis_id, chassis_power_thermal_data, sensors_data)
 
     return
 
@@ -144,11 +144,11 @@ def get_system_info():
     for system in systems:
         get_single_system_info(system)
 
-    # add chassi inventory here too
+    # add chassis inventory here too
     if plugin_object.cli_args.inventory is True:
 
-        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
-            get_single_chassi_info(chassi)
+        for chassis in plugin_object.rf.get_system_properties("chassis") or list():
+            get_single_chassis_info(chassis)
 
     return
 
@@ -360,47 +360,47 @@ def get_single_system_info(redfish_url):
     return
 
 
-def get_single_chassi_info(redfish_url):
+def get_single_chassis_info(redfish_url):
 
     plugin_object = PluginData()
 
-    chassi_response = plugin_object.rf.get(redfish_url)
+    chassis_response = plugin_object.rf.get(redfish_url)
 
-    if chassi_response is None:
-        plugin_object.inventory.add_issue(Chassi, f"No chassi information data returned for API URL '{redfish_url}'")
+    if chassis_response is None:
+        plugin_object.inventory.add_issue(Chassis, f"No chassis information data returned for API URL '{redfish_url}'")
         return
-    elif chassi_response.get("error"):
-        plugin_object.add_data_retrieval_error(Chassi, chassi_response, redfish_url)
+    elif chassis_response.get("error"):
+        plugin_object.add_data_retrieval_error(Chassis, chassis_response, redfish_url)
         return
 
     # get status data
-    status_data = get_status_data(chassi_response.get("Status"))
+    status_data = get_status_data(chassis_response.get("Status"))
 
-    chassi_inventory = Chassi(
-        id=chassi_response.get("Id"),
-        name=chassi_response.get("Name"),
-        manufacturer=chassi_response.get("Manufacturer"),
-        serial=chassi_response.get("SerialNumber"),
+    chassis_inventory = Chassis(
+        id=chassis_response.get("Id"),
+        name=chassis_response.get("Name"),
+        manufacturer=chassis_response.get("Manufacturer"),
+        serial=chassis_response.get("SerialNumber"),
         health_status=status_data.get("Health"),
         operation_status=status_data.get("State"),
-        sku=chassi_response.get("SKU"),
-        indicator_led=chassi_response.get("IndicatorLED"),
-        model=chassi_response.get("Model"),
-        type=chassi_response.get("ChassisType")
+        sku=chassis_response.get("SKU"),
+        indicator_led=chassis_response.get("IndicatorLED"),
+        model=chassis_response.get("Model"),
+        type=chassis_response.get("ChassisType")
     )
 
     # add Supermicro data
-    if grab(chassi_response, "Oem.Supermicro") is not None:
-        chassi_inventory.manufacturer = "Supermicro"
-        chassi_inventory.model = chassi_response.get("PartNumber")
+    if grab(chassis_response, "Oem.Supermicro") is not None:
+        chassis_inventory.manufacturer = "Supermicro"
+        chassis_inventory.model = chassis_response.get("PartNumber")
 
     if plugin_object.cli_args.verbose:
-        chassi_inventory.source_data = chassi_response
+        chassis_inventory.source_data = chassis_response
 
     # add relations
-    chassi_inventory.add_relation(plugin_object.rf.get_system_properties(), chassi_response.get("Links"))
+    chassis_inventory.add_relation(plugin_object.rf.get_system_properties(), chassis_response.get("Links"))
 
-    plugin_object.inventory.add(chassi_inventory)
+    plugin_object.inventory.add(chassis_inventory)
 
     return
 

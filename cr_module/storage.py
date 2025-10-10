@@ -1448,10 +1448,10 @@ def get_storage_generic(system):
 
     # check controller batteries/Capacitors on iLO5 systems
     if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version != "4":
-        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+        for chassis in plugin_object.rf.get_system_properties("chassis") or list():
 
             battery_status = grab(
-                plugin_object.rf.get(chassi), f"Oem.{plugin_object.rf.vendor_dict_key}.SmartStorageBattery"
+                plugin_object.rf.get(chassis), f"Oem.{plugin_object.rf.vendor_dict_key}.SmartStorageBattery"
             ) or list()
 
             for controller_battery in battery_status:
@@ -1468,13 +1468,13 @@ def get_storage_generic(system):
 
                 global_battery_list.append(status_text)
 
-    # check drives in chassi links
-    for chassi in plugin_object.rf.get_system_properties("chassis") or list():
-        for chassi_drive in grab(plugin_object.rf.get(chassi), f"Links.Drives") or list():
-            if isinstance(chassi_drive, dict):
-                drive_path = chassi_drive.get("@odata.id")
+    # check drives in chassis links
+    for chassis in plugin_object.rf.get_system_properties("chassis") or list():
+        for chassis_drive in grab(plugin_object.rf.get(chassis), f"Links.Drives") or list():
+            if isinstance(chassis_drive, dict):
+                drive_path = chassis_drive.get("@odata.id")
             else:
-                drive_path = chassi_drive
+                drive_path = chassis_drive
             if drive_path is not None and drive_path not in system_drives_list:
                 controller_inventory = StorageController(id=0)
                 get_drive(drive_path)

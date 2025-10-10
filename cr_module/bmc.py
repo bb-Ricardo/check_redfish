@@ -167,7 +167,7 @@ def get_bmc_info_generic(redfish_url):
                     addresses=format_interface_addresses(mac_address),
                     manager_ids=manager_inventory.id,
                     system_ids=manager_inventory.system_ids,
-                    chassi_ids=manager_inventory.chassi_ids,
+                    chassis_ids=manager_inventory.chassis_ids,
                     ipv4_addresses=get_interface_ip_addresses(manager_nic, "IPv4Addresses"),
                     ipv6_addresses=get_interface_ip_addresses(manager_nic, "IPv6Addresses"),
                     link_type="Ethernet",
@@ -399,16 +399,16 @@ def get_bmc_info_generic(redfish_url):
 
     # Lenovo specific stuff
     if plugin_object.rf.vendor == "Lenovo":
-        redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
+        redfish_chassis_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
 
-        chassi_response = None
-        if redfish_chassi_url is not None:
-            chassi_response = plugin_object.rf.get(redfish_chassi_url)
+        chassis_response = None
+        if redfish_chassis_url is not None:
+            chassis_response = plugin_object.rf.get(redfish_chassis_url)
 
-            if chassi_response.get("error"):
-                plugin_object.add_data_retrieval_error(Manager, chassi_response, redfish_chassi_url)
+            if chassis_response.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, chassis_response, redfish_chassis_url)
 
-        located_data = grab(chassi_response, f"Oem.{plugin_object.rf.vendor_dict_key}.LocatedIn")
+        located_data = grab(chassis_response, f"Oem.{plugin_object.rf.vendor_dict_key}.LocatedIn")
 
         if located_data is not None:
             descriptive_name = located_data.get("DescriptiveName")

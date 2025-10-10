@@ -13,7 +13,7 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
-def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
+def get_single_chassis_power(redfish_url, chassis_id, power_data, _):
 
     plugin_object = PluginData()
 
@@ -40,9 +40,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
         power_supply_data = list()
         if (isinstance(power_data.get("PowerSupplies"), dict) and
                 grab(power_data, "PowerSupplies/@odata.id", separator="/") is not None):
-            chassi_ps_response = plugin_object.rf.get(grab(power_data, "PowerSupplies/@odata.id", separator="/"))
+            chassis_ps_response = plugin_object.rf.get(grab(power_data, "PowerSupplies/@odata.id", separator="/"))
 
-            for ps_member in chassi_ps_response.get("Members") or list():
+            for ps_member in chassis_ps_response.get("Members") or list():
 
                 if ps_member.get("@odata.context") or "Name" in list(ps_member.keys()):
                     power_supply_data.append(ps_member)
@@ -121,9 +121,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                 efficiency_percent *= 100
 
             ps_id = grab(ps, "MemberId") or ps_num
-            # prefix with chassi id if system has more then one
+            # prefix with chassis id if system has more then one
             if num_chassis > 1:
-                ps_id = f"{chassi_id}.{ps_id}"
+                ps_id = f"{chassis_id}.{ps_id}"
 
             ps_inventory = PowerSupply(
                 id=ps_id,
@@ -141,7 +141,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                 vendor=ps.get("Manufacturer"),
                 input_voltage=ps.get("LineInputVoltage"),
                 part_number=ps.get("SparePartNumber") or ps.get("PartNumber"),
-                chassi_ids=chassi_id
+                chassis_ids=chassis_id
             )
 
             if plugin_object.cli_args.verbose:
@@ -181,13 +181,13 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                 issue_detected = True
 
             plugin_object.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health,
-                                          status_text, location=f"Chassi {chassi_id}")
+                                          status_text, location=f"Chassis {chassis_id}")
 
             if last_power_output is not None:
                 if num_chassis > 1:
-                    bay = f"{chassi_id}.{bay}"
+                    bay = f"{chassis_id}.{bay}"
 
-                plugin_object.add_perf_data(f"ps_{bay}", int(last_power_output), location=f"Chassi {chassi_id}")
+                plugin_object.add_perf_data(f"ps_{bay}", int(last_power_output), location=f"Chassis {chassis_id}")
 
         default_text = "All power supplies (%d) are in good condition" % (ps_num - ps_absent)
 
@@ -221,7 +221,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                     pr_status_summary_text += f" {status_text}"
 
                     plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                                  status_text, location=f"Chassi {chassi_id}")
+                                                  status_text, location=f"Chassis {chassis_id}")
 
         if len(pr_status_summary_text) != 0:
             default_text += f" and{pr_status_summary_text}"
@@ -243,16 +243,16 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                 status_text = f"Voltage {name} (status: {status}/{state}): {reading}V"
 
                 plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text, location=f"Chassi {chassi_id}")
+                                              status_text, location=f"Chassis {chassis_id}")
 
                 if reading is not None and name is not None:
                     # noinspection PyBroadException
                     try:
                         if num_chassis > 1:
-                            name = f"{chassi_id}.{name}"
+                            name = f"{chassis_id}.{name}"
 
                         plugin_object.add_perf_data(f"voltage_{name}", float(reading),
-                                                    location=f"Chassi {chassi_id}")
+                                                    location=f"Chassis {chassis_id}")
                     except Exception:
                         pass
 
@@ -302,9 +302,9 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
         else:
             pc_id = f"{pc_id}.{power_control_num}"
 
-        # prefix with chassi id if system has more then one
+        # prefix with chassis id if system has more then one
         if num_chassis > 1:
-            pc_id = f"{chassi_id}.{pc_id}"
+            pc_id = f"{chassis_id}.{pc_id}"
 
         pc_inventory = PowerControl(
             id=pc_id,
@@ -316,7 +316,7 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
             power_available_watts=power_available_watts,
             power_consumed_watts=reading,
             power_requested_watts=power_requested_watts,
-            chassi_ids=chassi_id
+            chassis_ids=chassis_id
         )
 
         if plugin_object.cli_args.verbose:
@@ -341,13 +341,13 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
             status = "OK"
 
         plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                      status_text, location=f"Chassi {chassi_id}")
+                                      status_text, location=f"Chassis {chassis_id}")
 
         if reading is not None and name is not None:
             # noinspection PyBroadException
             try:
                 plugin_object.add_perf_data(f"power_control_{name}", float(reading),
-                                            location=f"Chassi {chassi_id}")
+                                            location=f"Chassis {chassis_id}")
             except Exception:
                 pass
 
@@ -366,10 +366,10 @@ def get_single_chassi_power(redfish_url, chassi_id, power_data, _):
                 issue_detected = True
 
             plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                          status_text, location=f"Chassi {chassi_id}")
+                                          status_text, location=f"Chassis {chassis_id}")
 
     if issue_detected is False:
-        plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+        plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassis {chassis_id}")
 
     return
 

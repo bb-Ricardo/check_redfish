@@ -11,7 +11,7 @@ from cr_module.classes.inventory import (
     Firmware, PhysicalDrive, LogicalDrive, StorageController, StorageEnclosure, PowerSupply
 )
 from cr_module.classes.plugin import PluginData
-from cr_module.system_chassi import get_chassi_data
+from cr_module.system_chassis import get_chassis_data
 from cr_module.common import grab, get_status_data
 from cr_module.storage import get_storage
 
@@ -238,7 +238,7 @@ def get_firmware_info_fujitsu(system_id, bmc_only=False):
     # get power supply and storage firmware
     plugin_object.in_firmware_collection_mode(True)
     if any(x in plugin_object.cli_args.requested_query for x in ['power', 'all']) is False:
-        get_chassi_data(PowerSupply)
+        get_chassis_data(PowerSupply)
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
         get_storage()
     plugin_object.in_firmware_collection_mode(False)
@@ -482,7 +482,7 @@ def get_firmware_info_generic():
         if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
             get_storage()
         if any(x in plugin_object.cli_args.requested_query for x in ['power', 'all']) is False:
-            get_chassi_data(PowerSupply)
+            get_chassis_data(PowerSupply)
         plugin_object.in_firmware_collection_mode(False)
 
         # vendor specific conditions

@@ -722,7 +722,7 @@ class RedfishConnection:
 
                 # ToDo:
                 #  * This is a DELL workaround
-                #  * If RAID chassi is requested the iDRAC will restart
+                #  * If RAID chassis is requested the iDRAC will restart
                 if root_object == "Chassis" and ("RAID" in entity_url or "Enclosure" in entity_url):
                     continue
 

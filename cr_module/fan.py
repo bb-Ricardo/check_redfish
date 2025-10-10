@@ -13,7 +13,7 @@ from cr_module.classes.inventory import Fan
 from cr_module.classes.plugin import PluginData
 
 
-def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
+def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
 
     plugin_object = PluginData()
 
@@ -32,9 +32,9 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
         fan_data = list()
         if (isinstance(thermal_data.get("Fans"), dict) and
                 grab(thermal_data, "Fans/@odata.id", separator="/") is not None):
-            chassi_fan_response =  plugin_object.rf.get(grab(thermal_data, "Fans/@odata.id", separator="/"))
+            chassis_fan_response =  plugin_object.rf.get(grab(thermal_data, "Fans/@odata.id", separator="/"))
 
-            for fan_member in chassi_fan_response.get("Members") or list():
+            for fan_member in chassis_fan_response.get("Members") or list():
 
                 if fan_member.get("@odata.context") or "Name" in list(fan_member.keys()):
                     fan_data.append(fan_member)
@@ -64,9 +64,9 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
             if grab(fan, "SensorNumber") is not None:
                 member_id = f"{member_id}.{grab(fan, 'SensorNumber')}"
 
-            # prefix with chassi id if system has more then one
+            # prefix with chassis id if system has more then one
             if num_chassis > 1:
-                member_id = f"{chassi_id}.{member_id}"
+                member_id = f"{chassis_id}.{member_id}"
 
             physical_context = fan.get("PhysicalContext")
 
@@ -92,7 +92,7 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
                 upper_threshold_critical=fan.get("UpperThresholdCritical"),
                 upper_threshold_fatal=fan.get("UpperThresholdFatal"),
                 location=location,
-                chassi_ids=chassi_id
+                chassis_ids=chassis_id
             )
 
             if plugin_object.cli_args.verbose:
@@ -156,20 +156,20 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
             status_text = f"Fan '{fan_name}'{text_speed} status is: {fan_status}"
 
             plugin_object.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
-                                          status_text,  location=f"Chassi {chassi_id}")
+                                          status_text,  location=f"Chassis {chassis_id}")
 
             if fan_inventory.reading is not None:
                 if num_chassis > 1:
-                    fan_name = f"{chassi_id}.{fan_name}"
+                    fan_name = f"{chassis_id}.{fan_name}"
 
                 plugin_object.add_perf_data(f"Fan_{fan_name}", int(fan_inventory.reading),
                                             perf_uom=perf_units, warning=plugin_object.cli_args.warning,
-                                            critical=plugin_object.cli_args.critical, location=f"Chassi {chassi_id}")
+                                            critical=plugin_object.cli_args.critical, location=f"Chassis {chassis_id}")
 
         if len(thermal_data.get("Fans")) > 0:
             default_text = f"All fans ({fan_num}) are in good condition"
         else:
-            default_text = f"Chassi has no fans installed/reported"
+            default_text = f"Chassis has no fans installed/reported"
     else:
         default_text = "No fans detected"
         plugin_object.inventory.add_issue(Fan, f"No fan data returned for API URL '{redfish_url}'")
@@ -189,12 +189,12 @@ def get_single_chassi_fan(redfish_url, chassi_id, thermal_data, sensors_data):
                 status_text = "fan redundancy status is: %s" % fr_status.get("State")
 
                 plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text[0].upper() + status_text[1:], location=f"Chassi {chassi_id}")
+                                              status_text[0].upper() + status_text[1:], location=f"Chassis {chassis_id}")
 
         if len(status_text) != 0:
             default_text += f" and {status_text}"
 
-    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassis {chassis_id}")
 
     return
 
