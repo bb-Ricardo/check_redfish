@@ -71,7 +71,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.12.1 (2025-08-07)
+Version: 2.0.0 (2025-10-15)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -234,6 +234,11 @@ you can use warning and critical with following commands:
 WARNING and CRITICAL values can only be used properly if used with **ONE** query type.
 If for example **--all** or **--mel** and **--storage** are used in the same command then you will
 get inconsistent results/alarms.
+
+Sometimes it is helpful to prioritize CRITICAL and WARNING status over UNKNOWN status results.
+In this case it is possible to use the `--ignore_unknown_on_critical_or_warning` cli option
+which returns for example `CRITICAL` if the plugin encountered an `UNKNONW` and a `CRITICAL` issue.
+see: https://github.com/bb-Ricardo/check_redfish/issues/174
 
 #### Event Logs
 **--mel** and **--sel** (values are passed as "days")<br>
@@ -410,8 +415,8 @@ suggestions for changes/improvements then please create a GitHub issue.
         "host_that_collected_inventory": "inventory-collector.example.com",
         "inventory_id": null,
         "inventory_name": null,
-        "inventory_layout_version": "1.12.0",
-        "script_version": "1.12.0",
+        "inventory_layout_version": "2.0.0",
+        "script_version": "2.0.0",
         "start_of_data_collection": "2024-02-13T19:09:07+02:00"
     }
 }
