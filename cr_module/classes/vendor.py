@@ -16,6 +16,10 @@ class VendorGeneric:
     view_supported = False
     view_select = None
 
+    bmc_name = None
+    bmc_version = None
+    bmc_firmware_version = None
+
     # only "managers" and "systems" are valid values
     manager_event_log_location = None
     system_event_log_location = None
@@ -27,13 +31,27 @@ class VendorGeneric:
 
     power_supply_specs = dict()
 
+    def set_bmc_name(self, name):
+        self.bmc_name = name
+
+    def set_bmc_version(self, version):
+        self.bmc_version = version
+
+    def set_bmc_firmware_version(self, version):
+        self.bmc_firmware_version = version
+
+    def get_bmc_model(self):
+        if len(self.bmc_version or "") != 0:
+            return f"{self.bmc_name} {self.bmc_version}"
+
+        return f"{self.bmc_name}"
+
+    def get_bmc_firmware_version(self):
+        return f"{self.bmc_firmware_version}"
 
 class VendorHPEData(VendorGeneric):
 
     name = "HPE"
-
-    ilo_version = None
-    ilo_firmware_version = None
 
     expand_string = "?$expand=."
 
@@ -47,7 +65,7 @@ class VendorHPEData(VendorGeneric):
         Select and store view (supported from ILO 5)
 
         ATTENTION: This will only work as long as we are querying servers
-        with "1" System, "1" Chassi and "1" Manager
+        with "1" System, "1" Chassis and "1" Manager
 
         OK for now but will be changed once we have to query blade centers
     """
@@ -200,5 +218,9 @@ class VendorSupermicro(VendorGeneric):
         "PWS-407P-1R":  {"capacity_in_watt":  400, "efficiency_percent": None},
         # Add more as needed...
     }
+
+class VendorBullData(VendorGeneric):
+
+    name = "BULL"
 
 # EOF

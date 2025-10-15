@@ -61,6 +61,8 @@ def parse_command_line(description: str, version: str, version_date: str):
                             "of the power subsystem")
     group.add_argument("--ignore_unavailable_resources", action='store_true',
                        help="ignore all 'UNKNOWN' errors which indicate missing resources and report as OK")
+    group.add_argument("--ignore_unknown_on_critical_or_warning", action='store_true',
+                       help="suppress all 'UNKNOWN' errors if other checks returned CRITICAL or WARNING")
     group.add_argument("--enable_bmc_security_warning", action='store_true',
                        help="return status WARNING if BMC security issues are detected (HPE iLO only)")
 

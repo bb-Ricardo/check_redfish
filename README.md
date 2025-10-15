@@ -57,6 +57,7 @@ usage: check_redfish.py [-H HOST] [-u USERNAME] [-p PASSWORD] [-f AUTHFILE]
                         [-d] [-m MAX] [-r RETRIES] [-t TIMEOUT]
                         [--log_exclude LOG_EXCLUDE] [--ignore_missing_ps]
                         [--ignore_unavailable_resources]
+                        [--ignore_unknown_on_critical_or_warning]
                         [--enable_bmc_security_warning] [--storage] [--proc]
                         [--memory] [--power] [--temp] [--fan] [--nic] [--bmc]
                         [--info] [--firmware] [--sel] [--mel] [--all] [-i]
@@ -70,7 +71,7 @@ It will also create a inventory of all components of a system.
 
 R.I.P. IPMI
 
-Version: 1.12.1 (2025-08-07)
+Version: 2.0.0 (2025-10-15)
 
 mandatory arguments:
   -H HOST, --host HOST  define the host to request. To change the port just
@@ -116,6 +117,9 @@ optional arguments:
   --ignore_unavailable_resources
                         ignore all 'UNKNOWN' errors which indicate missing
                         resources and report as OK
+  --ignore_unknown_on_critical_or_warning
+                        suppress all 'UNKNOWN' errors if other checks returned
+                        CRITICAL or WARNING
   --enable_bmc_security_warning
                         return status WARNING if BMC security issues are
                         detected (HPE iLO only)
@@ -231,6 +235,11 @@ WARNING and CRITICAL values can only be used properly if used with **ONE** query
 If for example **--all** or **--mel** and **--storage** are used in the same command then you will
 get inconsistent results/alarms.
 
+Sometimes it is helpful to prioritize CRITICAL and WARNING status over UNKNOWN status results.
+In this case it is possible to use the `--ignore_unknown_on_critical_or_warning` cli option
+which returns for example `CRITICAL` if the plugin encountered an `UNKNONW` and a `CRITICAL` issue.
+see: https://github.com/bb-Ricardo/check_redfish/issues/174
+
 #### Event Logs
 **--mel** and **--sel** (values are passed as "days")<br>
 define after how many days' event log entries which have a != OK severity shouldn't
@@ -328,7 +337,7 @@ suggestions for changes/improvements then please create a GitHub issue.
 ```json
 {
     "inventory": {
-        "chassi": [],
+        "chassis": [],
         "fan": [],
         "firmware": [],
         "logical_drive": [],
@@ -339,7 +348,7 @@ suggestions for changes/improvements then please create a GitHub issue.
         "physical_drive": [],
         "power_control": [
             {
-                "chassi_ids": [
+                "chassis_ids": [
                     "1"
                 ],
                 "health_state": null,
@@ -357,7 +366,7 @@ suggestions for changes/improvements then please create a GitHub issue.
             {
                 "bay": 1,
                 "capacity_in_watt": 500,
-                "chassi_ids": [
+                "chassis_ids": [
                     1
                 ],
                 "efficiency_percent": null,
@@ -377,7 +386,7 @@ suggestions for changes/improvements then please create a GitHub issue.
             {
                 "bay": 2,
                 "capacity_in_watt": 500,
-                "chassi_ids": [
+                "chassis_ids": [
                     1
                 ],
                 "firmware": "1.03",
@@ -406,8 +415,8 @@ suggestions for changes/improvements then please create a GitHub issue.
         "host_that_collected_inventory": "inventory-collector.example.com",
         "inventory_id": null,
         "inventory_name": null,
-        "inventory_layout_version": "1.12.0",
-        "script_version": "1.12.0",
+        "inventory_layout_version": "2.0.0",
+        "script_version": "2.0.0",
         "start_of_data_collection": "2024-02-13T19:09:07+02:00"
     }
 }
@@ -460,6 +469,9 @@ Models:
 * ProLiant RL300 Gen11
 * ProLiant XL450 Gen10
 
+* Compute Scale-up Server 3200
+* Superdome Flex
+
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
 * ThinkSystem SR650 V2 (BMC Version 12I-1.15)
@@ -509,6 +521,9 @@ Models:
 
 ### GIGABYTE (limited support)
 * H262-Z61
+
+### Bull
+* BullSequana SH120
 
 ## License
 >You can check out the full license [here](LICENSE.txt)

@@ -138,6 +138,10 @@
                 "--ignore_unavailable_resources": {
                     "description": "ignore all 'UNKNOWN' errors which indicate missing resources and report as OK",
                     "set_if": "$redfish_ignore_unavailable_resources$"
+                },
+                "--ignore_unknown_on_critical_or_warning": {
+                    "description": "suppress all 'UNKNOWN' errors if other checks returned CRITICAL or WARNING",
+                    "set_if": "$redfish_ignore_unknown_on_critical_and_warning$"
                 }
             },
             "command": "check_redfish.py",

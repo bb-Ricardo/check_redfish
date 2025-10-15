@@ -17,7 +17,7 @@ from socket import gethostname
 
 
 # inventory definition
-inventory_layout_version_string = "1.12.0"
+inventory_layout_version_string = "2.0.0"
 
 
 # noinspection PyBroadException
@@ -64,7 +64,7 @@ class InventoryItem(object):
 
         # set inventory attributes for system properties
         relations = {
-            "chassis": "chassi_ids",
+            "chassis": "chassis_ids",
             "systems": "system_ids",
             "managers": "manager_ids"
         }
@@ -314,7 +314,7 @@ class PowerSupply(InventoryItem):
         "bay": str,
         "capacity_in_watt": int,
         "efficiency_percent": int,
-        "chassi_ids": list,
+        "chassis_ids": list,
         "firmware": str,
         "health_status": str,
         "id": str,
@@ -337,7 +337,7 @@ class PowerControl(InventoryItem):
         "name": str,
         "health_status": str,
         "health_state": str,
-        "chassi_ids": list,
+        "chassis_ids": list,
         "power_capacity_watts": int,
         "power_allocated_watts": int,
         "power_available_watts": int,
@@ -349,7 +349,7 @@ class PowerControl(InventoryItem):
 class Temperature(InventoryItem):
     inventory_item_name = "temperature"
     valid_attributes = {
-        "chassi_ids": list,
+        "chassis_ids": list,
         "health_status": str,
         "id": str,
         "location": str,
@@ -377,7 +377,7 @@ class Fan(InventoryItem):
 class NetworkAdapter(InventoryItem):
     inventory_item_name = "network_adapter"
     valid_attributes = {
-        "chassi_ids": list,
+        "chassis_ids": list,
         "firmware": str,
         "health_status": str,
         "id": str,
@@ -401,7 +401,7 @@ class NetworkPort(InventoryItem):
         "addresses": list,
         "autoneg": bool,
         "capable_speed": int,
-        "chassi_ids": list,
+        "chassis_ids": list,
         "current_speed": int,
         "full_duplex": bool,
         "health_status": str,
@@ -426,7 +426,7 @@ class System(InventoryItem):
     inventory_item_name = "system"
     valid_attributes = {
         "bios_version": str,
-        "chassi_ids": list,
+        "chassis_ids": list,
         "cpu_num": int,
         "health_status": str,
         "host_name": str,
@@ -461,7 +461,7 @@ class Firmware(InventoryItem):
 class Manager(InventoryItem):
     inventory_item_name = "manager"
     valid_attributes = {
-        "chassi_ids": list,
+        "chassis_ids": list,
         "firmware": str,
         "health_status": str,
         "id": str,
@@ -474,8 +474,8 @@ class Manager(InventoryItem):
     }
 
 
-class Chassi(InventoryItem):
-    inventory_item_name = "chassi"
+class Chassis(InventoryItem):
+    inventory_item_name = "chassis"
     valid_attributes = {
         "health_status": str,
         "id": str,

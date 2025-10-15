@@ -16,8 +16,8 @@ It will also create a inventory of all components of a system.
 R.I.P. IPMI
 """
 
-__version__ = "1.12.1"
-__version_date__ = "2025-08-07"
+__version__ = "2.0.0"
+__version_date__ = "2025-10-15"
 __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "Check Redfish Plugin"
 __license__ = "MIT"
@@ -25,7 +25,7 @@ __license__ = "MIT"
 import logging
 
 from cr_module.classes.plugin import PluginData
-from cr_module.system_chassi import get_system_info, get_chassi_data, get_system_data
+from cr_module.system_chassis import get_system_info, get_chassis_data, get_system_data
 from cr_module.nic import get_network_interfaces
 from cr_module.storage import get_storage
 from cr_module.bmc import get_bmc_info
@@ -55,9 +55,9 @@ class CheckRedfish:
         # get basic information
         plugin.rf.determine_vendor()
 
-        if any(x in self.args.requested_query for x in ['power', 'all']):    get_chassi_data(PowerSupply)
-        if any(x in self.args.requested_query for x in ['temp', 'all']):     get_chassi_data(Temperature)
-        if any(x in self.args.requested_query for x in ['fan', 'all']):      get_chassi_data(Fan)
+        if any(x in self.args.requested_query for x in ['power', 'all']):    get_chassis_data(PowerSupply)
+        if any(x in self.args.requested_query for x in ['temp', 'all']):     get_chassis_data(Temperature)
+        if any(x in self.args.requested_query for x in ['fan', 'all']):      get_chassis_data(Fan)
         if any(x in self.args.requested_query for x in ['proc', 'all']):     get_system_data(Processor)
         if any(x in self.args.requested_query for x in ['memory', 'all']):   get_system_data(Memory)
         if any(x in self.args.requested_query for x in ['nic', 'all']):      get_network_interfaces()

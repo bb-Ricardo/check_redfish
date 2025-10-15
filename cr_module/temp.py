@@ -13,7 +13,7 @@ from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
 
-def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
+def get_single_chassis_temp(redfish_url, chassis_id, thermal_data, _):
 
     plugin_object = PluginData()
 
@@ -43,9 +43,9 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
             if member_id is None:
                 member_id = name
 
-            # prefix with chassi id if system has more then one
+            # prefix with chassis id if system has more then one
             if num_chassis > 1:
-                member_id = f"{chassi_id}.{member_id}"
+                member_id = f"{chassis_id}.{member_id}"
 
             temp_inventory = Temperature(
                 name=name,
@@ -67,7 +67,7 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
                     "UpperThresholdCritical"),
                 upper_threshold_fatal=None if temp.get("UpperThresholdFatal") == "N/A" else temp.get(
                     "UpperThresholdFatal"),
-                chassi_ids=chassi_id
+                chassis_ids=chassis_id
             )
 
             if plugin_object.cli_args.verbose:
@@ -121,24 +121,63 @@ def get_single_chassi_temp(redfish_url, chassi_id, thermal_data):
                 status_text += f" (max: {critical_temp} °C)"
 
             plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
-                                          location=f"Chassi {chassi_id}")
+                                          location=f"Chassis {chassis_id}")
 
             temp_name = temp_inventory.name
             if num_chassis > 1:
-                temp_name = f"{chassi_id}.{temp_name}"
+                temp_name = f"{chassis_id}.{temp_name}"
 
             plugin_object.add_perf_data(f"temp_{temp_name}", current_temp, warning=warning_temp,
-                                        critical=critical_temp, location=f"Chassi {chassi_id}")
+                                        critical=critical_temp, location=f"Chassis {chassis_id}")
 
         if len(thermal_data.get("Temperatures")) > 0:
             default_text = f"All temp sensors ({temp_num}) are in good condition"
         else:
-            default_text = f"Chassi has no temp sensors installed/reported"
+            default_text = f"Chassis has no temp sensors installed/reported"
+
+    elif grab(thermal_data, "ThermalMetrics/@odata.id", separator="/") is not None:
+
+        thermal_metrics = plugin_object.rf.get(grab(thermal_data, "ThermalMetrics/@odata.id", separator="/"))
+
+        for thermal_metric in thermal_metrics.get("TemperatureReadingsCelsius") or list():
+
+            name = thermal_metric.get("DeviceName")
+            member_id = name
+
+            # prefix with chassis id if system has more then one
+            if num_chassis > 1:
+                member_id = f"{chassis_id}.{member_id}"
+
+            temp_inventory = Temperature(
+                name=name,
+                id=member_id,
+                physical_context=thermal_metric.get("PhysicalContext"),
+                reading_unit="Celsius",
+                reading=thermal_metric.get("Reading"),
+                chassis_ids=chassis_id
+            )
+
+            if plugin_object.cli_args.verbose:
+                temp_inventory.source_data = thermal_metric
+
+            plugin_object.inventory.add(temp_inventory)
+
+            status_text = f"Temp sensor '{temp_inventory.name}' reading: {temp_inventory.reading} °C"
+
+            plugin_object.add_output_data("OK", status_text, location=f"Chassis {chassis_id}")
+
+            plugin_object.add_perf_data(f"temp_{temp_inventory.id}", temp_inventory.reading,
+                                        location=f"Chassis {chassis_id}")
+
+        if len(thermal_metrics.get("TemperatureReadingsCelsius", [])) > 0:
+            default_text = f"Reported {len(thermal_metrics.get('TemperatureReadingsCelsius'))} temperature metrics"
+        else:
+            default_text = f"Chassis has no temp sensors installed/reported"
     else:
         default_text = "No temp sensors detected"
         plugin_object.inventory.add_issue(Temperature, f"No temp sensor data returned for API URL '{redfish_url}'")
 
-    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassi {chassi_id}")
+    plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassis {chassis_id}")
 
     return
 

@@ -72,6 +72,7 @@ def get_single_system_mem(redfish_url):
 
     num_dimms = 0
     size_sum = 0
+    num_error_dimms = 0
 
     if memory_response.get("Members") or memory_response.get(system_response_memory_key):
 
@@ -153,13 +154,13 @@ def get_single_system_mem(redfish_url):
 
                 num_dimms += 1
                 size_sum += module_size
+                status_text = mem_inventory.operation_status
 
                 if mem_inventory.operation_status in ["GoodInUse", "Operable"]:
                     plugin_status = "OK"
-                    status_text = mem_inventory.operation_status
                 else:
                     plugin_status = mem_inventory.health_status
-                    status_text = plugin_status
+                    num_error_dimms += 1
 
                 if system_power_state != "ON":
                     plugin_status = "OK"
@@ -190,10 +191,14 @@ def get_single_system_mem(redfish_url):
             plugin_status = "WARNING"
         else:
             plugin_status = "CRITICAL"
-        plugin_object.add_output_data(plugin_status,
-                                      f"Memory Summary health is reported as '{health.upper()}' but "
-                                      f"all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                                      size_sum / 1024), summary=True, location=f"System {system_id}")
+        if num_dimms - num_error_dimms == 0 or num_error_dimms == 0:
+            summary_text = f"Memory Summary health is reported as '{health.upper()}' but " \
+                           f"all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (size_sum / 1024)
+        else:
+            summary_text = f"Memory Summary health is reported as '{health.upper()}' and {num_error_dimms} " \
+                           f"memory modules of {num_dimms} are not in good condition (Total %.1fGB)" % (size_sum / 1024)
+
+        plugin_object.add_output_data(plugin_status, summary_text, summary=True, location=f"System {system_id}")
 
     return
 

@@ -163,7 +163,7 @@ def get_hpe_network_port_data(network_port):
 def get_system_nics(redfish_url):
 
     plugin_object = PluginData()
-    chassi_network_adapter_ports = list()
+    chassis_network_adapter_ports = list()
 
     # noinspection PyShadowingNames
     def get_network_port(port_data=None, network_function_id=None, return_data=False, add_to_inventory=True):
@@ -393,6 +393,9 @@ def get_system_nics(redfish_url):
 
     system_id = redfish_url.rstrip("/").split("/")[-1]
 
+    ethernet_interfaces_path = None
+    network_adapter_path = None
+
     if plugin_object.rf.vendor == "HPE" and not system_is_booting():
         system_response = plugin_object.rf.get(redfish_url)
 
@@ -407,31 +410,33 @@ def get_system_nics(redfish_url):
                                     f"Oem/{plugin_object.rf.vendor_dict_key}/Links/NetworkAdapters/@odata.id",
                                     separator="/")
 
-        redfish_chassi_url = grab(system_response, "Links/Chassis/0/@odata.id", separator="/")
+        redfish_chassis_url = grab(system_response, "Links/Chassis/0/@odata.id", separator="/")
 
-        chassi_response = plugin_object.rf.get(redfish_chassi_url)
+        chassis_response = plugin_object.rf.get(redfish_chassis_url)
 
-        chassi_network_adapter_path = None
+        chassis_network_adapter_path = None
         if system_response.get("error") is None:
-            chassi_network_adapter_path = grab(chassi_response, "NetworkAdapters/@odata.id", separator="/")
+            chassis_network_adapter_path = grab(chassis_response, "NetworkAdapters/@odata.id", separator="/")
 
-        # ILO 6 moves the NetworkAdapters to the chassi
+        # ILO 6 moves the NetworkAdapters to the chassis
         if network_adapter_path is None:
-            network_adapter_path = chassi_network_adapter_path
+            network_adapter_path = chassis_network_adapter_path
         else:
             adapter_id = None
-            if chassi_network_adapter_path is not None:
-                for network_adapter_data in get_ethernet_interfaces_data(chassi_network_adapter_path):
+            if chassis_network_adapter_path is not None:
+                for network_adapter_data in get_ethernet_interfaces_data(chassis_network_adapter_path):
                     if network_adapter_data.get("NetworkPorts") is not None:
                         port_link = grab(network_adapter_data, "NetworkPorts/@odata.id", separator="/")
                         if port_link is not None:
                             for port in get_ethernet_interfaces_data(port_link):
-                                chassi_network_adapter_ports.append(
+                                chassis_network_adapter_ports.append(
                                     get_network_port(port, return_data=True, add_to_inventory=False))
 
-    else:
-        # assume default urls
+    # assume default urls
+    if ethernet_interfaces_path is None:
         ethernet_interfaces_path = f"{redfish_url}/EthernetInterfaces"
+
+    if network_adapter_path is None:
         network_adapter_path = f"{redfish_url}/NetworkInterfaces"
 
     network_adapter_response = \
@@ -568,8 +573,8 @@ def get_system_nics(redfish_url):
             # special case for HPE
             if plugin_object.rf.vendor == "HPE" and len(network_ports) > 0:
 
-                # network_ports contains the links to the data in chassi, we need to grep the system ethernet data
-                if plugin_object.rf.vendor_data.ilo_version.lower() == "ilo 6":
+                # network_ports contains the links to the data in chassis, we need to grep the system ethernet data
+                if plugin_object.rf.vendor_data.bmc_version == "6":
 
                     for network_port in get_ethernet_interfaces_data(ethernet_interfaces_path):
 
@@ -628,31 +633,31 @@ def get_system_nics(redfish_url):
 
                         port_mac = format_interface_addresses(network_port.get("MACAddress") or
                                                               network_port.get("MacAddress"))
-                        corresponding_chassi_port = None
-                        for chassi_network_adapter_port in chassi_network_adapter_ports:
-                            if len(port_mac) > 0 and port_mac[0] in chassi_network_adapter_port.addresses:
-                                corresponding_chassi_port = chassi_network_adapter_port
+                        corresponding_chassis_port = None
+                        for chassis_network_adapter_port in chassis_network_adapter_ports:
+                            if len(port_mac) > 0 and port_mac[0] in chassis_network_adapter_port.addresses:
+                                corresponding_chassis_port = chassis_network_adapter_port
                                 break
 
                         # enrich possible missing port data
-                        if corresponding_chassi_port:
+                        if corresponding_chassis_port:
 
                             if network_port_inventory.autoneg is None:
-                                network_port_inventory.autoneg = corresponding_chassi_port.autoneg
+                                network_port_inventory.autoneg = corresponding_chassis_port.autoneg
                             if network_port_inventory.link_type is None:
-                                network_port_inventory.link_type = corresponding_chassi_port.link_type
+                                network_port_inventory.link_type = corresponding_chassis_port.link_type
                             if network_port_inventory.current_speed is None:
-                                network_port_inventory.current_speed = corresponding_chassi_port.current_speed
+                                network_port_inventory.current_speed = corresponding_chassis_port.current_speed
                             if network_port_inventory.capable_speed is None:
-                                network_port_inventory.capable_speed = corresponding_chassi_port.capable_speed
+                                network_port_inventory.capable_speed = corresponding_chassis_port.capable_speed
                             if network_port_inventory.operation_status is None:
-                                network_port_inventory.operation_status = corresponding_chassi_port.operation_status
+                                network_port_inventory.operation_status = corresponding_chassis_port.operation_status
                             if network_port_inventory.name is None:
-                                network_port_inventory.name = corresponding_chassi_port.port_name
+                                network_port_inventory.name = corresponding_chassis_port.port_name
 
                             if plugin_object.cli_args.verbose:
                                 network_port_inventory.source_data["ethernet_interface_port"] = \
-                                    corresponding_chassi_port.source_data.get("port")
+                                    corresponding_chassis_port.source_data.get("port")
 
             if plugin_object.cli_args.verbose:
                 adapter_inventory.source_data = source_data

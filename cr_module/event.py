@@ -191,7 +191,7 @@ def get_event_log_hpe(event_type, redfish_path):
     date_warning = None
     date_critical = None
 
-    if plugin_object.rf.vendor_data.ilo_version.lower() not in ["ilo 5", "ilo 6"]:
+    if plugin_object.rf.vendor_data.bmc_version == "4":
         ilo4_limit = 30
         if plugin_object.cli_args.max:
             limit_of_returned_items = min(plugin_object.cli_args.max, ilo4_limit)
@@ -267,7 +267,7 @@ def get_event_log_hpe(event_type, redfish_path):
                 # To put this message even before (chronological) log entries with timestamp '0'
                 # we set it to 2 days before unix time '0'
                 message_date = datetime.datetime.fromtimestamp(0-3600*48).replace(tzinfo=get_local_timezone())
-                plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.ilo_version}, "
+                plugin_object.add_output_data("OK", f"This is an {plugin_object.rf.vendor_data.get_bmc_model()}, "
                                                     f"limited {event_type} log results to "
                                                     f"{limit_of_returned_items} entries", is_log_entry=True,
                                                     log_entry_date=message_date)

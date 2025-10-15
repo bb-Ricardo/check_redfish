@@ -89,6 +89,15 @@ def get_single_system_procs(redfish_url):
                 current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or grab(vendor_data, "RatedSpeedMHz") or \
                     grab(vendor_data, "FrequencyMHz")
 
+                max_speed = proc_response.get("MaxSpeedMHz")
+
+                if model is None and grab(vendor_data, "Model") is not None:
+                    model = grab(vendor_data, "Model")
+
+                architecture = proc_response.get("ProcessorArchitecture")
+                instruction_set = proc_response.get("InstructionSet")
+                socket = proc_response.get("Socket")
+
                 # try to extract speed from model if current_speed is None
                 # Intel XEON CPUs
                 if current_speed is None and model is not None and "GHz" in model:
@@ -128,23 +137,49 @@ def get_single_system_procs(redfish_url):
                     if "L3" in cache_level:
                         level_3_cache_kib = cache_size * 1000 / 1024
 
+                if plugin_object.rf.vendor == "BULL":
+
+                    max_speed = grab(vendor_data, "MaximumP0CoreFrequency.Reading")
+
+                    if current_speed is None:
+                        current_speed = grab(vendor_data, "MaximumP1CoreFrequency.Reading")
+
+                    if grab(vendor_data,"Architecture") is not None:
+                        architecture = grab(vendor_data,"Architecture")
+                        if "x86" in architecture.lower():
+                            architecture = "x86"
+                        instruction_set = f"{grab(vendor_data,'Architecture')}".replace("_","-")
+
+                    if isinstance(grab(vendor_data, "MLCCacheSize.Reading"), str) and \
+                            all(i.isdigit() for i in grab(vendor_data, "MLCCacheSize.Reading")):
+
+                        # calculate core cache size by num cores
+                        level_2_cache_kib = (int(grab(vendor_data, "MLCCacheSize.Reading")) *
+                                             (proc_response.get("TotalCores") or 1))
+
+                    if socket is None or f"{socket}" == "":
+                        socket = proc_response.get("Id")
+
+                if socket is None or f"{socket}" == "":
+                    socket = proc_response.get("Name")
+
                 proc_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
                     proc_response.get("SN") or proc_response.get("SerialNumber")
 
                 proc_inventory = Processor(
                     name=proc_response.get("Name"),
-                    id=proc_response.get("Id"),
+                    id=f"{proc_response.get('Name')}.{proc_response.get('Id')}",
                     model=model,
-                    socket=proc_response.get("Socket"),
+                    socket=socket,
                     health_status=status_data.get("Health"),
                     operation_status=status_data.get("State"),
                     cores=proc_response.get("TotalCores"),
                     threads=proc_response.get("TotalThreads"),
                     current_speed=current_speed,
-                    max_speed=proc_response.get("MaxSpeedMHz"),
-                    manufacturer=proc_response.get("Manufacturer"),
-                    instruction_set=proc_response.get("InstructionSet"),
-                    architecture=proc_response.get("ProcessorArchitecture"),
+                    max_speed=max_speed,
+                    manufacturer=proc_response.get("Manufacturer") or grab(vendor_data, "Manufacturer"),
+                    instruction_set=instruction_set,
+                    architecture=architecture,
                     serial=proc_serial,
                     system_ids=system_id,
                     L1_cache_kib=level_1_cache_kib,
@@ -193,11 +228,11 @@ def get_single_system_procs(redfish_url):
 
     # add Dell CPU usage
     if plugin_object.rf.vendor == "Dell":
-        for chassi in plugin_object.rf.get_system_properties("chassis") or list():
+        for chassis in plugin_object.rf.get_system_properties("chassis") or list():
 
-            cpu_usage_url = chassi.rstrip("/") + "/Sensors/SystemBoardCPUUsage"
+            cpu_usage_url = chassis.rstrip("/") + "/Sensors/SystemBoardCPUUsage"
 
-            chassi_id = chassi.rstrip("/").split("/")[-1]
+            chassis_id = chassis.rstrip("/").split("/")[-1]
 
             cpu_usage_response = plugin_object.rf.get(cpu_usage_url)
 
@@ -215,7 +250,7 @@ def get_single_system_procs(redfish_url):
 
                         plugin_object.add_perf_data(f"cpu_usage", cpu_usage_int,
                                                     perf_uom="%" if cpu_usage_units == "%" else None,
-                                                    location=f"Chassi {chassi_id}")
+                                                    location=f"Chassis {chassis_id}")
 
                     except Exception:
                         pass

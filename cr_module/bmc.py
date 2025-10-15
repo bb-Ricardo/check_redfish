@@ -56,17 +56,12 @@ def get_bmc_info_generic(redfish_url):
         manager_response = view_response
 
     # get model
-    bmc_model = manager_response.get("Model")
-    bmc_fw_version = manager_response.get("FirmwareVersion")
-
-    if plugin_object.rf.vendor == "HPE":
-        bmc_model = " ".join(bmc_fw_version.split(" ")[0:2])
-
-    if plugin_object.rf.vendor == "Dell":
-        if bmc_model == "13G Monolithic":
-            bmc_model = "iDRAC 8"
-        if bmc_model in ["14G Monolithic", "15G Monolithic"]:
-            bmc_model = "iDRAC 9"
+    if len(plugin_object.rf.get_system_properties("managers")) == 1:
+        bmc_model = plugin_object.rf.vendor_data.get_bmc_model()
+        bmc_fw_version = plugin_object.rf.vendor_data.get_bmc_firmware_version()
+    else:
+        bmc_model = manager_response.get("Model")
+        bmc_fw_version = manager_response.get("FirmwareVersion")
 
     # some Cisco Systems have a second manager with no attributes which needs to be skipped
     if plugin_object.rf.vendor == "Cisco":
@@ -172,7 +167,7 @@ def get_bmc_info_generic(redfish_url):
                     addresses=format_interface_addresses(mac_address),
                     manager_ids=manager_inventory.id,
                     system_ids=manager_inventory.system_ids,
-                    chassi_ids=manager_inventory.chassi_ids,
+                    chassis_ids=manager_inventory.chassis_ids,
                     ipv4_addresses=get_interface_ip_addresses(manager_nic, "IPv4Addresses"),
                     ipv6_addresses=get_interface_ip_addresses(manager_nic, "IPv6Addresses"),
                     link_type="Ethernet",
@@ -251,7 +246,8 @@ def get_bmc_info_generic(redfish_url):
         ilo_license_string = grab(vendor_data, "License.LicenseString")
         ilo_license_key = grab(vendor_data, "License.LicenseKey")
 
-        bmc_licenses.append(f"{ilo_license_string} ({ilo_license_key})")
+        if ilo_license_string and ilo_license_key:
+            bmc_licenses.append(f"{ilo_license_string} ({ilo_license_key})")
 
     elif plugin_object.rf.vendor == "Lenovo":
 
@@ -307,15 +303,15 @@ def get_bmc_info_generic(redfish_url):
 
     elif plugin_object.rf.vendor == "Huawei":
 
-        ibmc_license_link = vendor_data.get("LicenseService")
+        bmc_license_link = vendor_data.get("LicenseService")
 
-        if ibmc_license_link is not None and len(ibmc_license_link) > 0:
-            ibmc_lic = plugin_object.rf.get(ibmc_license_link.get("@odata.id"))
+        if bmc_license_link is not None and len(bmc_license_link) > 0:
+            bmc_lic = plugin_object.rf.get(bmc_license_link.get("@odata.id"))
 
-            if ibmc_lic.get("error"):
-                plugin_object.add_data_retrieval_error(Manager, ibmc_lic, ibmc_license_link.get("@odata.id"))
+            if bmc_lic.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, bmc_lic, bmc_license_link.get("@odata.id"))
 
-            bmc_licenses.append("%s (%s)" % (ibmc_lic.get("InstalledStatus"), ibmc_lic.get("LicenseClass")))
+            bmc_licenses.append("%s (%s)" % (bmc_lic.get("InstalledStatus"), bmc_lic.get("LicenseClass")))
 
     manager_inventory.licenses = bmc_licenses
 
@@ -326,7 +322,7 @@ def get_bmc_info_generic(redfish_url):
     if plugin_object.rf.vendor == "HPE":
 
         # iLO Self Test
-        for self_test in vendor_data.get("iLOSelfTestResults"):
+        for self_test in vendor_data.get("iLOSelfTestResults", []):
 
             self_test_status = self_test.get("Status")
 
@@ -403,16 +399,16 @@ def get_bmc_info_generic(redfish_url):
 
     # Lenovo specific stuff
     if plugin_object.rf.vendor == "Lenovo":
-        redfish_chassi_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
+        redfish_chassis_url = grab(manager_response, "Links/ManagerForChassis/0/@odata.id", separator="/")
 
-        chassi_response = None
-        if redfish_chassi_url is not None:
-            chassi_response = plugin_object.rf.get(redfish_chassi_url)
+        chassis_response = None
+        if redfish_chassis_url is not None:
+            chassis_response = plugin_object.rf.get(redfish_chassis_url)
 
-            if chassi_response.get("error"):
-                plugin_object.add_data_retrieval_error(Manager, chassi_response, redfish_chassi_url)
+            if chassis_response.get("error"):
+                plugin_object.add_data_retrieval_error(Manager, chassis_response, redfish_chassis_url)
 
-        located_data = grab(chassi_response, f"Oem.{plugin_object.rf.vendor_dict_key}.LocatedIn")
+        located_data = grab(chassis_response, f"Oem.{plugin_object.rf.vendor_dict_key}.LocatedIn")
 
         if located_data is not None:
             descriptive_name = located_data.get("DescriptiveName")
@@ -436,10 +432,10 @@ def get_bmc_info_generic(redfish_url):
     # get Huawei Server location data
     if plugin_object.rf.vendor == "Huawei":
 
-        ibmc_location = vendor_data.get("DeviceLocation")
-        if ibmc_location is not None and len(ibmc_location) > 0:
+        bmc_location = vendor_data.get("DeviceLocation")
+        if bmc_location is not None and len(bmc_location) > 0:
 
-            location_string = f"Location: {ibmc_location}"
+            location_string = f"Location: {bmc_location}"
             if plugin_object.cli_args.detailed:
                 plugin_object.add_output_data("OK", f"BMC {location_string}",
                                               location=f"Manager {manager_inventory.id}")
