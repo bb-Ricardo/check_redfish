@@ -191,16 +191,14 @@ def get_single_system_mem(redfish_url):
             plugin_status = "WARNING"
         else:
             plugin_status = "CRITICAL"
-        if num_dimms - num_error_dimms == 0:
-            plugin_object.add_output_data(plugin_status,
-                                      f"Memory Summary health is reported as '{health.upper()}' but "
-                                      f"all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
-                                      size_sum / 1024), summary=True, location=f"System {system_id}")
+        if num_dimms - num_error_dimms == 0 or num_error_dimms == 0:
+            summary_text = f"Memory Summary health is reported as '{health.upper()}' but " \
+                           f"all {num_dimms} memory modules (Total %.1fGB) are in good condition" % (size_sum / 1024)
         else:
-            plugin_object.add_output_data(plugin_status,
-                                      f"Memory Summary health is reported as '{health.upper()}' and {num_error_dimms} "
-                                      f"memory modules of {num_dimms} are not in good condition (Total %.1fGB)" % (
-                                      size_sum / 1024), summary=True, location=f"System {system_id}")
+            summary_text = f"Memory Summary health is reported as '{health.upper()}' and {num_error_dimms} " \
+                           f"memory modules of {num_dimms} are not in good condition (Total %.1fGB)" % (size_sum / 1024)
+
+        plugin_object.add_output_data(plugin_status, summary_text, summary=True, location=f"System {system_id}")
 
     return
 
