@@ -35,6 +35,17 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, _):
     ps_num = 0
     ps_absent = 0
 
+    # Auto-detect blade chassis and enable ignore_missing_ps
+    # Blade servers don't have individual power supplies as they receive 
+    # power from the enclosure's shared infrastructure
+    chassis_url = redfish_url.replace("/Power", "")
+    chassis_data = plugin_object.rf.get(chassis_url)
+    if chassis_data and chassis_data.get("ChassisType") == "Blade":
+        plugin_object.cli_args.ignore_missing_ps = True
+        plugin_object.add_output_data("OK",
+                                     f"Blade chassis detected - power supplies managed by enclosure",
+                                     summary=True, location=f"Chassis {chassis_id}")
+
     if "PowerSupplies" in power_data:
 
         power_supply_data = list()
