@@ -14,7 +14,7 @@ import json
 import pprint
 import sys
 import time
-
+from urllib.parse import urlparse
 
 from cr_module.common import grab
 from cr_module.classes import plugin_status_types
@@ -22,6 +22,7 @@ from cr_module.classes.vendor import *
 
 # import 3rd party modules
 import redfish
+import requests
 
 # defaults
 default_conn_max_retries = 3
@@ -335,6 +336,89 @@ class RedfishConnection:
 
         return
 
+    def _is_safe_redirect(self, redirect_url, original_host):
+        """Validate redirect URL is safe and appropriate for Redfish sessions."""
+        try:
+            parsed = urlparse(redirect_url)
+            return (
+                parsed.scheme == "https" and
+                parsed.hostname == original_host and
+                parsed.path.startswith("/redfish/") and
+                "/Sessions" in parsed.path  # Must be sessions-related
+            )
+        except:
+            return False
+
+    def login_with_redirect_handling(self):
+        """Perform Redfish session login with HTTP redirect support using direct HTTP requests."""
+
+        base_url = f"https://{self.cli_args.host}"
+        sessions_url = f"{base_url}/redfish/v1/SessionService/Sessions"
+
+        login_payload = {
+            "UserName": self.username,
+            "Password": self.password
+        }
+
+        try:
+            # Note: SSL verification is disabled to match redfish library behavior
+            response = requests.post(
+                sessions_url,
+                json=login_payload,
+                timeout=self.cli_args.timeout,
+                verify=False,  # Disable SSL verification like redfish library
+                allow_redirects=False  # Disable automatic redirects
+            )
+
+            if response.status_code in (301, 307, 308):
+                redirect_url = response.headers.get('Location') or response.headers.get('location')
+                if not redirect_url:
+                    raise Exception("Redirect response missing Location header")
+
+                # Validate redirect is safe
+                if not self._is_safe_redirect(redirect_url, self.cli_args.host):
+                    raise Exception(f"Unsafe redirect location: {redirect_url}")
+
+                # Make second POST request to the redirected URL
+                response = requests.post(
+                    redirect_url,
+                    json=login_payload,
+                    timeout=self.cli_args.timeout,
+                    verify=False,  # Disable SSL verification
+                    allow_redirects=False
+                )
+
+            # Check for successful login
+            if response.status_code == 201:  # Created
+                session_token = response.headers.get('X-Auth-Token')
+                session_location = response.headers.get('Location')
+
+                if session_token:
+                    # Set up the redfish connection with the session information
+                    self.connection.set_session_key(session_token)
+                    if session_location:
+                        self.connection.set_session_location(session_location)
+                    return
+                else:
+                    raise Exception("Login succeeded but no session token received")
+
+            # Handle error responses
+            elif response.status_code == 401:
+                raise redfish.rest.v1.InvalidCredentialsError("Authentication failed")
+            elif response.status_code >= 500:
+                raise Exception(f"Server error during login: {response.status_code}")
+            else:
+                raise Exception(f"Login failed with status {response.status_code}: {response.text}")
+
+        except requests.exceptions.Timeout:
+            raise redfish.rest.v1.RetriesExhaustedError("Request timeout")
+        except requests.exceptions.ConnectionError:
+            raise redfish.rest.v1.ServerDownOrUnreachableError("Connection failed")
+        except requests.exceptions.SSLError:
+            raise redfish.rest.v1.ServerDownOrUnreachableError("SSL connection failed")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"HTTP request error: {e}")
+
     def init_connection(self, reset=False):
 
         if self.is_session_locked():
@@ -386,7 +470,7 @@ class RedfishConnection:
 
         if self.username is not None or self.password is not None:
             try:
-                self.connection.login(username=self.username, password=self.password, auth="session")
+                self.login_with_redirect_handling()
             except redfish.rest.v1.RetriesExhaustedError:
                 self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                    "CRITICAL")
