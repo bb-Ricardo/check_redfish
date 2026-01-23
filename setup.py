@@ -11,7 +11,7 @@ setup(
     url='https://github.com/bb-Ricardo/check_redfish',
     packages=find_packages(),
     install_requires=[
-        'redfish>=2.1.4',
+        'redfish>=3.1.0',
     ],
     classifiers=[
         'License :: OSI Approved :: MIT License',
