@@ -389,19 +389,22 @@ class RedfishConnection:
                     allow_redirects=False
                 )
 
+            # to mitigate issues with iDRAC we assume the login worked
+            # if a session token is present, we treat it as successful login
+            # and take care of possible problematic error codes later
+            session_token = response.headers.get('X-Auth-Token')
+            session_location = response.headers.get('Location')
+
+            if session_token is not None:
+                # Set up the redfish connection with the session information
+                self.connection.set_session_key(session_token)
+                if session_location is not None:
+                    self.connection.set_session_location(session_location)
+                return
+
             # Check for successful login
             if response.status_code == 201:  # Created
-                session_token = response.headers.get('X-Auth-Token')
-                session_location = response.headers.get('Location')
-
-                if session_token is not None:
-                    # Set up the redfish connection with the session information
-                    self.connection.set_session_key(session_token)
-                    if session_location is not None:
-                        self.connection.set_session_location(session_location)
-                    return
-                else:
-                    raise Exception("Login succeeded but no session token received")
+                raise Exception("Login succeeded but no session token received")
 
             # Handle error responses
             elif response.status_code == 401:
@@ -459,7 +462,7 @@ class RedfishConnection:
             self.connection = redfish.redfish_client(base_url=f"https://{self.cli_args.host}",
                                                      max_retry=self.cli_args.retries, timeout=self.cli_args.timeout)
         except redfish.rest.v1.ServerDownOrUnreachableError:
-            self.exit_on_error(f"Host '{ self.cli_args.host}' down or unreachable.", "CRITICAL")
+            self.exit_on_error(f"Host '{self.cli_args.host}' down or unreachable.", "CRITICAL")
         except redfish.rest.v1.RetriesExhaustedError:
             self.exit_on_error(f"Unable to connect to Host '{self.cli_args.host}', max retries exhausted.",
                                "CRITICAL")
@@ -693,7 +696,7 @@ class RedfishConnection:
 
                 bmc_version = (
                     manager_data.get("ManagerType") or
-                    grab(self.connection.root, f"Oem.{vendor_string}.Moniker.PRODGEN")) # Fix for iLO 5 version >2.3.0
+                    grab(self.connection.root, f"Oem.{vendor_string}.Moniker.PRODGEN"))  # Fix for iLO 5 version >2.3.0
 
                 self.vendor_data.set_bmc_name((bmc_version or "").split(" ")[0])
 
@@ -702,7 +705,7 @@ class RedfishConnection:
 
                 self.vendor_data.set_bmc_firmware_version(
                         manager_data.get("ManagerFirmwareVersion") or
-                        grab(manager_data, "Languages.0.Version")) # Fix for iLO 5 version >2.3.0
+                        grab(manager_data, "Languages.0.Version"))  # Fix for iLO 5 version >2.3.0
 
                 if bmc_version is None:
                     self.exit_on_error("Cannot determine HPE iLO version information.")
