@@ -233,31 +233,39 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
     voltages_num = 0
     for voltage in power_data.get("Voltages", list()):
 
-        if voltage.get("Status") is not None:
-            voltage_status = get_status_data(grab(voltage, "Status"))
-            status = voltage_status.get("Health")
-            state = voltage_status.get("State")
-            reading = voltage.get("ReadingVolts")
-            name = voltage.get("Name")
+        if voltage.get("Status") is None:
+            continue
 
-            if status is not None:
-                voltages_num += 1
+        voltage_status = get_status_data(grab(voltage, "Status"))
+        status = voltage_status.get("Health")
+        state = voltage_status.get("State")
+        reading = voltage.get("ReadingVolts")
+        name = voltage.get("Name")
 
-                status_text = f"Voltage {name} (status: {status}/{state}): {reading}V"
+        if status is None or name is None:
+            continue
 
-                plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text, location=f"Chassis {chassis_id}")
+        # noinspection PyBroadException
+        try:
+            reading_sanitized = float(f"{reading}")
+        except Exception:
+            continue
 
-                if reading is not None and name is not None:
-                    # noinspection PyBroadException
-                    try:
-                        if num_chassis > 1:
-                            name = f"{chassis_id}.{name}"
+        voltages_num += 1
 
-                        plugin_object.add_perf_data(f"voltage_{name}", float(reading),
-                                                    location=f"Chassis {chassis_id}")
-                    except Exception:
-                        pass
+        # voltages over 1000 Volts are very likely meant to be milli Volts
+        if reading_sanitized >= 1000:
+            reading_sanitized /= 1000
+
+        status_text = f"Voltage {name} (status: {status}/{state}): {reading_sanitized}V"
+
+        plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+                                      status_text, location=f"Chassis {chassis_id}")
+
+        if num_chassis > 1:
+            name = f"{chassis_id}.{name}"
+
+        plugin_object.add_perf_data(f"voltage_{name}", reading_sanitized, location=f"Chassis {chassis_id}")
 
     if voltages_num > 0:
         default_text += f" and {voltages_num} Voltages are OK"
