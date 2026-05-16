@@ -425,7 +425,7 @@ In case you need more information or want to debug the data you can add the verb
 option. This will also add the `source_data` attribute for each inventory item.
 
 ### Inventory attributes
-You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L183)
+You can find a list of attributes for each item [here](cr_module/classes/inventory.py#L174)
 
 ### Inventory file
 It is also possible to use the cli option `--inventory_file` to write the inventory data to a file.
@@ -526,6 +526,24 @@ Models:
 
 ### Bull
 * BullSequana SH120
+
+## Contribution
+
+### Creating a Mockup for testing
+In many cases it is very helpful to have mockup of a live system to test against with.
+
+For this purpose the https://github.com/DMTF/Redfish-Mockup-Creator can be used to create a mockup.
+
+Example to run command
+```bash
+python redfishMockupCreate.py -u root -p root -r 192.168.1.100 -S -A Session -D mockup-dir
+```
+
+You can use the [mockup-cleaner.sh](contrib/mockup-cleaner.sh) script to sanitize the mockup.
+
+**WARNING: This script does not guarantee to remove all sensitive data. Check if in doubt.**
+
+Then the archive of the mockup can be sent via eMail.
 
 ## License
 >You can check out the full license [here](LICENSE.txt)
