@@ -242,6 +242,9 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
         reading = voltage.get("ReadingVolts")
         name = voltage.get("Name")
 
+        if name is None or name == "":
+            name = voltage.get("MemberId")
+
         if status is None or name is None:
             continue
 
@@ -256,6 +259,11 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
         # voltages over 1000 Volts are very likely meant to be milli Volts
         if reading_sanitized >= 1000:
             reading_sanitized /= 1000
+
+        # mitigate issue with iLO 6 voltage in status WARNING
+        if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version == "6" and status == "WARNING":
+            if voltage.get("LowerThresholdNonCritical") <= reading <= voltage.get("UpperThresholdNonCritical"):
+                status = "OK"
 
         status_text = f"Voltage {name} (status: {status}/{state}): {reading_sanitized}V"
 
