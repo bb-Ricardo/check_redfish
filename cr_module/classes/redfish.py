@@ -63,6 +63,8 @@ class RedfishConnection:
         self.init_connection()
 
     def exit_on_error(self, message, level="UNKNOWN"):
+        if self.cli_args is not None and getattr(self.cli_args, 'nosession', False) is True:
+            self.terminate_session()
         self.remove_session_lock()
         print(f"[{level}]: {message}")
         exit(plugin_status_types.get(level))
@@ -301,7 +303,7 @@ class RedfishConnection:
         session_file_handle = None
         try:
             session_file_handle = os.open(self.session_file_path,
-                                          os.O_WRONLY | os.O_CREAT,
+                                          os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
                                           self.desired_session_file_mode)
 
         except PermissionError as e:
@@ -431,6 +433,8 @@ class RedfishConnection:
 
         # reset connection
         if reset is True:
+            if self.connection is not None:
+                self.terminate_session()
             self.connection = None
 
         """
