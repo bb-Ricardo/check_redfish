@@ -7,11 +7,16 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+import re
+
 from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 from cr_module.classes.inventory import Fan
 from cr_module.classes.plugin import PluginData
 
+
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s)]
 
 def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
 
@@ -50,11 +55,16 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
         elif isinstance(thermal_data.get("Fans"), list):
             fan_data = thermal_data.get("Fans")
 
+        if grab(fan_data, "0.FanName") is not None:
+            fan_data = sorted(fan_data, key=lambda item: natural_sort_key(item.get("FanName")))
+        elif grab(fan_data, "0.Name") is not None:
+            fan_data = sorted(fan_data, key=lambda item: natural_sort_key(item.get("Name")))
+
         for fan in fan_data:
 
             status_data = get_status_data(grab(fan, "Status"))
 
-            member_id = grab(fan, "MemberId")
+            member_id = grab(fan, "MemberId") or grab(fan, "Id")
             name = fan.get("FanName") or fan.get("Name")
 
             if member_id is None:
@@ -105,8 +115,13 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
             fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("Links"))
             fan_inventory.add_relation(plugin_object.rf.get_system_properties(), fan.get("RelatedItem"))
 
+            # ThermalSubsystem Fan members
+            if grab(fan, "SpeedPercent.SpeedRPM") is not None:
+                fan_inventory.reading = grab(fan, "SpeedPercent.SpeedRPM")
+                fan_inventory.reading_unit = "RPM"
+
             # DELL, Fujitsu, Huawei
-            if fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
+            elif fan.get("ReadingRPM") is not None or fan.get("ReadingUnits") == "RPM":
                 fan_inventory.reading = fan.get("ReadingRPM") or fan.get("Reading")
                 fan_inventory.reading_unit = "RPM"
 
@@ -165,6 +180,47 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
                 plugin_object.add_perf_data(f"Fan_{fan_name}", int(fan_inventory.reading),
                                             perf_uom=perf_units, warning=plugin_object.cli_args.warning,
                                             critical=plugin_object.cli_args.critical, location=f"Chassis {chassis_id}")
+
+            # Dual-rotor fans: emit a second entry for the secondary rotor
+            secondary_rpm = grab(fan, "SecondarySpeedPercent.SpeedRPM")
+            if secondary_rpm is not None:
+
+                sec_fan = Fan(
+                    id=f"{fan_inventory.id}_2",
+                    name=f"{fan_inventory.name}_2",
+                    health_status=fan_inventory.health_status,
+                    operation_status=fan_inventory.operation_status,
+                    physical_context=fan_inventory.physical_context,
+                    location=fan_inventory.location,
+                    chassis_ids=chassis_id,
+                    reading=secondary_rpm,
+                    reading_unit="RPM"
+                )
+
+                plugin_object.inventory.add(sec_fan)
+
+                if sec_fan.operation_status != "Absent":
+                    fan_num += 1
+
+                    sec_fan_name = sec_fan.name
+                    if sec_fan_name.lower().startswith("fan"):
+                        sec_fan_name = sec_fan_name[3:].strip().strip('_')
+
+                    sec_text_speed = f" ({sec_fan.reading} {sec_fan.reading_unit})"
+                    sec_status_text = f"Fan '{sec_fan_name}'{sec_text_speed} status is: {fan_status}"
+
+                    plugin_object.add_output_data(
+                        "CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
+                        sec_status_text, location=f"Chassis {chassis_id}")
+
+                    sec_perf_name = sec_fan_name
+                    if num_chassis > 1:
+                        sec_perf_name = f"{chassis_id}.{sec_fan_name}"
+
+                    plugin_object.add_perf_data(f"Fan_{sec_perf_name}", int(sec_fan.reading),
+                                                perf_uom="", warning=plugin_object.cli_args.warning,
+                                                critical=plugin_object.cli_args.critical,
+                                                location=f"Chassis {chassis_id}")
 
         if len(thermal_data.get("Fans")) > 0:
             default_text = f"All fans ({fan_num}) are in good condition"

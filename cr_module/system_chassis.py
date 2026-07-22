@@ -38,12 +38,42 @@ def get_chassis_data(data_type):
         chassis_id = chassis_url.rstrip("/").split("/")[-1]
 
         chassis_data = plugin_object.rf.get(chassis_url)
+
+        # Use ThermalSubsystem for Temperature/Fan (avoids intermittent
+        # GeneralError on legacy /Thermal with iDRAC 7.30.10.50)
+        # https://github.com/bb-Ricardo/check_redfish/issues/195
+        if plugin_object.rf.vendor == "Dell":
+            bmc_version_int = 0
+            bmc_firmware_version_int = 0
+            bmc_matching_version = False
+
+            # noinspection PyBroadException
+            try:
+                bmc_version_int = int(plugin_object.rf.vendor_data.bmc_version)
+            except Exception:
+                pass
+
+            # noinspection PyBroadException
+            try:
+                bmc_firmware_version_int = int(plugin_object.rf.vendor_data.get_bmc_firmware_version()[0:1])
+            except Exception:
+                pass
+
+            if bmc_version_int == 9 and bmc_firmware_version_int >= 7:
+                bmc_matching_version = True
+
+            if bmc_version_int == 10:
+                bmc_matching_version = True
+
+            if data_type in [Temperature, Fan] and bmc_matching_version is True:
+                data_point = "ThermalSubsystem"
+
         discovered_url = grab(chassis_data, f"{data_point}/@odata.id", separator="/")
 
         # add compatibility layer for HPE Compute Scale-up Server 3200
         query_sensors = False
         if discovered_url is None:
-            discovered_url = grab(chassis_data, f"{data_point}Subsystem/@odata.id", separator="/")
+            discovered_url = grab(chassis_data, f"{data_point.replace('Subsystem','')}Subsystem/@odata.id", separator="/")
             query_sensors = True
 
         sensors_url = grab(chassis_data, f"Sensors/@odata.id", separator="/")

@@ -12,6 +12,57 @@ from cr_module.classes.plugin import PluginData
 from cr_module.common import get_status_data, grab
 from cr_module import get_system_power_state
 
+def add_temp_status(temp_inventory: Temperature, chassis_id: str, num_chassis: int, system_power_state: str) -> bool:
+
+    plugin_object = PluginData()
+
+    plugin_object.inventory.add(temp_inventory)
+
+    status = temp_inventory.health_status
+    state = temp_inventory.operation_status
+    current_temp = temp_inventory.reading
+    critical_temp = temp_inventory.upper_threshold_critical
+    warning_temp = temp_inventory.upper_threshold_non_critical
+
+    if state.lower() in ["absent", "disabled", "disable", "unavailableoffline", "standbyoffline"]:
+        return False
+
+    if status is None:
+        if isinstance(warning_temp, (int, float)):
+            warning_temp = int(warning_temp)
+
+            if 0 > current_temp >= warning_temp:
+                status = "WARNING"
+
+        if isinstance(critical_temp, (int, float)):
+            critical_temp = int(critical_temp)
+
+            if 0 > current_temp >= critical_temp:
+                status = "CRITICAL"
+
+    if status is None:
+        status = "OK" if "enable" in state.lower() else state
+
+    if system_power_state != "ON":
+        status = "OK"
+
+    status_unit = "F" if temp_inventory.reading_unit == "Fahrenheit" else "C"
+
+    status_text = f"Temp sensor {temp_inventory.name} status is: {status} ({current_temp} °{status_unit})"
+    if critical_temp is not None:
+        status_text += f" (max: {critical_temp} °{status_unit})"
+
+    plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
+                                  location=f"Chassis {chassis_id}")
+
+    temp_name = temp_inventory.name
+    if num_chassis > 1:
+        temp_name = f"{chassis_id}.{temp_name}"
+
+    plugin_object.add_perf_data(f"temp_{temp_name}", current_temp, warning=warning_temp,
+                                critical=critical_temp, location=f"Chassis {chassis_id}")
+
+    return True
 
 def get_single_chassis_temp(redfish_url, chassis_id, thermal_data):
 
@@ -28,7 +79,10 @@ def get_single_chassis_temp(redfish_url, chassis_id, thermal_data):
     system_power_state = get_system_power_state().upper()
 
     temp_num = 0
+    got_temp_date = False
     if "Temperatures" in thermal_data:
+
+        got_temp_date = True
 
         for temp in thermal_data.get("Temperatures") or list():
 
@@ -86,63 +140,44 @@ def get_single_chassis_temp(redfish_url, chassis_id, thermal_data):
             temp_inventory.add_relation(plugin_object.rf.get_system_properties(), temp.get("Links"))
             temp_inventory.add_relation(plugin_object.rf.get_system_properties(), temp.get("RelatedItem"))
 
-            plugin_object.inventory.add(temp_inventory)
-
-            if not state or state.lower() in ["absent", "disabled", "disable", "unavailableoffline", "standbyoffline"]:
-                continue
-
-            if status is None:
-                status = "OK" if "enable" in state.lower() else state
-
-            current_temp = temp_inventory.reading
-            critical_temp = temp_inventory.upper_threshold_critical
-            warning_temp = temp_inventory.upper_threshold_non_critical
-
-            temp_num += 1
-
-            if isinstance(warning_temp, (int, float)):
-                warning_temp = int(warning_temp)
-
-                if 0 > current_temp >= warning_temp:
-                    status = "WARNING"
-
-            if isinstance(critical_temp, (int, float)):
-                critical_temp = int(critical_temp)
-
-                if 0 > current_temp >= critical_temp:
-                    status = "CRITICAL"
-
-
-            if system_power_state != "ON":
-                status = "OK"
-
-            status_text = f"Temp sensor {temp_inventory.name} status is: {status} ({current_temp} °C)"
-            if critical_temp is not None:
-                status_text += f" (max: {critical_temp} °C)"
-
-            plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
-                                          location=f"Chassis {chassis_id}")
-
-            temp_name = temp_inventory.name
-            if num_chassis > 1:
-                temp_name = f"{chassis_id}.{temp_name}"
-
-            plugin_object.add_perf_data(f"temp_{temp_name}", current_temp, warning=warning_temp,
-                                        critical=critical_temp, location=f"Chassis {chassis_id}")
-
-        if len(thermal_data.get("Temperatures")) > 0:
-            default_text = f"All temp sensors ({temp_num}) are in good condition"
-        else:
-            default_text = f"Chassis has no temp sensors installed/reported"
+            if add_temp_status(temp_inventory, chassis_id, num_chassis, system_power_state) is True:
+                temp_num += 1
 
     elif grab(thermal_data, "ThermalMetrics/@odata.id", separator="/") is not None:
 
+        got_temp_date = True
+
         thermal_metrics = plugin_object.rf.get(grab(thermal_data, "ThermalMetrics/@odata.id", separator="/"))
 
-        for thermal_metric in thermal_metrics.get("TemperatureReadingsCelsius") or list():
+        # Collect sensor URIs from both arrays — TemperatureReadingsCelsius can
+        # be incomplete (some systems omit a sensor here), TemperatureSummaryCelsius
+        # has them all. DataSourceUri may be a plain string (older firmware) or a
+        # reference object {"@odata.id": "..."} (e.g. newer iDRAC) — normalize both.
+        sensor_uris = set()
+        for metric_source in [*(thermal_metrics.get("TemperatureReadingsCelsius") or []),
+                              *((thermal_metrics.get("TemperatureSummaryCelsius") or {}).values())]:
+            if not isinstance(metric_source, dict):
+                continue
 
-            name = thermal_metric.get("DeviceName")
-            member_id = name
+            data_source_uri = grab(metric_source, "DataSourceUri/@odata.id", separator="/") or \
+                grab(metric_source, "DataSourceUri" )
+
+            if data_source_uri is not None:
+                sensor_uris.add(data_source_uri)
+
+        for data_source_uri in sorted(sensor_uris):
+
+            sensor = plugin_object.rf.get(data_source_uri)
+            if sensor is None or sensor.get("error"):
+                continue
+
+            status_data = get_status_data(grab(sensor, "Status"))
+
+            status = status_data.get("Health")
+            state = status_data.get("State")
+
+            name = sensor.get("Name")
+            member_id = sensor.get("Id") or name
 
             # prefix with chassis id if system has more then one
             if num_chassis > 1:
@@ -151,31 +186,42 @@ def get_single_chassis_temp(redfish_url, chassis_id, thermal_data):
             temp_inventory = Temperature(
                 name=name,
                 id=member_id,
-                physical_context=thermal_metric.get("PhysicalContext"),
-                reading_unit="Celsius",
-                reading=thermal_metric.get("Reading"),
+                physical_context=sensor.get("PhysicalContext"),
+                reading_unit="Fahrenheit" if f"{sensor.get('ReadingUnits')}".upper()[0:1] == "F" else "Celsius",
+                reading=sensor.get("Reading") or 0,
+                health_status=status,
+                operation_status=state,
+                min_reading=sensor.get("ReadingRangeMin"),
+                max_reading=sensor.get("ReadingRangeMax"),
+                lower_threshold_non_critical=grab(sensor, "Thresholds.LowerCaution.Reading"),
+                lower_threshold_critical=grab(sensor, "Thresholds.LowerCritical.Reading"),
+                lower_threshold_fatal=grab(sensor, "Thresholds.LowerFatal.Reading"),
+                upper_threshold_non_critical=grab(sensor, "Thresholds.UpperCaution.Reading"),
+                upper_threshold_critical=grab(sensor, "Thresholds.UpperCritical.Reading"),
+                upper_threshold_fatal=grab(sensor, "Thresholds.UpperFatal.Reading"),
                 chassis_ids=chassis_id
             )
 
             if plugin_object.cli_args.verbose:
-                temp_inventory.source_data = thermal_metric
+                temp_inventory.source_data = sensor
 
-            plugin_object.inventory.add(temp_inventory)
+            # some sensor data does not provide "Status" dict
+            if state is None:
+                temp_inventory.operation_status = "Enabled"
 
-            status_text = f"Temp sensor '{temp_inventory.name}' reading: {temp_inventory.reading} °C"
+            if add_temp_status(temp_inventory, chassis_id, num_chassis, system_power_state) is True:
+                temp_num += 1
 
-            plugin_object.add_output_data("OK", status_text, location=f"Chassis {chassis_id}")
 
-            plugin_object.add_perf_data(f"temp_{temp_inventory.id}", temp_inventory.reading,
-                                        location=f"Chassis {chassis_id}")
-
-        if len(thermal_metrics.get("TemperatureReadingsCelsius", [])) > 0:
-            default_text = f"Reported {len(thermal_metrics.get('TemperatureReadingsCelsius'))} temperature metrics"
-        else:
-            default_text = f"Chassis has no temp sensors installed/reported"
-    else:
+    if got_temp_date is False:
         default_text = "No temp sensors detected"
         plugin_object.inventory.add_issue(Temperature, f"No temp sensor data returned for API URL '{redfish_url}'")
+    else:
+        if temp_num > 0:
+            default_text = f"All temp sensors ({temp_num}) are in good condition"
+        else:
+            default_text = f"Chassis has no temp sensors installed/reported"
+
 
     plugin_object.add_output_data("OK", default_text, summary=True, location=f"Chassis {chassis_id}")
 
