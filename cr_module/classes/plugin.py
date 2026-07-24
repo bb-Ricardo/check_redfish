@@ -248,7 +248,9 @@ class PluginData:
         if self.__in_firmware_collection_mode is True:
             return
 
-        perf_string = "'%s'=%s" % (name.replace(" ", "_"), value)
+        # issue about label format: https://github.com/bb-Ricardo/check_redfish/issues/197
+        # https://nagios-plugins.org/doc/guidelines.html
+        perf_string = "'%s'=%s" % (name.replace(" ", "_").replace("=", "_").replace("'", "_"), value)
 
         if perf_uom is not None:
             perf_string += perf_uom
