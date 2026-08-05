@@ -24,7 +24,7 @@ def add_temp_status(temp_inventory: Temperature, chassis_id: str, num_chassis: i
     critical_temp = temp_inventory.upper_threshold_critical
     warning_temp = temp_inventory.upper_threshold_non_critical
 
-    if state.lower() in ["absent", "disabled", "disable", "unavailableoffline", "standbyoffline"]:
+    if state is None or state.lower() in ["absent", "disabled", "disable", "unavailableoffline", "standbyoffline"]:
         return False
 
     if status is None:
