@@ -398,7 +398,7 @@ def get_firmware_info_generic():
                                                     "Unable to retrieve firmware information.")
         return
 
-    for firmware_member in firmware_response.get("Members"):
+    for firmware_member in firmware_response.get("Members") or []:
 
         if firmware_member.get("@odata.type"):
             firmware_entry = firmware_member
