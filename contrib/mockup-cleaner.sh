@@ -63,7 +63,7 @@ for PROPERTY in "${PROPERTIES_TO_SANITIZE[@]}"; do
     [[ "$PROPERTY" =~ AssetTag ]] && MOCKUP_PREFIX=$MOCKUP_ASSET
 
     # sort by length
-    VALUES=$(echo "$VALUES" | awk '{ print length($0) " " $0; }' $file | sort -r -n | cut -d ' ' -f 2- | sed 's|\\n||g')
+    VALUES=$(echo "$VALUES" | awk '{ print length($0) " " $0; }' | sort -r -n | cut -d ' ' -f 2- | sed 's|\\n||g')
 
     IFS=$'\n'
     for VALUE in $VALUES; do
@@ -81,9 +81,12 @@ for PROPERTY in "${PROPERTIES_TO_SANITIZE[@]}"; do
         # skip default SNMP communities
         [[ "$PROPERTY" =~ Community && "$VALUE" =~ public|privat ]] && continue
 
+        # skip trivial numbers
+        [[ $VALUE =~ ^[0-9]{1,2}$ ]] && continue
+
         echo -e "\tcleaning $PROPERTY: $VALUE"
 
-        RN=$(od -A n -t d -N 1 /dev/urandom)
+        RN=$(od -A n -t d -N 3 /dev/urandom)
         # simple values (1.2, 34.2) need to match property as well
         if [[ "${VALUE}" =~ ^[0-9]{1,}\.[0-9]{1,}$ ]]; then
             grep -lir "${PROPERTY}.*${VALUE}" "${MOCKUP}" | xargs sed -i 's/'"${VALUE}"'/'"${MOCKUP_PREFIX}-${RN##*' '}"'/g' 2>/dev/null
@@ -161,7 +164,7 @@ done
 
 echo "Leftovers $MOCKUP SORT:"
 {
-for PROPERTY in ${PROPERTIES_TO_SANITIZE[@]}; do
+for PROPERTY in "${PROPERTIES_TO_SANITIZE[@]}"; do
     grep -ihr "${PROPERTY}\":" "${MOCKUP}" | grep -v "MOCKUP\|{$\|egistry\|OData-Version\|odata.context\|null\,*$\|: \"\"\,*$\|: \"N/*A\",*$\|RedfishVersion";
 done;
 } | sed 's/^[[:space:]]*//g' | sort -u | grep --color "$(printf -- '%s\n' "${PROPERTIES_TO_SANITIZE[@]} ipv6 Serial")"
