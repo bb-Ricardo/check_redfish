@@ -445,9 +445,6 @@ This plugin is currently tested with following systems
 ### Hewlett Packard Enterprise
 Almost all HPE server with iLO4 (>=2.50), iLO5 (>=1.40) or iLO6 should work
 
-IMPORTANT:
-* newer iLO5 firmware reports some storage components twice as the data is present in two locations
-
 Models:
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
@@ -469,6 +466,7 @@ Models:
 
 * Compute Scale-up Server 3200
 * Superdome Flex
+* Cray XD670
 
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
@@ -489,6 +487,7 @@ Models:
 * PowerEdge R7715  (iDRAC 10 Version 1.20.60.50)
 * PowerEdge R840   (iDRAC  9 Version 4.22.00.00)
 * PowerEdge R930   (iDRAC  8 Version 2.70.70.70)
+* PowerEdge XE9680 (iDRAC  9 Version 7.20.80.50)
 * XC6420 Appliance (Firmware: 5.00.20.00 & BIOS 2.12.2)
 
 ### Huawei
@@ -520,12 +519,16 @@ Models:
 * SuperServer 5028D-TN4T       (BMC Version 3.88)
 * SuperServer E300-9D-8CN8TP   (BMC Version 01.73.12)
 * SuperServer SSG-620P-E1CR24H (BMC Version 01.01.24)
+* SuperServer SYS-122FT
 
 ### GIGABYTE (limited support)
 * H262-Z61
 
 ### Bull
 * BullSequana SH120
+
+### H3C
+* UniServer R4900 G6
 
 ## Contribution
 

@@ -7,6 +7,7 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+from cr_module.classes.inventory import Manager, System
 from cr_module.common import grab, quoted_split, get_local_timezone, force_cast
 from cr_module.classes import plugin_status_types
 from cr_module.classes.plugin import PluginData
@@ -309,7 +310,13 @@ def get_event_log_generic(event_type, redfish_path):
     if plugin_object.rf.vendor == "Dell":
         max_entries = plugin_object.cli_args.max
 
-    event_entries = plugin_object.rf.get(redfish_path, max_members=max_entries).get("Members")
+    event_data = plugin_object.rf.get(redfish_path, max_members=max_entries)
+
+    if event_data.get("error"):
+        plugin_object.add_data_retrieval_error(Manager if event_type == "Manager" else System, event_data, redfish_path)
+        return
+
+    event_entries = event_data.get("Members")
 
     if not event_entries or len(event_entries) == 0:
         plugin_object.add_output_data("OK", f"No {event_type} log entries found in '{redfish_path}'.",

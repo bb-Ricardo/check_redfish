@@ -225,6 +225,14 @@ def get_single_system_info(redfish_url):
     if manufacturer is None:
         manufacturer = plugin_object.rf.vendor
 
+    cpu_num = grab(system_response, "ProcessorSummary.Count")
+    if cpu_num is None:
+        processors_link = grab(system_response, "Processors/@odata.id", separator="/")
+        if processors_link is not None:
+            processors_response = plugin_object.rf.get_view(
+                f"{processors_link}{plugin_object.rf.vendor_data.expand_string}")
+            if processors_response.get("Members@odata.count") is not None:
+                cpu_num = processors_response.get("Members@odata.count")
 
     system_inventory = System(
         id=system_response.get("Id"),
@@ -237,7 +245,7 @@ def get_single_system_info(redfish_url):
         bios_version=system_response.get("BiosVersion"),
         host_name=system_response.get("HostName"),
         indicator_led=system_response.get("IndicatorLED"),
-        cpu_num=grab(system_response, "ProcessorSummary.Count"),
+        cpu_num=cpu_num,
         part_number=system_response.get("PartNumber"),
         mem_size=mem_size,
         model=model,

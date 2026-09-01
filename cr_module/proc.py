@@ -87,7 +87,7 @@ def get_single_system_procs(redfish_url):
 
                 # get current/regular speed
                 current_speed = grab(vendor_data, "CurrentClockSpeedMHz") or grab(vendor_data, "RatedSpeedMHz") or \
-                    grab(vendor_data, "FrequencyMHz")
+                    grab(vendor_data, "FrequencyMHz") or proc_response.get("OperatingSpeedMHz")
 
                 max_speed = proc_response.get("MaxSpeedMHz")
 
@@ -118,17 +118,32 @@ def get_single_system_procs(redfish_url):
                     level_2_cache_kib = grab(vendor_data, "Cache2InstalledSizeKB")
                     level_3_cache_kib = grab(vendor_data, "Cache3InstalledSizeKB")
 
-                #                   HPE                           Lenovo
-                vendor_cache_data = grab(vendor_data, "Cache") or grab(vendor_data, "CacheInfo") or list()
+                # HPE
+                # Lenovo
+                # SuperMicro
+                vendor_cache_data = \
+                    grab(vendor_data, "Cache") or \
+                    grab(vendor_data, "CacheInfo") or \
+                    grab(proc_response, "ProcessorMemory") or \
+                    list()
 
                 for cpu_cache in vendor_cache_data:
 
-                    #            HPE                                 Lenovo
-                    cache_size = cpu_cache.get("InstalledSizeKB") or cpu_cache.get("InstalledSizeKByte")
-                    cache_level = cpu_cache.get("Name") or cpu_cache.get("CacheLevel")
+                    cache_size = \
+                        cpu_cache.get("InstalledSizeKB") or \
+                        cpu_cache.get("InstalledSizeKByte") or \
+                        cpu_cache.get("CapacityMiB")
+
+                    cache_level = \
+                        cpu_cache.get("Name") or \
+                        cpu_cache.get("CacheLevel") or \
+                        cpu_cache.get("MemoryType")
 
                     if cache_size is None or cache_level is None:
                         continue
+
+                    if  cpu_cache.get("CapacityMiB") is not None:
+                        cache_size = cache_size * 1024
 
                     if "L1" in cache_level:
                         level_1_cache_kib = cache_size * 1000 / 1024
@@ -162,6 +177,10 @@ def get_single_system_procs(redfish_url):
 
                 if socket is None or f"{socket}" == "":
                     socket = proc_response.get("Name")
+
+                service_label = grab(proc_response, "Location.PartLocation.ServiceLabel")
+                if socket == proc_response.get("Name") and service_label is not None:
+                    socket = service_label
 
                 proc_serial = grab(proc_response, f"Oem.{plugin_object.rf.vendor_dict_key}.SerialNumber") or \
                     proc_response.get("SN") or proc_response.get("SerialNumber")
@@ -205,8 +224,14 @@ def get_single_system_procs(redfish_url):
                 if system_power_state != "ON":
                     plugin_status = "OK"
 
-                status_text = f"Processor {proc_inventory.socket} ({proc_inventory.model}) status is: " \
-                              f"{proc_inventory.health_status}"
+                status_text = "Processor"
+                if f"{proc_inventory.type}" not in f"{proc_inventory.socket}":
+                    status_text += f" {proc_inventory.type}"
+                if f"{proc_inventory.socket}" != "Processor":
+                    status_text += f" {proc_inventory.socket}"
+                if f"{proc_inventory.model}" != "None":
+                    status_text += f" ({proc_inventory.model})"
+                status_text += f" status is: {proc_inventory.health_status}"
 
                 plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
                                               status_text, location=f"System {system_id}")

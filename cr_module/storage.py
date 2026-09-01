@@ -611,9 +611,7 @@ def get_storage_generic(system):
         status_data = get_status_data(drive_response.get("Status"))
 
         # ignore "Absent" drives on Cisco servers
-        if (plugin_object.rf.vendor == "Cisco" and
-                status_data.get("Health") == "OK" and
-                status_data.get("State") == "Absent"):
+        if status_data.get("State") == "Absent":
             return
 
         # get disk size
@@ -655,6 +653,9 @@ def get_storage_generic(system):
             # HPE special
             if plugin_object.rf.vendor == "HPE" and drive_oem_data.get("DriveStatus") is not None:
                 status_data = get_status_data(drive_oem_data.get("DriveStatus"))
+
+                if status_data.get("State") == "Disabled":
+                    return
 
             # Dell
             dell_disk_data = grab(drive_oem_data, "DellPhysicalDisk")
@@ -828,7 +829,7 @@ def get_storage_generic(system):
             else:
                 printed_size = 0
 
-            name = volume_data.get("Name")
+            name = f"{volume_data.get('Name')}".strip()
 
             raid_level = volume_data.get("VolumeType") or volume_data.get("RAIDType")
             volume_name = volume_data.get("Description")
@@ -839,8 +840,10 @@ def get_storage_generic(system):
 
             oem_data = grab(volume_data, f"Oem.{plugin_object.rf.vendor_dict_key}")
             if oem_data is not None:
-                if plugin_object.rf.vendor == "Huawei":
+                if oem_data.get("VolumeRaidLevel") is not None:
                     raid_level = oem_data.get("VolumeRaidLevel")
+
+                if plugin_object.rf.vendor == "Huawei":
                     volume_name = oem_data.get("VolumeName")
 
                 if plugin_object.rf.vendor in ["Fujitsu", "Lenovo"]:
@@ -1473,15 +1476,26 @@ def get_storage_generic(system):
                 global_battery_list.append(status_text)
 
     # check drives in chassis links
+    chassi_drives_list = list()
     for chassis in plugin_object.rf.get_system_properties("chassis") or list():
-        for chassis_drive in grab(plugin_object.rf.get(chassis), f"Links.Drives") or list():
-            if isinstance(chassis_drive, dict):
-                drive_path = chassis_drive.get("@odata.id")
-            else:
-                drive_path = chassis_drive
-            if drive_path is not None and drive_path not in system_drives_list:
-                controller_inventory = StorageController(id=0)
-                get_drive(drive_path)
+        for chassis_drive in grab(plugin_object.rf.get(chassis), "Links.Drives") or list():
+            chassi_drives_list.append(chassis_drive)
+
+        # different location
+        alt_chassi_drives = grab(plugin_object.rf.get(chassis), "Drives/@odata.id", separator="/")
+        if alt_chassi_drives is not None:
+            for chassis_drive in grab(plugin_object.rf.get(alt_chassi_drives), "Members") or list():
+                chassi_drives_list.append(chassis_drive)
+
+    for chassis_drive in chassi_drives_list:
+        if isinstance(chassis_drive, dict):
+            drive_path = chassis_drive.get("@odata.id")
+        else:
+            drive_path = chassis_drive
+
+        if drive_path is not None and drive_path not in system_drives_list:
+            controller_inventory = StorageController(id=0)
+            get_drive(drive_path)
 
     condensed_storage_status = plugin_object.return_highest_status(
         [x.health_status or "OK" for x in plugin_object.inventory.get(StorageController)])

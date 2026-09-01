@@ -67,6 +67,9 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
             member_id = grab(fan, "MemberId") or grab(fan, "Id")
             name = fan.get("FanName") or fan.get("Name")
 
+            if f"{name}".startswith("%"):
+                continue
+
             if member_id is None:
                 member_id = name
 
