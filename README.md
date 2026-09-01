@@ -69,18 +69,18 @@ This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
 It will also create a inventory of all components of a system.
 
-Version: 2.1.2 (2026-03-16)
+Version: 2.2.0 (2026-09-01)
 
 mandatory arguments:
-  -H HOST, --host HOST  define the host to request. To change the port just
+  -H, --host HOST       define the host to request. To change the port just
                         add ':portnumber' to this parameter
 
 authentication arguments:
-  -u USERNAME, --username USERNAME
+  -u, --username USERNAME
                         the login user name
-  -p PASSWORD, --password PASSWORD
+  -p, --password PASSWORD
                         the login password
-  -f AUTHFILE, --authfile AUTHFILE
+  -f, --authfile AUTHFILE
                         authentication file with user name and password
   --sessionfile SESSIONFILE
                         define name of session file
@@ -93,18 +93,18 @@ authentication arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -w WARNING, --warning WARNING
+  -w, --warning WARNING
                         set warning value
-  -c CRITICAL, --critical CRITICAL
+  -c, --critical CRITICAL
                         set critical value
   -v, --verbose         this will add all https requests and responses to
                         output, also adds inventory source data to all
                         inventory objects
   -d, --detailed        always print detailed result
-  -m MAX, --max MAX     set maximum of returned items for --sel or --mel
-  -r RETRIES, --retries RETRIES
+  -m, --max MAX         set maximum of returned items for --sel or --mel
+  -r, --retries RETRIES
                         set number of maximum retries (default: 3)
-  -t TIMEOUT, --timeout TIMEOUT
+  -t, --timeout TIMEOUT
                         set number of request timeout per try/retry (default:
                         7)
   --log_exclude LOG_EXCLUDE
