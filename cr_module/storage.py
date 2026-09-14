@@ -929,6 +929,10 @@ def get_storage_generic(system):
 
         status_data = get_status_data(enclosure_response.get("Status"))
 
+        enclosure_location = enclosure_response.get("Location")
+        if isinstance(enclosure_location, dict):
+            enclosure_location = grab(enclosure_location, "PartLocation.Reference") or enclosure_location
+
         enclosure_inventory = StorageEnclosure(
             # enclosure id repeats per controller
             # prefix enclosure id with controller id
@@ -939,7 +943,7 @@ def get_storage_generic(system):
             serial=enclosure_response.get("SerialNumber"),
             model=enclosure_response.get("Model"),
             manufacturer=enclosure_response.get("Manufacturer"),
-            location=enclosure_response.get("Location"),
+            location=enclosure_location,
             firmware=enclosure_response.get("FirmwareVersion"),
             num_bays=enclosure_response.get("DriveBayCount"),
             storage_controller_ids=controller_inventory.id,
