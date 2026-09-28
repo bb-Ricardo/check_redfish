@@ -790,6 +790,10 @@ class RedfishConnection:
 
         root_objects = ["Chassis", "Managers", "Systems"]
 
+        # a collection listed in root but returned without members (failed or unparsable request)
+        # would be cached in the session file and never be discovered again
+        discovery_complete = True
+
         for root_object in root_objects:
 
             system_properties[root_object.lower()] = list()
@@ -799,7 +803,8 @@ class RedfishConnection:
 
             rf_path = self.get(self.connection.root.get(root_object).get("@odata.id"))
 
-            if rf_path is None:
+            if rf_path is None or len(rf_path.get("Members") or list()) == 0:
+                discovery_complete = False
                 continue
 
             for entity in rf_path.get("Members", list()):
@@ -819,7 +824,7 @@ class RedfishConnection:
                 system_properties[root_object.lower()].append(entity_url)
 
         self.connection.system_properties = system_properties
-        if self.cli_args.nosession is False:
+        if self.cli_args.nosession is False and discovery_complete is True:
             self.save_session_to_file()
 
         return
