@@ -8,6 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import hashlib
+import re
 
 from cr_module.classes.inventory import StorageController, StorageEnclosure, PhysicalDrive, LogicalDrive
 from cr_module.classes.plugin import PluginData
@@ -80,7 +81,11 @@ def add_physical_drive_perf_data(drive_data: PhysicalDrive, warning: int=None, c
 
     if drive_data.name is not None and "smartstoragediskdrive" not in drive_data.name.lower():
         pd_name = f"drive_{drive_data.name}"
-        if drive_data.location is not None and f"{drive_data.location}" not in pd_name:
+        # append the location unless the name already contains it as a whole word.
+        # A plain substring test drops slot "6" for a drive named "... 6Gb ..." and
+        # identical drives end up with the same perfdata label.
+        if drive_data.location is not None and \
+                re.search(rf"(?<![\w.]){re.escape(f'{drive_data.location}')}(?![\w.])", drive_data.name) is None:
             pd_name += f"_{drive_data.location}"
     else:
         pd_name = f"drive_{drive_data.location}"
