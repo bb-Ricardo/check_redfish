@@ -102,6 +102,23 @@ def format_interface_addresses(addresses):
     return output_list
 
 
+def format_infiniband_guid(guid):
+    """
+    Port GUID as 8 colon-separated bytes: BMCs report it as "9c63:c003:00be:03b8"
+    (groups of 2 bytes); 8 bytes in the same form as the other addresses.
+    """
+
+    if not isinstance(guid, str):
+        return []
+
+    digits = "".join(c for c in guid if c in "0123456789abcdefABCDEF").upper()
+
+    if len(digits) != 16 or set(digits) == {"0"}:
+        return []
+
+    return [":".join(digits[i:i+2] for i in range(0, 16, 2))]
+
+
 def get_ethernet_interfaces_data(redfish_path_to_interfaces):
 
     plugin_object = PluginData()
@@ -289,6 +306,44 @@ def get_system_nics(redfish_url):
             return network_port_inventory
 
         return
+
+    # noinspection PyShadowingNames
+    def add_infiniband_guids(adapter_response, adapter_id, adapter_ports):
+        """
+        InfiniBand ports have no address in the port resource (Lenovo XCC, ConnectX-7).
+        The port GUID is on the network device function (InfiniBand.PermanentPortGUID),
+        which points to its port with Links.PhysicalNetworkPortAssignment.
+        Only ports without addresses are touched.
+        """
+
+        functions_path = grab(adapter_response, "NetworkDeviceFunctions/@odata.id", separator="/")
+        if functions_path is None:
+            return
+
+        functions = plugin_object.rf.get(functions_path)
+        if functions is None or functions.get("error") is not None:
+            return
+
+        for member in functions.get("Members") or []:
+            function_path = member.get("@odata.id")
+            if function_path is None:
+                continue
+
+            function_response = plugin_object.rf.get(function_path)
+            if function_response is None or function_response.get("error") is not None:
+                continue
+
+            guid = format_infiniband_guid(grab(function_response, "InfiniBand.PermanentPortGUID"))
+            port_path = grab(function_response, "Links/PhysicalNetworkPortAssignment/@odata.id", separator="/")
+
+            if len(guid) == 0 or port_path is None:
+                continue
+
+            port_id = port_path.rstrip("/").split("/")[-1]
+
+            for port in adapter_ports:
+                if port.id in (port_id, f"{adapter_id}.{port_id}") and len(port.addresses) == 0:
+                    port.update("addresses", guid, append=True)
 
     # noinspection PyShadowingNames
     def get_network_function(function_data=None):
@@ -569,6 +624,14 @@ def get_system_nics(redfish_url):
                         adapter_inventory.update("port_ids", port_inventory_data.id, True)
 
                         port_inventory_data.update("adapter_id", adapter_inventory.id)
+
+                # InfiniBand ports without address: take the port GUID from the network function
+                infiniband_ports = [p for p in plugin_object.inventory.get(NetworkPort)
+                                    if p.adapter_id == adapter_inventory.id
+                                    and len(p.addresses) == 0
+                                    and str(p.link_type or "").lower() == "infiniband"]
+                if len(infiniband_ports) > 0:
+                    add_infiniband_guids(adapter_response, adapter_inventory.id, infiniband_ports)
 
             # special case for HPE
             if plugin_object.rf.vendor == "HPE" and len(network_ports) > 0:
