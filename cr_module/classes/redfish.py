@@ -354,7 +354,19 @@ class RedfishConnection:
         """Perform Redfish session login with HTTP redirect support using direct HTTP requests."""
 
         base_url = f"https://{self.cli_args.host}"
-        sessions_url = f"{base_url}/redfish/v1/SessionService/Sessions"
+
+        # Use the sessions collection advertised by the service root
+        # (Links.Sessions). Older BMCs do not serve it at the default path,
+        # e.g. Dell iDRAC9 3.34 (Redfish 1.4.0) advertises /redfish/v1/Sessions
+        # and answers 401 to a POST on /redfish/v1/SessionService/Sessions.
+        sessions_path = "/redfish/v1/SessionService/Sessions"
+        try:
+            advertised = self.connection.root["Links"]["Sessions"]["@odata.id"]
+            if isinstance(advertised, str) and advertised.startswith("/"):
+                sessions_path = advertised
+        except (AttributeError, KeyError, TypeError):
+            pass
+        sessions_url = f"{base_url}{sessions_path}"
 
         login_payload = {
             "UserName": self.username,
