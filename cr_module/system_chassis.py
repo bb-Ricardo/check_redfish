@@ -310,15 +310,27 @@ def get_single_system_info(redfish_url):
             if collection_response is not None and (
                     collection_response.get("Members") is None or len(collection_response.get("Members")) > 0):
 
-                for dell_sensor in collection_response.get("Members"):
+                for dell_sensor_member in sorted(collection_response.get("Members"), key=lambda d: d['@odata.id']):
+
+                    if dell_sensor_member.get("Id"):
+                        dell_sensor = dell_sensor_member
+                    else:
+                        dell_sensor = plugin_object.rf.get(dell_sensor_member.get("@odata.id"))
+
+                        if dell_sensor_member.get("error"):
+                            plugin_object.add_data_retrieval_error(System, dell_sensor, redfish_url)
+                            continue
 
                     # skip if sensor slot is empty
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
 
+                    dell_sensor_health_state = dell_sensor.get('HealthState') or "None"
+                    dell_sensor_current_state = dell_sensor.get('CurrentState') or "None"
+
                     # skip unknown DIMM and CPU status
-                    if dell_sensor.get('CurrentState') == dell_sensor.get('HealthState') and \
-                            dell_sensor.get('HealthState').upper() == "UNKNOWN":
+                    if dell_sensor_current_state == dell_sensor_health_state and \
+                            dell_sensor_health_state.upper() == "UNKNOWN":
                         continue
 
                     num_members += 1
@@ -326,16 +338,16 @@ def get_single_system_info(redfish_url):
                     this_sensor_status = "OK"
 
                     if dell_sensor.get('EnabledState') == "Enabled" and system_inventory.power_state.upper() == "ON":
-                        if "WARNING" in dell_sensor.get('HealthState').upper():
+                        if "WARNING" in dell_sensor_health_state.upper():
                             this_sensor_status = "WARNING"
-                        elif dell_sensor.get('HealthState') != "OK":
+                        elif dell_sensor_health_state.upper() != "OK":
                             this_sensor_status = "CRITICAL"
 
                     dell_sensors.append({this_sensor_status: 'Sensor "%s": %s (%s/%s)' % (
                         dell_sensor.get('ElementName'),
-                        dell_sensor.get('HealthState'),
+                        dell_sensor_health_state,
                         dell_sensor.get('EnabledState'),
-                        dell_sensor.get('CurrentState')
+                        dell_sensor_current_state
                     )})
 
         # get the most severe state from system and sensors
