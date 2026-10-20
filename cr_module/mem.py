@@ -39,6 +39,9 @@ def get_single_system_mem(redfish_url):
         # Fujitsu is just Health and not HealthRollup
         health = memory_status.get("HealthRollup") or memory_status.get("Health")
 
+        if health is not None and health.upper() == "UNKNOWN" and system_power_state.upper() != "ON":
+            health = "OK"
+
         if health == "OK" and plugin_object.cli_args.detailed is False and plugin_object.cli_args.inventory is False:
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
@@ -183,7 +186,7 @@ def get_single_system_mem(redfish_url):
 
         return
 
-    if health in [ "OK", None ]:
+    if health in ["OK", None]:
         plugin_object.add_output_data("OK", f"All {num_dimms} memory modules (Total %.1fGB) are in good condition" % (
                     size_sum / 1024), summary=True, location=f"System {system_id}")
     else:
