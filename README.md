@@ -69,7 +69,7 @@ This is a monitoring/inventory plugin to check components and
 health status of systems which support Redfish.
 It will also create a inventory of all components of a system.
 
-Version: 2.2.0 (2026-09-01)
+Version: 2.2.1 (2026-10-20)
 
 mandatory arguments:
   -H, --host HOST       define the host to request. To change the port just

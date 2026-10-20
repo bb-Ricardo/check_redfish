@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='check_redfish',
-    version='2.2.0',
+    version='2.2.1',
     author='bb-Ricardo',
     author_email='ricardo@bitchbrothers.com',
     description='A monitoring/inventory plugin to check components and health status of systems which support Redfish.',
