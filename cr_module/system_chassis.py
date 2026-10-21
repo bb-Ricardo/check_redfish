@@ -321,6 +321,9 @@ def get_single_system_info(redfish_url):
                             plugin_object.add_data_retrieval_error(System, dell_sensor, redfish_url)
                             continue
 
+                    if dell_sensor.get("Id") is None:
+                        continue
+
                     # skip if sensor slot is empty
                     if any(x.startswith(dell_sensor.get("Id")) for x in dell_empty_slots):
                         continue
