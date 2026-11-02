@@ -260,8 +260,9 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
         if reading_sanitized >= 1000:
             reading_sanitized /= 1000
 
-        # mitigate issue with iLO 6 voltage in status WARNING
-        if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version == "6" and status == "WARNING":
+        # mitigate issue with iLO 6/7 voltage in status WARNING
+        if (plugin_object.rf.vendor == "HPE" and
+            plugin_object.rf.vendor_data.bmc_version in ["6", "7"] and status == "WARNING"):
             if voltage.get("LowerThresholdNonCritical") <= reading <= voltage.get("UpperThresholdNonCritical"):
                 status = "OK"
 
