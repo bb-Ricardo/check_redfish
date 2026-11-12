@@ -161,29 +161,38 @@ def get_storage_hpe(system):
                     continue
 
             # skip already processed disks
-            if disk_response.get("@odata.id").rstrip("/") in system_drives_list:
+            disk_data_id = disk_response.get("@odata.id")
+            if not isinstance(disk_data_id, str):
+                continue
+            disk_data_id = disk_data_id.rstrip("/")
+            if disk_data_id in system_drives_list:
                 continue
             else:
-                system_drives_list.append(disk_response.get("@odata.id").rstrip("/"))
+                system_drives_list.append(disk_data_id)
 
             status_data = get_status_data(disk_response.get("Status"))
 
             # get disk size
             disk_size = None
-            if disk_response.get("CapacityLogicalBlocks") is not None and \
-                    disk_response.get("BlockSizeBytes") is not None:
-                disk_size = int(disk_response.get("CapacityLogicalBlocks")) * int(disk_response.get("BlockSizeBytes"))
-            elif disk_response.get("CapacityMiB"):
-                disk_size = int(disk_response.get("CapacityMiB")) * 1024 ** 2
-            elif disk_response.get("CapacityGB"):
-                disk_size = disk_response.get("CapacityGB") * 1000 ** 3
+            try:
+                if disk_response.get("CapacityLogicalBlocks") is not None and \
+                        disk_response.get("BlockSizeBytes") is not None:
+                    disk_size = int(disk_response.get("CapacityLogicalBlocks")) * \
+                        int(disk_response.get("BlockSizeBytes"))
+                elif disk_response.get("CapacityMiB"):
+                    disk_size = int(disk_response.get("CapacityMiB")) * 1024 ** 2
+                elif disk_response.get("CapacityGB"):
+                    disk_size = disk_response.get("CapacityGB") * 1000 ** 3
+            except (ValueError, TypeError):
+                disk_size = None
 
             # get power on hours to account for iLO4 firmware bug
             power_on_hours = disk_response.get("PowerOnHours")
 
             # get location
             drive_location = None
-            if disk_response.get("LocationFormat") is not None and disk_response.get("Location") is not None:
+            if isinstance(disk_response.get("LocationFormat"), str) and \
+                    isinstance(disk_response.get("Location"), str):
                 drive_location = dict(zip(disk_response.get("LocationFormat").lower().split(":"),
                                           disk_response.get("Location").split(":")))
 
@@ -255,7 +264,7 @@ def get_storage_hpe(system):
 
             drive_status_reasons = ""
             if pd_inventory.health_status != "OK":
-                drive_status_reasons_list = disk_response.get("DiskDriveStatusReasons")
+                drive_status_reasons_list = disk_response.get("DiskDriveStatusReasons") or list()
                 if "None" in drive_status_reasons_list:
                     drive_status_reasons_list.remove("None")
 
@@ -285,9 +294,11 @@ def get_storage_hpe(system):
 
             pd_status_text = get_physical_drive_status(pd_inventory, drive_status_reasons)
 
+            pd_state = "CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status
+            pd_state = pd_state.upper() if isinstance(pd_state, str) and \
+                pd_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
             plugin_object.add_output_data(
-                "CRITICAL" if pd_inventory.health_status not in ["OK", "WARNING"] else pd_inventory.health_status,
-                pd_status_text, location=f"System {system_id}")
+                pd_state, pd_status_text, location=f"System {system_id}")
 
             add_physical_drive_perf_data(pd_inventory, media_life_warning, media_life_critical)
 
@@ -370,9 +381,11 @@ def get_storage_hpe(system):
             status_text = f"Logical Drive ({ld_inventory.id}) %.1fGB (RAID {ld_inventory.raid_type}) " \
                           f"status: {ld_inventory.health_status}" % printed_size
 
+            ld_state = "CRITICAL" if ld_inventory.health_status not in ["OK", "WARNING"] else ld_inventory.health_status
+            ld_state = ld_state.upper() if isinstance(ld_state, str) and \
+                ld_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
             plugin_object.add_output_data(
-                "CRITICAL" if ld_inventory.health_status not in ["OK", "WARNING"] else ld_inventory.health_status,
-                status_text, location=f"System {system_id}")
+                ld_state, status_text, location=f"System {system_id}")
 
     def get_enclosures(link):
 
@@ -449,9 +462,11 @@ def get_storage_hpe(system):
             status_text = f"StorageEnclosure ({enclosure_inventory.location}) " \
                           f"status: {enclosure_inventory.health_status}"
 
-            plugin_object.add_output_data("CRITICAL"
-                                          if enclosure_inventory.health_status not in ["OK", "WARNING"] else
-                                          enclosure_inventory.health_status, status_text,
+            enclosure_state = "CRITICAL" if enclosure_inventory.health_status not in ["OK", "WARNING"] \
+                else enclosure_inventory.health_status
+            enclosure_state = enclosure_state.upper() if isinstance(enclosure_state, str) and \
+                enclosure_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(enclosure_state, status_text,
                                           location=f"System {system_id}")
 
     plugin_object.set_current_command("Storage")
@@ -536,9 +551,11 @@ def get_storage_hpe(system):
                 status_text = f"{controller_inventory.model} (FW: {controller_inventory.firmware}) " \
                               f"status is: {controller_inventory.health_status}"
 
-                plugin_object.add_output_data("CRITICAL"
-                                              if controller_inventory.health_status not in ["OK", "WARNING"] else
-                                              controller_inventory.health_status, status_text,
+                controller_state = "CRITICAL" if controller_inventory.health_status not in ["OK", "WARNING"] \
+                    else controller_inventory.health_status
+                controller_state = controller_state.upper() if isinstance(controller_state, str) and \
+                    controller_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(controller_state, status_text,
                                               location=f"System {system_id}")
 
                 cache_status_text = controller_inventory.backup_power_health
@@ -562,7 +579,10 @@ def get_storage_hpe(system):
 
                 # only report cache status if "CacheMemorySizeMiB" is populated
                 if "CacheMemorySizeMiB" in list(controller_response.keys()):
-                    plugin_object.add_output_data("CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status,
+                    cache_state = "CRITICAL" if cache_status not in ["OK", "WARNING"] else cache_status
+                    cache_state = cache_state.upper() if isinstance(cache_state, str) and \
+                        cache_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                    plugin_object.add_output_data(cache_state,
                                                   f"Smart Array controller cache "
                                                   f"({controller_inventory.cache_size_in_mb}MB) "
                                                   f" status: {cache_status_text}", location=f"System {system_id}")
@@ -621,15 +641,19 @@ def get_storage_generic(system):
 
         # get disk size
         disk_size = None
-        if drive_response.get("CapacityLogicalBlocks") is not None and \
-                drive_response.get("BlockSizeBytes") is not None:
-            disk_size = int(drive_response.get("CapacityLogicalBlocks")) * int(drive_response.get("BlockSizeBytes"))
-        elif drive_response.get("CapacityBytes"):
-            disk_size = drive_response.get("CapacityBytes")
-        elif drive_response.get("CapacityMiB"):
-            disk_size = int(drive_response.get("CapacityMiB")) * 1024 ** 2
-        elif drive_response.get("CapacityGB"):
-            disk_size = drive_response.get("CapacityGB") * 1000 ** 3
+        try:
+            if drive_response.get("CapacityLogicalBlocks") is not None and \
+                    drive_response.get("BlockSizeBytes") is not None:
+                disk_size = int(drive_response.get("CapacityLogicalBlocks")) * \
+                    int(drive_response.get("BlockSizeBytes"))
+            elif drive_response.get("CapacityBytes"):
+                disk_size = drive_response.get("CapacityBytes")
+            elif drive_response.get("CapacityMiB"):
+                disk_size = int(drive_response.get("CapacityMiB")) * 1024 ** 2
+            elif drive_response.get("CapacityGB"):
+                disk_size = drive_response.get("CapacityGB") * 1000 ** 3
+        except (ValueError, TypeError):
+            disk_size = None
 
         drive_oem_data = grab(drive_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
 
@@ -653,7 +677,10 @@ def get_storage_generic(system):
 
             # Supermicro
             if predicted_media_life_left_percent is None and drive_oem_data.get("PercentageDriveLifeUsed") is not None:
-                predicted_media_life_left_percent = 100 - int(drive_oem_data.get("PercentageDriveLifeUsed"))
+                try:
+                    predicted_media_life_left_percent = 100 - int(drive_oem_data.get("PercentageDriveLifeUsed"))
+                except (ValueError, TypeError):
+                    predicted_media_life_left_percent = None
 
             # HPE special
             if plugin_object.rf.vendor == "HPE" and drive_oem_data.get("DriveStatus") is not None:
@@ -691,14 +718,17 @@ def get_storage_generic(system):
             grab(drive_response, "PhysicalLocation.PartLocation.ServiceLabel")
 
         interface_speed = None
-        if drive_response.get("NegotiatedSpeedGbs") is not None:
-            interface_speed = int(float(drive_response.get("NegotiatedSpeedGbs"))) * 1000
+        try:
+            if drive_response.get("NegotiatedSpeedGbs") is not None:
+                interface_speed = int(float(drive_response.get("NegotiatedSpeedGbs"))) * 1000
 
-        if interface_speed is None and drive_response.get("CapableSpeedGbs") is not None:
-            interface_speed = int(float(drive_response.get("CapableSpeedGbs"))) * 1000
+            if interface_speed is None and drive_response.get("CapableSpeedGbs") is not None:
+                interface_speed = int(float(drive_response.get("CapableSpeedGbs"))) * 1000
+        except (ValueError, TypeError):
+            pass
 
         encrypted = None
-        if drive_response.get("EncryptionStatus") is not None:
+        if isinstance(drive_response.get("EncryptionStatus"), str):
             if drive_response.get("EncryptionStatus").lower() == "encrypted":
                 encrypted = True
             else:
@@ -795,6 +825,8 @@ def get_storage_generic(system):
         if system_power_state != "ON":
             pd_status = "OK"
 
+        pd_status = pd_status.upper() if isinstance(pd_status, str) and \
+            pd_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
         plugin_object.add_output_data(pd_status, pd_status_text, location=f"System {system_id}")
 
         add_physical_drive_perf_data(pd_inventory, media_life_warning, media_life_critical)
@@ -810,7 +842,7 @@ def get_storage_generic(system):
             plugin_object.add_data_retrieval_error(LogicalDrive, volumes_response, volumes_link)
             return
 
-        if len(volumes_response.get("Members")) == 0:
+        if (volumes_response.get("Members") or []) == []:
             return
 
         for volume_member in volumes_response.get("Members"):
@@ -888,7 +920,13 @@ def get_storage_generic(system):
             data_drives_links = grab(volume_data, "Links.Drives")
 
             for data_drive in data_drives_links or list():
-                data_drive_link = data_drive.get("@odata.id").rstrip("/")
+                if isinstance(data_drive, dict):
+                    data_drive_link = data_drive.get("@odata.id")
+                else:
+                    data_drive_link = data_drive
+                if not isinstance(data_drive_link, str):
+                    continue
+                data_drive_link = data_drive_link.rstrip("/")
                 data_drive = drive_mapping.get(data_drive_link)
                 if data_drive is None:
                     continue
@@ -908,6 +946,8 @@ def get_storage_generic(system):
             if system_power_state != "ON":
                 ld_status = "OK"
 
+            ld_status = ld_status.upper() if isinstance(ld_status, str) and \
+                ld_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
             plugin_object.add_output_data(ld_status, status_text, location=f"System {system_id}")
 
     def get_enclosures(enclosure_link):
@@ -962,7 +1002,13 @@ def get_storage_generic(system):
         data_drives_links = grab(enclosure_response, "Links.Drives")
 
         for data_drive in data_drives_links or list():
-            data_drive_link = data_drive.get("@odata.id").rstrip("/")
+            if isinstance(data_drive, dict):
+                data_drive_link = data_drive.get("@odata.id")
+            else:
+                data_drive_link = data_drive
+            if not isinstance(data_drive_link, str):
+                continue
+            data_drive_link = data_drive_link.rstrip("/")
             data_drive = drive_mapping.get(data_drive_link)
             if data_drive is None:
                 continue
@@ -983,6 +1029,8 @@ def get_storage_generic(system):
         if system_power_state != "ON":
             enc_status = "OK"
 
+        enc_status = enc_status.upper() if isinstance(enc_status, str) and \
+            enc_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
         plugin_object.add_output_data(enc_status, status_text, location=f"System {system_id}")
 
     plugin_object.set_current_command("Storage")
@@ -1162,6 +1210,8 @@ def get_storage_generic(system):
                     if system_power_state != "ON":
                         controller_status = "OK"
 
+                    controller_status = controller_status.upper() if isinstance(controller_status, str) and \
+                        controller_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
                     plugin_object.add_output_data(controller_status, status_text, location=f"System {system_id}")
 
                     # Huawei
@@ -1179,34 +1229,51 @@ def get_storage_generic(system):
                         if system_power_state != "ON":
                             cap_status = "OK"
 
-                        plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
-                                                      cap_status_text, location=f"System {system_id}")
+                        cap_state = "CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status
+                        cap_state = cap_state.upper() if isinstance(cap_state, str) and \
+                            cap_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                        plugin_object.add_output_data(
+                            cap_state,
+                            cap_status_text, location=f"System {system_id}")
 
                     # Lenovo
                     if grab(controller_oem_data, "Battery") is not None:
                         cap_model = grab(controller_oem_data, "Battery.ProductName")
                         cap_manufacturer = grab(controller_oem_data, "Battery.Manufacturer")
-                        cap_status = grab(controller_oem_data, "Battery.OperationalStatus").replace("Operational", "OK")
+                        cap_status = grab(controller_oem_data, "Battery.OperationalStatus")
+                        if isinstance(cap_status, str):
+                            cap_status = cap_status.replace("Operational", "OK")
                         controller_inventory.backup_power_health = cap_status
-                        cap_full_capacity = grab(controller_oem_data, "Battery.DesignCapacity")
-                        cap_remain_capacity = grab(controller_oem_data, "Battery.RemainingCapacity")
-                        cap_voltage = float(int(grab(controller_oem_data, "Battery.VoltageMV")) / 1000)
-
-                        cap_percent = None
-                        if None not in [cap_full_capacity, cap_remain_capacity]:
-                            cap_percent = 100 / int(cap_full_capacity.replace("J", "")) * \
-                                          int(cap_remain_capacity.replace("J", ""))
 
                         status_text = f"Controller capacitor ({cap_manufacturer} {cap_model}) " \
-                                      f"(charge level: {cap_percent:.2f}%, " \
-                                      f"Voltage: {cap_voltage:.2f}V) " \
                                       f"status: {cap_status}"
+
+                        try:
+                            cap_full_capacity = grab(controller_oem_data, "Battery.DesignCapacity")
+                            cap_remain_capacity = grab(controller_oem_data, "Battery.RemainingCapacity")
+                            cap_voltage = float(int(grab(controller_oem_data, "Battery.VoltageMV")) / 1000)
+
+                            cap_percent = None
+                            if None not in [cap_full_capacity, cap_remain_capacity]:
+                                cap_percent = 100 / int(cap_full_capacity.replace("J", "")) * \
+                                              int(cap_remain_capacity.replace("J", ""))
+
+                            status_text = f"Controller capacitor ({cap_manufacturer} {cap_model}) " \
+                                          f"(charge level: {cap_percent:.2f}%, " \
+                                          f"Voltage: {cap_voltage:.2f}V) " \
+                                          f"status: {cap_status}"
+                        except (ValueError, TypeError):
+                            pass
 
                         if system_power_state != "ON":
                             cap_status = "OK"
 
-                        plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
-                                                      status_text, location=f"System {system_id}")
+                        cap_state = "CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status
+                        cap_state = cap_state.upper() if isinstance(cap_state, str) and \
+                            cap_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                        plugin_object.add_output_data(
+                            cap_state,
+                            status_text, location=f"System {system_id}")
 
                         global_battery_list.append(status_text)
 
@@ -1229,8 +1296,12 @@ def get_storage_generic(system):
                         if system_power_state != "ON":
                             cap_status = "OK"
 
-                        plugin_object.add_output_data("CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status,
-                                                      status_text, location=f"System {system_id}")
+                        cap_state = "CRITICAL" if cap_status not in ["OK", "WARNING"] else cap_status
+                        cap_state = cap_state.upper() if isinstance(cap_state, str) and \
+                            cap_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                        plugin_object.add_output_data(
+                            cap_state,
+                            status_text, location=f"System {system_id}")
 
                         global_battery_list.append(status_text)
             else:
@@ -1262,6 +1333,8 @@ def get_storage_generic(system):
                 if system_power_state != "ON":
                     controller_status = "OK"
 
+                controller_status = controller_status.upper() if isinstance(controller_status, str) and \
+                    controller_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
                 plugin_object.add_output_data(controller_status, status_text, location=f"System {system_id}")
 
             for controller_drive in controller_response.get("Drives", list()):
@@ -1319,7 +1392,9 @@ def get_storage_generic(system):
 
                 if plugin_object.rf.vendor == "Dell":
                     for storage_controller_item in plugin_object.inventory.get(StorageController):
-                        if storage_controller_item.id.startswith(simple_storage_controller_response.get("Id")):
+                        if isinstance(storage_controller_item.id, str) and \
+                                isinstance(simple_storage_controller_response.get("Id"), str) and \
+                                storage_controller_item.id.startswith(simple_storage_controller_response.get("Id")):
                             skip_controller = True
 
                 if skip_controller is True:
@@ -1349,6 +1424,8 @@ def get_storage_generic(system):
                         simple_storage_controller_response.get("Devices")) > 0:
 
                     status = get_component_status(controller_inventory.health_status)
+                    status = status.upper() if isinstance(status, str) and \
+                        status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
 
                     status_text = f"{controller_inventory.name} status: {controller_inventory.health_status}"
                     plugin_object.add_output_data(status, status_text, location=f"System {system_id}")
@@ -1424,6 +1501,8 @@ def get_storage_generic(system):
                         if system_power_state != "ON":
                             drive_status = "OK"
 
+                        drive_status = drive_status.upper() if isinstance(drive_status, str) and \
+                            drive_status.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
                         plugin_object.add_output_data(drive_status, status_text, location=f"System {system_id}")
 
     # check additional drives
@@ -1446,8 +1525,12 @@ def get_storage_generic(system):
                 plugin_object.rf.get(system), f"Oem.{plugin_object.rf.vendor_dict_key}.Battery"
             ) or list()
 
+            if isinstance(battery_status, dict):
+                battery_status = [battery_status]
+
             for controller_battery in battery_status:
-                if controller_battery.get("Present") != "Yes":
+                if not isinstance(controller_battery, dict) or \
+                        controller_battery.get("Present") != "Yes":
                     continue
 
                 status_data = get_status_data(controller_battery.get("Condition"))
@@ -1456,9 +1539,11 @@ def get_storage_generic(system):
                               f"(capacity: {controller_battery.get('MaxCapWatts')}W) " \
                               f"status: {status_data.get('Health')}"
 
-                plugin_object.add_output_data("CRITICAL"
-                                              if status_data.get("Health") not in ["OK", "WARNING"] else
-                                              status_data.get("Health"), status_text, location=f"System {system_id}")
+                battery_state = "CRITICAL" if status_data.get("Health") not in ["OK", "WARNING"] \
+                    else status_data.get("Health")
+                battery_state = battery_state.upper() if isinstance(battery_state, str) and \
+                    battery_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(battery_state, status_text, location=f"System {system_id}")
 
                 global_battery_list.append(status_text)
 
@@ -1470,7 +1555,12 @@ def get_storage_generic(system):
                 plugin_object.rf.get(chassis), f"Oem.{plugin_object.rf.vendor_dict_key}.SmartStorageBattery"
             ) or list()
 
+            if isinstance(battery_status, dict):
+                battery_status = [battery_status]
+
             for controller_battery in battery_status:
+                if not isinstance(controller_battery, dict):
+                    continue
                 status_data = get_status_data(controller_battery.get("Status"))
 
                 status_text = f"SmartStorageBattery {controller_battery.get('Index')} " \
@@ -1478,9 +1568,11 @@ def get_storage_generic(system):
                               f"capacity: {controller_battery.get('MaximumCapWatts')}W) " \
                               f"status: {status_data.get('Health')}"
 
-                plugin_object.add_output_data("CRITICAL"
-                                              if status_data.get("Health") not in ["OK", "WARNING"] else
-                                              status_data.get("Health"), status_text, location=f"System {system_id}")
+                battery_state = "CRITICAL" if status_data.get("Health") not in ["OK", "WARNING"] \
+                    else status_data.get("Health")
+                battery_state = battery_state.upper() if isinstance(battery_state, str) and \
+                    battery_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(battery_state, status_text, location=f"System {system_id}")
 
                 global_battery_list.append(status_text)
 

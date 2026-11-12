@@ -34,7 +34,15 @@ def discover_log_services(system_manager_id):
 
         for log_service in log_services.get("Members"):
 
-            log_service_url_list.append(log_service.get("@odata.id").rstrip("/"))
+            if isinstance(log_service, dict):
+                log_service_link = log_service.get("@odata.id")
+            else:
+                log_service_link = log_service
+
+            if not isinstance(log_service_link, str):
+                continue
+
+            log_service_url_list.append(log_service_link.rstrip("/"))
 
     return log_service_url_list
 
@@ -214,6 +222,11 @@ def get_event_log_hpe(event_type, redfish_path):
 
     event_entries = plugin_object.rf.get(redfish_path).get("Members")
 
+    if not isinstance(event_entries, list):
+        plugin_object.add_output_data("UNKNOWN", f"No {event_type} log entries returned from '{redfish_path}'.",
+                                      summary=True)
+        return
+
     # reverse list from newest to oldest entry
     event_entries.reverse()
 
@@ -332,6 +345,14 @@ def get_event_log_generic(event_type, redfish_path):
         event_entries.reverse()
 
     for event_entry_item in event_entries:
+
+        if not isinstance(event_entry_item, dict):
+            event_entry_item = plugin_object.rf.get(event_entry_item)
+
+            if not isinstance(event_entry_item, dict) or event_entry_item.get("error"):
+                plugin_object.add_data_retrieval_error(
+                    Manager if event_type == "Manager" else System, event_entry_item, "event log entry")
+                continue
 
         if event_entry_item.get("Id") is not None:
             event_entry = event_entry_item
@@ -489,7 +510,10 @@ def get_event_log_huawei(event_type, system_manager_id):
         # https://device_ip/redfish/v1/Managers/1/LogServices/SecurityLog/Entries
 
         for manager_log_service in log_services_data.get("Members") or list():
-            log_entries.extend(plugin_object.rf.get(manager_log_service.get("@odata.id") + "/Entries").get("Members"))
+            if not isinstance(manager_log_service, dict) or manager_log_service.get("@odata.id") is None:
+                continue
+            log_entries.extend(plugin_object.rf.get(manager_log_service.get("@odata.id") + "/Entries").get(
+                "Members") or [])
 
     if plugin_object.cli_args.warning:
         date_warning = data_now - datetime.timedelta(days=int(plugin_object.cli_args.warning))
@@ -497,7 +521,8 @@ def get_event_log_huawei(event_type, system_manager_id):
         date_critical = data_now - datetime.timedelta(days=int(plugin_object.cli_args.critical))
 
     if event_type == "Manager":
-        log_entries = sorted(log_entries, key=lambda i: i['Created'], reverse=True)
+        log_entries = [i for i in log_entries if isinstance(i, dict) and i.get("Created") is not None]
+        log_entries = sorted(log_entries, key=lambda i: str(i.get("Created")), reverse=True)
 
     for log_entry in log_entries:
 

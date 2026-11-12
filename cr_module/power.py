@@ -101,9 +101,11 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
 
             # special Fujitsu case
             if fujitsu_power_data is not None and last_power_output is None:
+                ps_name = ps.get("Name")
                 for fujitsu_power_sensor in fujitsu_power_data.get("ChassisPowerSensors") or list():
-                    if fujitsu_power_sensor.get("Designation") is not None and \
-                            fujitsu_power_sensor.get("Designation").startswith(ps.get("Name")):
+                    if isinstance(ps_name, str) and \
+                            isinstance(fujitsu_power_sensor.get("Designation"), str) and \
+                            fujitsu_power_sensor.get("Designation").startswith(ps_name):
                         last_power_output = fujitsu_power_sensor.get("CurrentPowerConsumptionW")
                         break
 
@@ -181,14 +183,19 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
             if health != "OK":
                 issue_detected = True
 
-            plugin_object.add_output_data("CRITICAL" if health not in ["OK", "WARNING"] else health,
-                                          status_text, location=f"Chassis {chassis_id}")
+            ps_state = "CRITICAL" if health not in ["OK", "WARNING"] else health
+            ps_state = ps_state.upper() if isinstance(ps_state, str) and \
+                ps_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(ps_state, status_text, location=f"Chassis {chassis_id}")
 
             if last_power_output is not None:
                 if num_chassis > 1:
                     bay = f"{chassis_id}.{bay}"
 
-                plugin_object.add_perf_data(f"ps_{bay}", int(last_power_output), location=f"Chassis {chassis_id}")
+                try:
+                    plugin_object.add_perf_data(f"ps_{bay}", int(last_power_output), location=f"Chassis {chassis_id}")
+                except (ValueError, TypeError):
+                    pass
 
         default_text = "All power supplies (%d) are in good condition" % (ps_num - ps_absent)
 
@@ -205,10 +212,16 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
                           power_data.get("Redundancy") or
                           power_data.get("PowerSupplyRedundancy"))
 
+    if isinstance(power_redundancies, dict):
+        power_redundancies = [power_redundancies]
+
     if power_redundancies:
         pr_status_summary_text = ""
         pr_num = 0
         for power_redundancy in power_redundancies:
+
+            if not isinstance(power_redundancy, dict):
+                continue
 
             if power_redundancy.get("Status") is not None:
                 pr_status = get_status_data(grab(power_redundancy, "Status"))
@@ -223,7 +236,10 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
 
                     pr_status_summary_text += f" {status_text}"
 
-                    plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+                    pr_state = "CRITICAL" if status not in ["OK", "WARNING"] else status
+                    pr_state = pr_state.upper() if isinstance(pr_state, str) and \
+                        pr_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                    plugin_object.add_output_data(pr_state,
                                                   status_text, location=f"Chassis {chassis_id}")
 
         if len(pr_status_summary_text) != 0:
@@ -262,13 +278,18 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
 
         # mitigate issue with iLO 6 voltage in status WARNING
         if plugin_object.rf.vendor == "HPE" and plugin_object.rf.vendor_data.bmc_version == "6" and status == "WARNING":
-            if voltage.get("LowerThresholdNonCritical") <= reading <= voltage.get("UpperThresholdNonCritical"):
+            lower_threshold = voltage.get("LowerThresholdNonCritical")
+            upper_threshold = voltage.get("UpperThresholdNonCritical")
+            if all(isinstance(x, (int, float)) for x in [lower_threshold, reading, upper_threshold]) and \
+                    lower_threshold <= reading <= upper_threshold:
                 status = "OK"
 
         status_text = f"Voltage {name} (status: {status}/{state}): {reading_sanitized}V"
 
-        plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                      status_text, location=f"Chassis {chassis_id}")
+        voltage_state = "CRITICAL" if status not in ["OK", "WARNING"] else status
+        voltage_state = voltage_state.upper() if isinstance(voltage_state, str) and \
+            voltage_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+        plugin_object.add_output_data(voltage_state, status_text, location=f"Chassis {chassis_id}")
 
         if num_chassis > 1:
             name = f"{chassis_id}.{name}"
@@ -359,7 +380,10 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
         if status is None:
             status = "OK"
 
-        plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+        status_control_state = "CRITICAL" if status not in ["OK", "WARNING"] else status
+        status_control_state = status_control_state.upper() if isinstance(status_control_state, str) and \
+            status_control_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+        plugin_object.add_output_data(status_control_state,
                                       status_text, location=f"Chassis {chassis_id}")
 
         if reading is not None and name is not None:
@@ -384,7 +408,10 @@ def get_single_chassis_power(redfish_url, chassis_id, power_data, chassis_data):
                 print("ISSUE Power control")
                 issue_detected = True
 
-            plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
+            battery_state = "CRITICAL" if status not in ["OK", "WARNING"] else status
+            battery_state = battery_state.upper() if isinstance(battery_state, str) and \
+                battery_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(battery_state,
                                           status_text, location=f"Chassis {chassis_id}")
 
     if issue_detected is False:

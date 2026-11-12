@@ -194,7 +194,7 @@ class RedfishConnection:
 
         try:
             # try to fix file mode before opening the file
-            session_file_mode = oct(os.stat(self.session_file_path).st_mode & 0o777)
+            session_file_mode = os.stat(self.session_file_path).st_mode & 0o777
             if session_file_mode != self.desired_session_file_mode:
                 os.chmod(self.session_file_path, self.desired_session_file_mode)
 
@@ -567,7 +567,8 @@ class RedfishConnection:
 
                         entry_path = this_response.get("Members@odata.nextLink")
 
-                        if entry_path is None or len(entry_path) == 0 or entry_path in collected_entry_path_list:
+                        if entry_path is None or not isinstance(entry_path, str) or \
+                                len(entry_path) == 0 or entry_path in collected_entry_path_list:
                             break
 
                         current_iteration += 1
@@ -575,7 +576,12 @@ class RedfishConnection:
                         if "?" in entry_path:
                             expand_string = expand_string.replace("?", "&", 1)
 
-                        this_response = self._rf_get(f"{entry_path}{expand_string}").dict
+                        try:
+                            this_response = self._rf_get(f"{entry_path}{expand_string}").dict
+                        except Exception:
+                            this_response = dict()
+                            collected_entry_path_list.append(entry_path)
+                            break
 
                         collected_entry_path_list.append(entry_path)
 
@@ -780,7 +786,7 @@ class RedfishConnection:
 
             self.vendor_data = VendorGeneric()
 
-            if vendor_string is not None and len(vendor_string) > 0:
+            if isinstance(vendor_string, str) and len(vendor_string) > 0:
                 self.vendor_data.name = vendor_string
 
         self.vendor = self.vendor_data.name
@@ -813,7 +819,14 @@ class RedfishConnection:
             if self.connection.root.get(root_object) is None:
                 continue
 
-            rf_path = self.get(self.connection.root.get(root_object).get("@odata.id"))
+            root_link = self.connection.root.get(root_object)
+            if isinstance(root_link, dict):
+                root_link = root_link.get("@odata.id")
+            if not isinstance(root_link, str) or len(root_link) == 0:
+                discovery_complete = False
+                continue
+
+            rf_path = self.get(root_link)
 
             if rf_path is None or len(rf_path.get("Members") or list()) == 0:
                 discovery_complete = False
@@ -826,6 +839,14 @@ class RedfishConnection:
                     entity_url = entity.get("@odata.id")
                 else:
                     entity_url = entity
+
+                if entity_url is None:
+                    discovery_complete = False
+                    continue
+
+                if not isinstance(entity_url, str):
+                    discovery_complete = False
+                    continue
 
                 # ToDo:
                 #  * This is a DELL workaround

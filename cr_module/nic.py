@@ -85,7 +85,7 @@ def format_interface_addresses(addresses):
 
     for address in input_list:
 
-        if address is None:
+        if address is None or not isinstance(address, str):
             continue
 
         address = address.upper()
@@ -580,7 +580,10 @@ def get_system_nics(redfish_url):
             if adapter_response.get("Ports") is not None:
                 port_data = plugin_object.rf.get(grab(adapter_response, "Ports/@odata.id", separator="/"))
                 if port_data.get("error") is None:
-                    network_ports.extend(port_data.get("Members"))
+                    port_members = port_data.get("Members")
+                    if isinstance(port_members, dict):
+                        port_members = [port_members]
+                    network_ports.extend(port_members or [])
 
             """ # currently only used within iLO 6 and no useful info provided at the moment
             if adapter_response.get("NetworkDeviceFunctions") is not None:
@@ -802,7 +805,10 @@ def get_system_nics(redfish_url):
 
         status_text += f"link: {port_inventory_item.link_status}"
 
-        plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
+        plugin_state = "CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status
+        plugin_state = plugin_state.upper() if isinstance(plugin_state, str) and \
+            plugin_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+        plugin_object.add_output_data(plugin_state,
                                       status_text, location=f"System {system_id}")
 
     adapter_inventory = plugin_object.inventory.get(NetworkAdapter)
@@ -833,7 +839,10 @@ def get_system_nics(redfish_url):
 
         status_text = f"Adapter {adapter_name} (FW: {network_adapter.firmware}) status: {adapter_status}"
 
-        plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
+        adapter_state = "CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status
+        adapter_state = adapter_state.upper() if isinstance(adapter_state, str) and \
+            adapter_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+        plugin_object.add_output_data(adapter_state,
                                       status_text, location=f"System {system_id}")
 
         for network_port in port_inventory:

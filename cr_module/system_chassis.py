@@ -216,8 +216,15 @@ def get_single_system_info(redfish_url):
 
     # Dell system
     # just WHY?
-    if plugin_object.rf.vendor == "Dell" and mem_size is not None and int(mem_size) % 16 != 0:
-        mem_size = round(mem_size * 1024 ** 3 / 1000 ** 3)
+    if plugin_object.rf.vendor == "Dell" and mem_size is not None:
+
+        try:
+            mem_size_int = float(mem_size)
+        except (ValueError, TypeError):
+            mem_size_int = None
+
+        if mem_size_int is not None and mem_size_int % 16 != 0:
+            mem_size = round(mem_size_int * 1024 ** 3 / 1000 ** 3)
 
     status_data = get_status_data(system_response.get("Status"))
 
@@ -341,7 +348,8 @@ def get_single_system_info(redfish_url):
 
                     this_sensor_status = "OK"
 
-                    if dell_sensor.get('EnabledState') == "Enabled" and system_inventory.power_state.upper() == "ON":
+                    if dell_sensor.get('EnabledState') == "Enabled" and \
+                            f"{system_inventory.power_state or ''}".upper() == "ON":
                         if "WARNING" in dell_sensor_health_state.upper():
                             this_sensor_status = "WARNING"
                         elif dell_sensor_health_state.upper() != "OK":
@@ -409,7 +417,10 @@ def get_single_system_info(redfish_url):
             sd_card_free_space = sd_card.get("FreeSpaceMB")
 
             status_text = f"SDCard Capacity {sd_card_capacity}MB and {sd_card_free_space}MB free space left."
-            plugin_object.add_output_data("CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status,
+            sd_card_state = "CRITICAL" if sd_card_status not in ["OK", "WARNING"] else sd_card_status
+            sd_card_state = sd_card_state.upper() if isinstance(sd_card_state, str) and \
+                sd_card_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(sd_card_state,
                                           status_text, location=f"System {system_id}")
 
     return

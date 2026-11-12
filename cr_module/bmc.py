@@ -50,8 +50,11 @@ def get_bmc_info_generic(redfish_url):
         return
 
     # HPE iLO 5 view
-    if view_response.get("ILO"):
-        manager_response = view_response.get("ILO")[0]
+    ilo_view = view_response.get("ILO") or []
+    if isinstance(ilo_view, dict):
+        ilo_view = [ilo_view]
+    if isinstance(ilo_view, list) and len(ilo_view) > 0:
+        manager_response = ilo_view[0]
     else:
         manager_response = view_response
 
@@ -126,6 +129,9 @@ def get_bmc_info_generic(redfish_url):
 
             for manager_nic_member in manager_nic_response.get("Members"):
 
+                if not isinstance(manager_nic_member, dict):
+                    continue
+
                 if manager_nic_member.get("@odata.context"):
                     manager_nic = manager_nic_member
                 else:
@@ -140,11 +146,15 @@ def get_bmc_info_generic(redfish_url):
 
                 if plugin_object.rf.vendor == "Dell":
                     interface_id = manager_nic.get("Id")
-                else:
+                elif isinstance(manager_nic_member.get("@odata.id"), str):
                     interface_id = "{}:{}:{}".format(
                         manager_inventory.id, manager_nic.get("Id"),
                         hashlib.sha1(manager_nic_member.get("@odata.id").encode("utf-8")).hexdigest()
                     )
+                else:
+                    interface_id = "{}:{}".format(manager_inventory.id, manager_nic.get("Id"))
+
+                interface_id = interface_id or "no-id"
 
                 vlan_id = grab(manager_nic, "VLAN.VLANId")
                 if vlan_id is None:
@@ -233,8 +243,11 @@ def get_bmc_info_generic(redfish_url):
                 if nic_status != "OK":
                     nic_issue_detected = True
 
-                plugin_object.add_output_data("CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status,
-                                              nic_status_text, location=f"Manager {manager_inventory.id}")
+                nic_state = "CRITICAL" if nic_status not in ["OK", "WARNING"] else nic_status
+                nic_state = nic_state.upper() if isinstance(nic_state, str) and \
+                    nic_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(nic_state, nic_status_text,
+                                              location=f"Manager {manager_inventory.id}")
 
     # get vendor information
     vendor_data = grab(manager_response, f"Oem.{plugin_object.rf.vendor_dict_key}")
@@ -272,7 +285,7 @@ def get_bmc_info_generic(redfish_url):
 
                 license_string = f"{lic_description}"
                 if lic_expire_date != "NO CONSTRAINTS":
-                    license_string += " (expires: {lic_expire_date}"
+                    license_string += f" (expires: {lic_expire_date})"
 
                 license_string += f" Status: {lic_status}"
                 bmc_licenses.append(license_string)
@@ -297,19 +310,29 @@ def get_bmc_info_generic(redfish_url):
             if license_information.get("error"):
                 plugin_object.add_data_retrieval_error(Manager, license_information, license_information_link)
 
-        if license_information is not None and license_information.get("Keys@odata.count") > 0:
+        if license_information is not None and (license_information.get("Keys@odata.count") or 0) > 0:
             for bmc_license in license_information.get("Keys"):
                 bmc_licenses.append("%s (%s)" % (bmc_license.get("Name"), bmc_license.get("Type")))
 
-    elif plugin_object.rf.vendor == "Huawei":
+    elif plugin_object.rf.vendor == "Huawei" and vendor_data is not None:
 
         bmc_license_link = vendor_data.get("LicenseService")
 
-        if bmc_license_link is not None and len(bmc_license_link) > 0:
-            bmc_lic = plugin_object.rf.get(bmc_license_link.get("@odata.id"))
+        license_url = None
+        if isinstance(bmc_license_link, list):
+            for license_link_item in bmc_license_link:
+                if isinstance(license_link_item, dict) and license_link_item.get("@odata.id"):
+                    license_url = license_link_item.get("@odata.id")
+                    break
+
+        elif isinstance(bmc_license_link, dict):
+            license_url = bmc_license_link.get("@odata.id")
+
+        if license_url:
+            bmc_lic = plugin_object.rf.get(license_url)
 
             if bmc_lic.get("error"):
-                plugin_object.add_data_retrieval_error(Manager, bmc_lic, bmc_license_link.get("@odata.id"))
+                plugin_object.add_data_retrieval_error(Manager, bmc_lic, license_url)
 
             bmc_licenses.append("%s (%s)" % (bmc_lic.get("InstalledStatus"), bmc_lic.get("LicenseClass")))
 
@@ -319,7 +342,7 @@ def get_bmc_info_generic(redfish_url):
         plugin_object.add_output_data("OK", f"BMC License: {bmc_license}", location=f"Manager {manager_inventory.id}")
 
     # HP ILO specific stuff
-    if plugin_object.rf.vendor == "HPE":
+    if plugin_object.rf.vendor == "HPE" and vendor_data is not None:
 
         # iLO Self Test
         for self_test in vendor_data.get("iLOSelfTestResults", []):
@@ -340,8 +363,11 @@ def get_bmc_info_generic(redfish_url):
             else:
                 self_test_status_text = f"BMC SelfTest {self_test_name} status: {self_test_status}"
 
-            plugin_object.add_output_data("CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status,
-                                          self_test_status_text, location=f"Manager {manager_inventory.id}")
+            self_test_state = "CRITICAL" if self_test_status not in ["OK", "WARNING"] else self_test_status
+            self_test_state = self_test_state.upper() if isinstance(self_test_state, str) and \
+                self_test_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(self_test_state, self_test_status_text,
+                                          location=f"Manager {manager_inventory.id}")
 
         # iLO SecurityState
         security_service_link = grab(vendor_data, "Links/SecurityService/@odata.id", separator="/")
@@ -445,7 +471,10 @@ def get_bmc_info_generic(redfish_url):
     if manager_nics_detected is True and nic_issue_detected is False:
         status_text = f"{status_text}, all nics are in 'OK' state."
 
-    plugin_object.add_output_data("CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status, status_text,
+    final_state = "CRITICAL" if bmc_status not in ["OK", "WARNING"] else bmc_status
+    final_state = final_state.upper() if isinstance(final_state, str) and \
+        final_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+    plugin_object.add_output_data(final_state, status_text,
                                   summary=True, location=f"Manager {manager_inventory.id}")
 
     return

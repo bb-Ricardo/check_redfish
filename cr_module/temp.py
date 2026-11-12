@@ -28,17 +28,23 @@ def add_temp_status(temp_inventory: Temperature, chassis_id: str, num_chassis: i
         return False
 
     if status is None:
-        if isinstance(warning_temp, (int, float)):
-            warning_temp = int(warning_temp)
+        try:
+            current_temp_number = int(current_temp)
+        except (ValueError, TypeError):
+            current_temp_number = None
 
-            if 0 > current_temp >= warning_temp:
-                status = "WARNING"
+        if current_temp_number is not None:
+            if isinstance(warning_temp, (int, float)):
+                warning_temp = int(warning_temp)
 
-        if isinstance(critical_temp, (int, float)):
-            critical_temp = int(critical_temp)
+                if 0 > current_temp_number >= warning_temp:
+                    status = "WARNING"
 
-            if 0 > current_temp >= critical_temp:
-                status = "CRITICAL"
+            if isinstance(critical_temp, (int, float)):
+                critical_temp = int(critical_temp)
+
+                if 0 > current_temp_number >= critical_temp:
+                    status = "CRITICAL"
 
     if status is None:
         status = "OK" if "enable" in state.lower() else state
@@ -52,7 +58,10 @@ def add_temp_status(temp_inventory: Temperature, chassis_id: str, num_chassis: i
     if critical_temp is not None:
         status_text += f" (max: {critical_temp} °{status_unit})"
 
-    plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status, status_text,
+    state_out = "CRITICAL" if status not in ["OK", "WARNING"] else status
+    state_out = state_out.upper() if isinstance(state_out, str) and \
+        state_out.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+    plugin_object.add_output_data(state_out, status_text,
                                   location=f"Chassis {chassis_id}")
 
     temp_name = temp_inventory.name

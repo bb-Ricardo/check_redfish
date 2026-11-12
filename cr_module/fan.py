@@ -16,7 +16,7 @@ from cr_module.classes.plugin import PluginData
 
 
 def natural_sort_key(s):
-    return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s)]
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", str(s))]
 
 def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
 
@@ -173,16 +173,23 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
 
             status_text = f"Fan '{fan_name}'{text_speed} status is: {fan_status}"
 
-            plugin_object.add_output_data("CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
+            plugin_state = "CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status
+            plugin_state = plugin_state.upper() if isinstance(plugin_state, str) and \
+                plugin_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+            plugin_object.add_output_data(plugin_state,
                                           status_text,  location=f"Chassis {chassis_id}")
 
             if fan_inventory.reading is not None:
                 if num_chassis > 1:
                     fan_name = f"{chassis_id}.{fan_name}"
 
-                plugin_object.add_perf_data(f"Fan_{fan_name}", int(fan_inventory.reading),
-                                            perf_uom=perf_units, warning=plugin_object.cli_args.warning,
-                                            critical=plugin_object.cli_args.critical, location=f"Chassis {chassis_id}")
+                try:
+                    plugin_object.add_perf_data(f"Fan_{fan_name}", int(fan_inventory.reading),
+                                                perf_uom=perf_units, warning=plugin_object.cli_args.warning,
+                                                critical=plugin_object.cli_args.critical,
+                                                location=f"Chassis {chassis_id}")
+                except (ValueError, TypeError):
+                    pass
 
             # Dual-rotor fans: emit a second entry for the secondary rotor
             secondary_rpm = grab(fan, "SecondarySpeedPercent.SpeedRPM")
@@ -212,18 +219,24 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
                     sec_text_speed = f" ({sec_fan.reading} {sec_fan.reading_unit})"
                     sec_status_text = f"Fan '{sec_fan_name}'{sec_text_speed} status is: {fan_status}"
 
+                    plugin_state = "CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status
+                    plugin_state = plugin_state.upper() if isinstance(plugin_state, str) and \
+                        plugin_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
                     plugin_object.add_output_data(
-                        "CRITICAL" if fan_status not in ["OK", "WARNING"] else fan_status,
+                        plugin_state,
                         sec_status_text, location=f"Chassis {chassis_id}")
 
                     sec_perf_name = sec_fan_name
                     if num_chassis > 1:
                         sec_perf_name = f"{chassis_id}.{sec_fan_name}"
 
-                    plugin_object.add_perf_data(f"Fan_{sec_perf_name}", int(sec_fan.reading),
-                                                perf_uom="", warning=plugin_object.cli_args.warning,
-                                                critical=plugin_object.cli_args.critical,
-                                                location=f"Chassis {chassis_id}")
+                    try:
+                        plugin_object.add_perf_data(f"Fan_{sec_perf_name}", int(sec_fan.reading),
+                                                    perf_uom="", warning=plugin_object.cli_args.warning,
+                                                    critical=plugin_object.cli_args.critical,
+                                                    location=f"Chassis {chassis_id}")
+                    except (ValueError, TypeError):
+                        pass
 
         if len(thermal_data.get("Fans")) > 0:
             default_text = f"All fans ({fan_num}) are in good condition"
@@ -236,19 +249,26 @@ def get_single_chassis_fan(redfish_url, chassis_id, thermal_data, sensors_data):
     # get FanRedundancy status
     fan_redundancies = thermal_data.get("FanRedundancy") or thermal_data.get("Redundancy")
 
+    if isinstance(fan_redundancies, dict):
+        fan_redundancies = [fan_redundancies]
+
     if fan_redundancies is not None:
         status_text = ""
         for fan_redundancy in fan_redundancies:
 
-            fr_status = get_status_data(fan_redundancy.get("Status"))
+            fr_status = get_status_data(fan_redundancy.get("Status") if isinstance(fan_redundancy, dict) else None)
 
             status = fr_status.get("Health")
 
             if status is not None:
                 status_text = "fan redundancy status is: %s" % fr_status.get("State")
 
-                plugin_object.add_output_data("CRITICAL" if status not in ["OK", "WARNING"] else status,
-                                              status_text[0].upper() + status_text[1:], location=f"Chassis {chassis_id}")
+                redundancy_state = "CRITICAL" if status not in ["OK", "WARNING"] else status
+                redundancy_state = redundancy_state.upper() if isinstance(redundancy_state, str) and \
+                    redundancy_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(redundancy_state,
+                                              status_text[0].upper() + status_text[1:],
+                                              location=f"Chassis {chassis_id}")
 
         if len(status_text) != 0:
             default_text += f" and {status_text}"
