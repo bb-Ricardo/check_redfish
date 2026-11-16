@@ -14,7 +14,7 @@ health status of systems which support Redfish.
 It will also create a inventory of all components of a system.
 """
 
-__version__ = "2.2.2"
+__version__ = "2.3.0"
 __version_date__ = "2026-10-23"
 __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "Check Redfish Plugin"
