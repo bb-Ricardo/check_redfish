@@ -443,17 +443,20 @@ will be treated as **OK** if Status.State is set to **Enabled**
 This plugin is currently tested with following systems
 
 ### Hewlett Packard Enterprise
-Almost all HPE server with iLO4 (>=2.50), iLO5 (>=1.40) or iLO6 should work
+Almost all HPE server with iLO4 (>=2.50), iLO5 (>=1.40), iLO6 or iLO7 should work
 
 Models:
 * ProLiant BL460c Gen8
 * ProLiant BL460c Gen9
 * ProLiant BL460c Gen10
+* ProLiant Compute DL320 Gen12
 * ProLiant DL325 Gen10
 * ProLiant DL325 Gen11
 * ProLiant DL360p Gen8
 * ProLiant DL360 Gen9
 * ProLiant DL360 Gen10
+* ProLiant DL360 Gen11
+* ProLiant Compute DL360 Gen12
 * ProLiant DL365 Gen10 Plus
 * ProLiant DL380p Gen8
 * ProLiant DL380 Gen9
@@ -461,12 +464,20 @@ Models:
 * ProLiant DL560 Gen10
 * ProLiant DL580 Gen8
 * ProLiant DL580 Gen9
+* ProLiant ML30 Gen10
+* ProLiant ML30 Gen10 Plus
+* ProLiant ML350 Gen10
 * ProLiant RL300 Gen11
+* ProLiant XL420 Gen10
 * ProLiant XL450 Gen10
 
 * Compute Scale-up Server 3200
 * Superdome Flex
 * Cray XD670
+* Synergy 480 Gen10 Plus
+* Synergy 480 Gen11
+* Synergy 480 Gen12
+* Alletra Storage MP
 
 ### Lenovo
 * ThinkSystem SR650 (BMC Version 2.12)
@@ -520,6 +531,8 @@ Models:
 * SuperServer E300-9D-8CN8TP   (BMC Version 01.73.12)
 * SuperServer SSG-620P-E1CR24H (BMC Version 01.01.24)
 * SuperServer SYS-122FT
+* PIO-629BT-06416S-01-RI13     (BMC Version 06.74.11)
+* PIO-629BT-06416S-Z1-RI13     (BMC Version 06.74.14)
 
 ### GIGABYTE (limited support)
 * H262-Z61
