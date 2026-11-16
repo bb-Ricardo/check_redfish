@@ -127,7 +127,13 @@ def get_single_system_procs(redfish_url):
                     grab(proc_response, "ProcessorMemory") or \
                     list()
 
+                if isinstance(vendor_cache_data, dict):
+                    vendor_cache_data = [vendor_cache_data]
+
                 for cpu_cache in vendor_cache_data:
+
+                    if not isinstance(cpu_cache, dict):
+                        continue
 
                     cache_size = \
                         cpu_cache.get("InstalledSizeKB") or \
@@ -142,8 +148,16 @@ def get_single_system_procs(redfish_url):
                     if cache_size is None or cache_level is None:
                         continue
 
-                    if  cpu_cache.get("CapacityMiB") is not None:
-                        cache_size = cache_size * 1024
+                    try:
+                        cache_size = int(cache_size)
+                    except (ValueError, TypeError):
+                        continue
+
+                    if cpu_cache.get("CapacityMiB") is not None:
+                        try:
+                            cache_size = cache_size * 1024
+                        except (ValueError, TypeError):
+                            continue
 
                     if "L1" in cache_level:
                         level_1_cache_kib = cache_size * 1000 / 1024
@@ -169,8 +183,12 @@ def get_single_system_procs(redfish_url):
                             all(i.isdigit() for i in grab(vendor_data, "MLCCacheSize.Reading")):
 
                         # calculate core cache size by num cores
+                        try:
+                            total_cores = int(proc_response.get("TotalCores") or 1)
+                        except (ValueError, TypeError):
+                            total_cores = 1
                         level_2_cache_kib = (int(grab(vendor_data, "MLCCacheSize.Reading")) *
-                                             (proc_response.get("TotalCores") or 1))
+                                             total_cores)
 
                     if socket is None or f"{socket}" == "":
                         socket = proc_response.get("Id")
@@ -233,8 +251,10 @@ def get_single_system_procs(redfish_url):
                     status_text += f" ({proc_inventory.model})"
                 status_text += f" status is: {proc_inventory.health_status}"
 
-                plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
-                                              status_text, location=f"System {system_id}")
+                plugin_state = "CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status
+                plugin_state = plugin_state.upper() if isinstance(plugin_state, str) and \
+                    plugin_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+                plugin_object.add_output_data(plugin_state, status_text, location=f"System {system_id}")
 
             else:
                 plugin_object.add_output_data("UNKNOWN",

@@ -61,10 +61,11 @@ def grab(structure=None, path=None, separator="."):
     max_recursion_level = 100
 
     current_level = 0
-    levels = len(path.split(separator))
 
     if structure is None or path is None:
         return None
+
+    levels = len(path.split(separator))
 
     # noinspection PyBroadException
     def traverse(r_structure, r_path):

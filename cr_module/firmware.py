@@ -89,7 +89,10 @@ def get_firmware_info():
 
     firmware_status_entries = sorted(firmware_status_entries, key=lambda k: k["firmware"])
     for entry in firmware_status_entries:
-        plugin_object.add_output_data(entry.get("health"), entry.get("firmware"))
+        entry_health = entry.get("health")
+        entry_health = entry_health.upper() if isinstance(entry_health, str) and \
+            entry_health.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+        plugin_object.add_output_data(entry_health, entry.get("firmware"))
 
     # remove inventory data if not requested
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
@@ -111,27 +114,33 @@ def get_firmware_info_hpe_ilo4(system_id):
 
     firmware_response = plugin_object.rf.get(redfish_url)
 
-    fw_id = 0
-    for key, firmware_entry in firmware_response.get("Current").items():
+    if firmware_response.get("error"):
+        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
 
-        for firmware_entry_object in firmware_entry:
+    fw_id = 0
+    current_firmware = firmware_response.get("Current")
+    if not isinstance(current_firmware, dict):
+        current_firmware = dict()
+    for key, firmware_entry in current_firmware.items():
+
+        for firmware_entry_object in firmware_entry if isinstance(firmware_entry, list) else [firmware_entry]:
 
             fw_id += 1
 
+            fw_entry_name = firmware_entry_object.get("Name") if isinstance(firmware_entry_object, dict) else None
+            fw_entry_name = fw_entry_name.replace("iLO", "iLO4") if isinstance(fw_entry_name, str) else None
+
             firmware_inventory = Firmware(
                 id=fw_id,
-                name=firmware_entry_object.get("Name").replace("iLO", "iLO4"),
-                version=firmware_entry_object.get("VersionString"),
-                location=firmware_entry_object.get("Location")
+                name=fw_entry_name,
+                version=firmware_entry_object.get("VersionString") if isinstance(firmware_entry_object, dict) else None,
+                location=firmware_entry_object.get("Location") if isinstance(firmware_entry_object, dict) else None
             )
 
             if plugin_object.cli_args.verbose:
                 firmware_inventory.source_data = firmware_entry_object
 
             plugin_object.inventory.add(firmware_inventory)
-
-    if firmware_response.get("error"):
-        plugin_object.add_data_retrieval_error(Firmware, firmware_response, redfish_url)
 
     if any(x in plugin_object.cli_args.requested_query for x in ['storage', 'all']) is False:
         plugin_object.in_firmware_collection_mode(True)
@@ -189,6 +198,8 @@ def get_firmware_info_fujitsu(system_id, bmc_only=False):
 
         if manager_response.get("error"):
             plugin_object.add_data_retrieval_error(Firmware, manager_response, manager_ids[0])
+            if bmc_only is True:
+                return firmware_entries
             return
 
         # get configuration
@@ -440,8 +451,10 @@ def get_firmware_info_generic():
 
         # get firmware version
         component_version = firmware_entry.get("Version")
-        if component_version is not None:
+        if isinstance(component_version, str):
             component_version = component_version.strip().replace("\n", "")
+        elif component_version is not None:
+            component_version = f"{component_version}"
 
         if grab(firmware_entry, f"Oem.{plugin_object.rf.vendor_dict_key}.FirmwareBuild") is not None:
             component_version = f"{component_version} %s" % \

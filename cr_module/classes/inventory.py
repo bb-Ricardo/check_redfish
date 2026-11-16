@@ -17,7 +17,7 @@ from socket import gethostname
 
 
 # inventory definition
-inventory_layout_version_string = "2.0.0"
+inventory_layout_version_string = "2.3.0"
 
 
 # noinspection PyBroadException
@@ -425,6 +425,7 @@ class NetworkPort(InventoryItem):
 class System(InventoryItem):
     inventory_item_name = "system"
     valid_attributes = {
+        "asset_tag": str,
         "bios_version": str,
         "chassis_ids": list,
         "cpu_num": int,
@@ -477,6 +478,7 @@ class Manager(InventoryItem):
 class Chassis(InventoryItem):
     inventory_item_name = "chassis"
     valid_attributes = {
+        "asset_tag": str,
         "health_status": str,
         "id": str,
         "indicator_led": bool,

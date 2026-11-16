@@ -46,11 +46,16 @@ def get_single_system_mem(redfish_url):
 
             total_mem = grab(systems_response, "MemorySummary.TotalSystemMemoryGiB") or 0
 
-            if plugin_object.rf.vendor == "Dell" and total_mem % 16 != 0:
-                total_mem = total_mem * 1024 ** 3 / 1000 ** 3
+            total_mem_text = "All memory modules (Total %sGB) are in good condition" % total_mem
+            try:
+                total_mem_size = float(total_mem)
+                if plugin_object.rf.vendor == "Dell" and total_mem_size % 16 != 0:
+                    total_mem_size = total_mem_size * 1024 ** 3 / 1000 ** 3
+                total_mem_text = "All memory modules (Total %dGB) are in good condition" % total_mem_size
+            except (ValueError, TypeError):
+                pass
 
-            plugin_object.add_output_data("OK", "All memory modules (Total %dGB) are in good condition" %
-                                          total_mem, summary=True, location=f"System {system_id}")
+            plugin_object.add_output_data("OK", total_mem_text, summary=True, location=f"System {system_id}")
             return
 
     system_response_memory_key = "Memory"
@@ -64,8 +69,16 @@ def get_single_system_mem(redfish_url):
         plugin_object.inventory.add_issue(Memory, issue_text)
         return
 
-    redfish_url = memory_path_dict.get(system_response_memory_key).get(
-        "@odata.id") + "%s" % plugin_object.rf.vendor_data.expand_string
+    memory_path = memory_path_dict.get(system_response_memory_key)
+    if isinstance(memory_path, dict):
+        memory_path = memory_path.get("@odata.id")
+
+    if not isinstance(memory_path, str):
+        issue_text = f"Returned data from API URL '{redfish_url}' has no valid '{system_response_memory_key}' link"
+        plugin_object.inventory.add_issue(Memory, issue_text)
+        return
+
+    redfish_url = memory_path + "%s" % plugin_object.rf.vendor_data.expand_string
 
     memory_response = plugin_object.rf.get_view(redfish_url)
 
@@ -95,7 +108,10 @@ def get_single_system_mem(redfish_url):
                 # get size
                 module_size = mem_module_response.get("SizeMB") or mem_module_response.get("CapacityMiB") or 0
 
-                module_size = int(module_size)
+                try:
+                    module_size = int(module_size)
+                except (ValueError, TypeError):
+                    module_size = 0
 
                 # DELL fix for iDRAC 8
                 if plugin_object.rf.vendor == "Dell" and module_size % 1024 != 0:
@@ -172,8 +188,11 @@ def get_single_system_mem(redfish_url):
                 status_text = f"Memory module {mem_inventory.name} (%.1fGB) status is: {status_text}" % (
                             mem_inventory.size_in_mb / 1024)
 
-                plugin_object.add_output_data("CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status,
-                                              status_text, location=f"System {system_id}")
+                plugin_state = "CRITICAL" if plugin_status not in ["OK", "WARNING"] else plugin_status
+                plugin_state = plugin_state.upper() if isinstance(plugin_state, str) and \
+                    plugin_state.upper() in ("OK", "WARNING", "CRITICAL", "UNKNOWN") else "UNKNOWN"
+
+                plugin_object.add_output_data(plugin_state, status_text, location=f"System {system_id}")
 
             else:
                 plugin_object.add_output_data("UNKNOWN",
