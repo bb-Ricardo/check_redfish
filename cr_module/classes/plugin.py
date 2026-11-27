@@ -395,7 +395,9 @@ class PluginData:
                         return_text.append(entry.output_text(add_location))
                         printed_entries.append(entry)
 
-        return_string = "\n".join(return_text)
+        # "|" separates text from perf data, so a "|" inside a BMC message (e.g. Cisco
+        # CIMC log entries) would turn the rest of the output into bogus perf data
+        return_string = "\n".join(return_text).replace("|", "/")
 
         # append perf data if there is any
         if len(self.__perf_data) > 0:
